@@ -16,6 +16,226 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from obspy.imaging.scripts.mopad import MomentTensor
 
+# Functions and classes are ordered from general to specific
+
+def sphere(r=1.,n=100.):
+    """
+    Produce the polar coordinates of a sphere. 
+    ______________________________________________________________________
+    :type r, n: variables
+    :param r, n: radius and number of resolution points.
+    
+    :rtype : list
+    :return : 3d list of azimuth, polar angle and radial distance.
+
+    .. seealso::
+
+        numpy.linspace : produces the resolution vectors.
+
+        numpy.meshgrid : produce the grid from the vectors.
+
+    .. rubric:: Example
+
+        # import the module
+        import source
+
+        # 100 coordinates on sphere or radius 5
+        points = source.sphere(r=5, n=100)
+
+        # Unit sphere of 50 points
+        points = source.sphere(n=50)               
+
+    .. plot::
+
+        # run one of the example
+        points = source.spherical_to_cartesian(points)
+
+        # plot using matplotlib 
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        ax=fig.gca(projection='3d')
+        ax.set_aspect("equal")
+        ax.plot_wireframe(points[0], points[1], points[2], color="r")
+        plt.show() 
+    ______________________________________________________________________
+    """
+    # Get the resolution (sorry this is ugly)
+    c = 0.038 ; 
+    na = n**(.5+c) 
+    nt = n**(.5-c)
+
+    [AZIMUTH,TAKEOFF] = np.meshgrid( np.linspace(0, 2*np.pi, na), np.linspace(0, np.pi, nt) )
+
+    RADIUS = np.ones(AZIMUTH.shape)*r
+
+    return [ AZIMUTH, TAKEOFF, RADIUS ]
+
+
+def cartesian_to_spherical(vector):
+    """
+    Convert the Cartesian vector [x, y, z] to spherical coordinates 
+    [azimuth, polar angle, radial distance].
+    ______________________________________________________________________
+    :type vector : 3D array, list | np.array
+    :param vector :  The vector of cartessian coordinates.
+
+    :rtype : 3D array, np.array
+    :return : The spherical coordinate vector.
+    
+    .. note::
+
+        This file is extracted & modified from the program relax (Edward 
+            d'Auvergne).
+
+    .. seealso::
+    
+        http://svn.gna.org/svn/relax/1.3/maths_fns/coord_transform.py
+    ______________________________________________________________________
+    
+    """
+
+    # Make sure we got np.array 
+    if np.asarray(vector) is not vector:
+        vector = np.asarray(vector)
+
+    # The radial distance.
+    radius = np.sqrt((vector**2).sum(axis=0))
+
+    # The horizontal radial distance.
+    rh = np.sqrt(vector[0]**2 + vector[1]**2) 
+
+    # The polar angle.
+    takeoff = np.arccos( vector[2] / radius )
+    takeoff[radius == 0.0] = np.pi / 2 * np.sign(vector[2][radius == 0.0])
+    #theta = np.arctan2(vector[2], rh)
+
+    # The azimuth.
+    azimuth_trig = np.arctan2(vector[1], vector[0])
+
+    # Return the spherical coordinate vector.
+    return [azimuth_trig, takeoff, radius]
+
+
+def spherical_to_cartesian(vector):
+    """
+    Convert the spherical coordinates [azimuth, polar angle
+    radial distance] to Cartesian coordinates [x, y, z].
+
+    ______________________________________________________________________
+    :type vector : 3D array, list | np.array
+    :param vector :  The spherical coordinate vector.
+
+    :rtype : 3D array, np.array
+    :return : The vector of cartesian coordinates.
+    
+    .. note::
+
+        This file is extracted & modified from the program relax (Edward 
+            d'Auvergne).
+
+    .. seealso::
+    
+        http://svn.gna.org/svn/relax/1.3/maths_fns/coord_transform.py
+    ______________________________________________________________________
+    """
+
+    # Unit vector if r is missing
+    if len(vector) == 2 :
+        radius =1
+    else:
+        radius=vector[2]
+
+    # Trig alias.
+    sin_takeoff = np.sin(vector[1])
+
+    # The vector.
+    x = radius * sin_takeoff * np.cos(vector[0])
+    y = radius * sin_takeoff * np.sin(vector[0])
+    z = radius * np.cos(vector[1])
+
+
+    return [x, y, z]
+
+
+def project_vectors(b, a):
+    """
+    Project the vectors b on vectors a.
+    ______________________________________________________________________
+    :type b : 3D np.array
+    :param b :  The cartesian coordinates of vectors to be projected.
+
+    :type a : 3D np.array
+    :param a :  The cartesian coordinates of vectors to project onto.
+
+    :rtype : 3D np.array
+    :return : The cartesian coordinates of b projected on a.
+    
+    .. note::
+
+        There is maybe better (built in numpy) ways to do this.
+
+    .. seealso::
+    
+        :func:`numpy.dot()` 
+        :func:`numpy.dotv()`
+    ______________________________________________________________________
+    """
+
+    # Project 
+    ## precalc
+    sqr_norm_a = (a[0]**2 + a[1]**2 + a[2]**2)
+    ## precalc cartesian vects to be scaled
+    unit_a = a / np.sqrt(np.array([sqr_norm_a, sqr_norm_a, sqr_norm_a]))
+    ## norm of S on meridian
+    proj_norm = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] 
+    proj_norm /=  sqr_norm_a
+    ## project on meridian
+    b_on_a = unit_a *  proj_norm  
+
+    return b_on_a
+
+
+def vector_normal(XYZ, v_or_h):
+    """
+    Compute the vertical or horizontal normal vectors.
+    ______________________________________________________________________
+    :type XYZ : 3D np.array
+    :param b :  The cartesian coordinates of vectors.
+
+    :type v_or_h : string
+    :param v_or_h :  The cartesian coordinates of vectors.
+
+    :rtype : 3D np.array
+    :return : Requested normal on vertical or horizontal plane 
+        ('v|vert|vertical' or 'h|horiz|horizontal').
+    
+    .. note::
+
+        There is maybe better (built in numpy) ways to do this.
+
+    .. seealso::
+    
+        :func:`numpy.cross()` 
+    ______________________________________________________________________
+    """
+
+    oneheightydeg =  np.ones(XYZ.shape) * np.pi
+    ninetydeg =  np.ones(XYZ.shape) * np.pi/2.
+
+    ATR = np.asarray(cartesian_to_spherical(XYZ))
+
+    if v_or_h in ('nhr', 'normal horizontal radial', 'norm horiz rad'): 
+        ATR_n = np.array([ ATR[0] , ATR[1] - ninetydeg[0], ATR[2]])
+        XYZ_n = np.asarray(spherical_to_cartesian(ATR_n))
+    elif v_or_h in ('h', 'horizontal', 'horiz'): 
+        ATR_n = np.array([ ATR[0] - ninetydeg[0], ATR[1]+(ninetydeg[0]-ATR[1]) , ATR[2]])
+        XYZ_n = np.asarray(spherical_to_cartesian(ATR_n))
+    elif v_or_h in ('v', 'vertical', 'vertical'): 
+        ATR_n = np.array([ ATR[0], ATR[1]-ATR[1] , ATR[2]])
+        XYZ_n = np.asarray(spherical_to_cartesian(ATR_n))
+
+    return XYZ_n
+
 def mt_full(mt):
     """    
     Takes 6 components moment tensor and returns full 3x3 moment 
@@ -126,146 +346,7 @@ def mt_angles(mt):
     return np.array([[strike, dip, rake], [DC, CLVD, iso, devi]])
 
 
-def sphere(r=1.,n=100.):
-    """
-    Produce the polar coordinates of a sphere. 
-    ______________________________________________________________________
-    :type r, n: variables
-    :param r, n: radius and number of resolution points.
-    
-    :rtype : list
-    :return : 3d list of azimuth, polar angle and radial distance.
-
-    .. seealso::
-
-        numpy.linspace : produces the resolution vectors.
-
-        numpy.meshgrid : produce the grid from the vectors.
-
-    .. rubric:: Example
-
-        # import the module
-        import source
-
-        # 100 coordinates on sphere or radius 5
-        points = source.sphere(r=5, n=100)
-
-        # Unit sphere of 50 points
-        points = source.sphere(n=50)               
-
-    .. plot::
-
-        # run one of the example
-        points = source.spherical_to_cartesian(points)
-
-        # plot using matplotlib 
-        import matplotlib.pyplot as plt
-        fig = plt.figure()
-        ax=fig.gca(projection='3d')
-        ax.set_aspect("equal")
-        ax.plot_wireframe(points[0], points[1], points[2], color="r")
-        plt.show() 
-    ______________________________________________________________________
-    """
-    # Get the resolution (sorry this is ugly)
-    c = 0.038 ; 
-    na = n**(.5-c) 
-    nt = n**(.5+c)
-
-    [AZIMUTH,TAKEOFF] = np.meshgrid( np.linspace(0, np.pi, na), np.linspace(0, 2*np.pi, nt) )
-
-    RADIUS = np.ones(AZIMUTH.shape)*r
-
-    return [ AZIMUTH, TAKEOFF, RADIUS ]
-
-
-def cartesian_to_spherical(vector):
-    """
-    Convert the Cartesian vector [x, y, z] to spherical coordinates 
-    [azimuth, polar angle, radial distance].
-    ______________________________________________________________________
-    :type vector : 3D array, list | np.array
-    :param vector :  The vector of cartessian coordinates.
-
-    :rtype : 3D array, np.array
-    :return : The spherical coordinate vector.
-    
-    .. note::
-
-        This file is extracted & modified from the program relax (Edward 
-            d'Auvergne).
-
-    .. seealso::
-    
-        http://svn.gna.org/svn/relax/1.3/maths_fns/coord_transform.py
-    ______________________________________________________________________
-    
-    """
-
-    # Make sure we got np.array 
-    if np.asarray(vector) is not vector:
-        vector = np.asarray(vector)
-
-    # The radial distance.
-    radius = np.sqrt((vector**2).sum(axis=0))
-
-    # The horizontal radial distance.
-    rh = np.sqrt(vector[0]**2 + vector[1]**2) 
-
-    # The polar angle.
-    takeoff = np.arccos( vector[2] / radius )
-    takeoff[radius == 0.0] = np.pi / 2 * np.sign(vector[2][radius == 0.0])
-    #theta = np.arctan2(vector[2], rh)
-
-    # The azimuth.
-    azimuth_trig = np.arctan2(vector[1], vector[0])
-
-    # Return the spherical coordinate vector.
-    return [azimuth_trig, takeoff, radius]
-
-
-def spherical_to_cartesian(vector):
-    """
-    Convert the spherical coordinates [azimuth, polar angle
-    radial distance] to Cartesian coordinates [x, y, z].
-
-    ______________________________________________________________________
-    :type vector : 3D array, list | np.array
-    :param vector :  The spherical coordinate vector.
-
-    :rtype : 3D array, np.array
-    :return : The vector of cartessian coordinates.
-    
-    .. note::
-
-        This file is extracted & modified from the program relax (Edward 
-            d'Auvergne).
-
-    .. seealso::
-    
-        http://svn.gna.org/svn/relax/1.3/maths_fns/coord_transform.py
-    ______________________________________________________________________
-    """
-
-    # Unit vector if r is missing
-    if len(vector) == 2 :
-        radius =1
-    else:
-        radius=vector[2]
-
-    # Trig alias.
-    sin_takeoff = np.sin(vector[1])
-
-    # The vector.
-    x = radius * sin_takeoff * np.cos(vector[0])
-    y = radius * sin_takeoff * np.sin(vector[0])
-    z = radius * np.cos(vector[1])
-
-
-    return [x, y, z]
-
-
-def plot_seismicsourcemodel(G, XYZ, style='None', mt=None) : 
+def plot_seismicsourcemodel(G, XYZ, style='*', mt=None, comp='r') : 
     """
     Plot the given seismic wave radiation pattern as a color-coded surface 
     or focal sphere (not exactly as a beach ball diagram).
@@ -320,21 +401,24 @@ def plot_seismicsourcemodel(G, XYZ, style='None', mt=None) :
 
     .. todo::
 
-        Add quiver plot, add frame plot, make work in given axe
+        make work in given axe
     ______________________________________________________________________
     """
+    
     # For unit sphere
-
-    # ## Get polarities as amplitude 
-    # amplitudes = np.sign(np.sum(G * XYZ, axis=0)+0.000000000000001)
-    # ## Get normal projection as amplitude 
-    # amplitudes *= ( np.sum(G * G, axis=0))
-    # ## Get normalized amplitude as amplitude 
-    # amplitudes /= np.max(np.abs(amplitudes))    
     ## Get norms
     amplitudes = np.sqrt(G[0]**2 + G[1]**2 + G[2]**2) 
-    ## Get signs on radial dir
-    amplitudes *= np.sign(np.sum(G * XYZ, axis=0)+0.000000000000001)
+    if comp in ('r', 'radial') : 
+        ## Get signs on radial dir
+        amplitudes *= np.sign(np.sum(G * XYZ, axis=0)+0.00001)
+    
+    elif comp in ('tv', 'tanv', 'vtan', 'vertical tangent', 'tangent vertical') : 
+        ## Get signs on vertical tangent of source dir
+        amplitudes *= np.sign(np.sum(G * vector_normal(XYZ, 'v'), axis=0)+0.00001)
+    
+    elif comp in ('th', 'tanh', 'htan', 'horizontal tangent', 'tangent horizontal') : 
+        ## Get signs on horizontal tangent of source dir
+        amplitudes *= np.sign(np.sum(G * vector_normal(XYZ, 'h'), axis=0)+0.00001)
 
     ## Initializing the colormap machinery
     norm = matplotlib.colors.Normalize(vmin=np.min(amplitudes),vmax=np.max(amplitudes))
@@ -348,12 +432,15 @@ def plot_seismicsourcemodel(G, XYZ, style='None', mt=None) :
     
     # Styles
     ## For arrow vectors on obs points
-    if style in ('quiver', 'arrow', 'vect', 'vector', 'vectors') :    
+    if style in ('*', 'quiver', 'arrow', 'vect', 'vector', 'vectors') :    
         X, Y, Z = XYZ
         U, V, W = G
-        ax.quiver(X.flatten(), Y.flatten(), Z.flatten(), U.flatten(), V.flatten(), W.flatten(), length=0.25, alpha=0.5 )#, color = s_m.to_rgba(amplitudes.flatten()))
+        arrow_scale = (np.max(XYZ)-np.min(XYZ))/15
+        cmap = plt.get_cmap()
+        qs = ax.quiver(X.flatten(), Y.flatten(), Z.flatten(), U.flatten(), V.flatten(), W.flatten(), pivot='tail', length=arrow_scale ) #, length=0.25, alpha=0.5
+        qs.set_array(np.repeat(np.transpose(amplitudes).flatten(), 3))
 
-    else :
+    if style in ('*', 'surf', 'surface', 'frame', 'wireframe', 'sign', 'bb', 'beachball') :
         ## For focal sphere, with amplitude sign (~not a beach ball diagram)
         if style in ('sign', 'bb', 'beachball'):
             G[G < 0] = -1
@@ -361,7 +448,7 @@ def plot_seismicsourcemodel(G, XYZ, style='None', mt=None) :
             scale=1
 
         ## For a color-coded surface representing amplitudes
-        elif style == 'None' : 
+        else : 
             scale = np.abs(amplitudes)
 
         ## Applying amplitudes for a unit sphere 
@@ -369,9 +456,15 @@ def plot_seismicsourcemodel(G, XYZ, style='None', mt=None) :
         XYZ[1] *= scale 
         XYZ[2] *= scale
 
-        # Plot
-        ax.plot_surface(XYZ[0], XYZ[1], XYZ[2],linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes), alpha=0.5)    
+    if style in ('*', 'surf', 'surface', 'sign', 'bb', 'beachball','frame', 'wireframe') :
 
+        # Plot
+        if style in ('frame', 'wireframe') :
+            ax.plot_wireframe(XYZ[0], XYZ[1], XYZ[2], rstride=1, cstride=1, linewidth=0.5, alpha=0.5)
+        else:
+            ax.plot_surface(XYZ[0], XYZ[1], XYZ[2],linewidth=0.5, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes), alpha=1)    
+
+    
         
     plt.colorbar(s_m)
     plt.xlabel('x')
@@ -504,54 +597,30 @@ class Aki_Richards(object):
         """
 
         # Special cases ######################################################
-        if wave in ('Sv', 'Sv', 'S_v', 'Sv wave', 'Sv-wave'):
+        if wave in ('SH', 'Sv', 'S_v', 'Sv wave', 'Sv-wave'):
 
-            # Get S waves
+            ## Get S waves
             disp, obs_cart = self.radpat(wave='S', obs_cart=obs_cart, obs_sph=obs_sph)
-            
-            # Gettings meridians
-            ## use the spherical coord of obs points
-            obs_sph = np.asarray(cartesian_to_spherical(obs_cart))   
-            ## add a small angle in takeoff
-            one =  np.ones(obs_sph.shape) * np.pi/1800.
-            obs_end = np.asarray(spherical_to_cartesian([obs_sph[0], obs_sph[1]+one[0], obs_sph[2] ])) #np.add(obs_sph[1], ones[1])
-            ## separation vector is assumed as meridian
-            meridians =   np.asarray([ obs_end[0] - obs_cart[0] , obs_end[1] - obs_cart[1] , obs_end[2] - obs_cart[2] ])
-            ## make meridian as unit vector
-            meridian_norms = np.sqrt((meridians**2).sum(axis=0))
-            meridians /= np.asarray([meridian_norms, meridian_norms, meridian_norms])
-
-            # Project 
-            ## norm of S on meridian
-            Sp_norm = meridians[0]*disp[0] + meridians[1]*disp[1] + meridians[2]*disp[2] 
-            Sp_norm /=  meridians[0]**2 + meridians[1]**2 + meridians[2]**2 
-            ## project on meridian
-            disp = meridians *  Sv_norm  
+            ## Project on Sv component
+            disp = project_vectors(disp, vector_normal(obs_cart, 'v')) 
 
             return disp, obs_cart
 
-        elif wave in ('Sh', 'Sh', 'S_h', 'Sh wave', 'Sh-wave'):
+        elif wave in ('SN', 'Sn', 'Snrh', 'Snrh wave', 'Snrh-wave'):
 
+            ## Get S waves
             disp, obs_cart = self.radpat(wave='S', obs_cart=obs_cart, obs_sph=obs_sph)
+            ## Project on Sh component
+            disp = project_vectors(disp, vector_normal(obs_cart, 'nhr')) 
 
-            # Gettings meridians
-            ## use the spherical coord of obs points
-            obs_sph = np.asarray(cartesian_to_spherical(obs_cart))   
-            ## add a small angle in takeoff
-            one =  np.ones(obs_sph.shape) * np.pi/1800.
-            obs_end = np.asarray(spherical_to_cartesian([obs_sph[0]+one[1], obs_sph[1], obs_sph[2] ])) #np.add(obs_sph[1], ones[1])
-            ## separation vector is assumed as meridian
-            meridians =   np.asarray([ obs_end[0] - obs_cart[0] , obs_end[1] - obs_cart[1] , obs_end[2] - obs_cart[2] ])
-            ## make meridian as unit vector
-            meridian_norms = np.sqrt((meridians**2).sum(axis=0))
-            meridians /= np.asarray([meridian_norms, meridian_norms, meridian_norms])
+            return disp, obs_cart
 
-            # Project 
-            ## norm of S on meridian
-            Sp_norm = meridians[0]*disp[0] + meridians[1]*disp[1] + meridians[2]*disp[2] 
-            Sp_norm /=  meridians[0]**2 + meridians[1]**2 + meridians[2]**2 
-            ## project on meridian
-            disp = meridians *  p_norm  
+        elif wave in ('SV', 'Sh', 'S_h', 'Sh wave', 'Sh-wave'):
+
+            ## Get S waves
+            disp, obs_cart = self.radpat(wave='S', obs_cart=obs_cart, obs_sph=obs_sph)
+            ## Project on Sh component
+            disp = project_vectors(disp, vector_normal(obs_cart, 'h')) 
 
             return disp, obs_cart
         ######################################################################
@@ -616,7 +685,7 @@ class Aki_Richards(object):
 
         return disp, obs_cart
 
-    def plot(self, wave='P',style='None') :    
+    def plot(self, wave='P',style='*') :    
         """
         Plot the radiation pattern.
         ______________________________________________________________________
@@ -676,7 +745,14 @@ class Aki_Richards(object):
         """
         # Get radiation pattern
         G, XYZ = self.radpat(wave)
-        plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt)
+        if wave in ('Sv', 'Sv wave', 'Sv-wave'):
+            plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='tv')
+        elif wave in ('Sn', 'Snrh','Snrh wave', 'Snrh-wave'):
+            plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='tv')
+        elif wave in ('Sh', 'Sh wave', 'Sh-wave'):
+            plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='th')
+        else:
+            plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt)
 
     def energy(self, wave='P') :   
         """
@@ -911,7 +987,7 @@ class Vavryeuk(object):
         return np.asarray(G_cart), np.asarray(obs_cart)
 
 
-    def plot(self, wave='P',style='None') :     
+    def plot(self, wave='P',style='*') :     
         """
         Plot the radiation pattern.
         ______________________________________________________________________
