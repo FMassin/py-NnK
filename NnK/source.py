@@ -64,7 +64,7 @@ def sphere(r=1.,n=100.):
     na = n**(.5+c) 
     nt = n**(.5-c)
 
-    [AZIMUTH,TAKEOFF] = np.meshgrid( np.linspace(0, 2*np.pi, na), np.linspace(0, np.pi, nt) )
+    [AZIMUTH,TAKEOFF] = np.meshgrid( np.linspace(0, 2*np.pi, na+1), np.linspace(0, 1*np.pi, nt) )
 
     RADIUS = np.ones(AZIMUTH.shape)*r
 
@@ -182,15 +182,12 @@ def project_vectors(b, a):
     """
 
     # Project 
-    ## precalc
-    sqr_norm_a = (a[0]**2 + a[1]**2 + a[2]**2)
-    ## precalc cartesian vects to be scaled
-    unit_a = a / np.sqrt(np.array([sqr_norm_a, sqr_norm_a, sqr_norm_a]))
-    ## norm of S on meridian
+    ## ratio (norm of b on a / norm of a)
     proj_norm = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] 
-    proj_norm /=  sqr_norm_a
-    ## project on meridian
-    b_on_a = unit_a *  proj_norm  
+    proj_norm /=  (a[0]**2 + a[1]**2 + a[2]**2)+0.0000000001
+    ## project on a
+    b_on_a = proj_norm * a
+
 
     return b_on_a
 
@@ -224,7 +221,7 @@ def vector_normal(XYZ, v_or_h):
 
     ATR = np.asarray(cartesian_to_spherical(XYZ))
 
-    if v_or_h in ('nhr', 'normal horizontal radial', 'norm horiz rad'): 
+    if v_or_h in ('n', 'nhr', 'normal horizontal radial', 'norm horiz rad'): 
         ATR_n = np.array([ ATR[0] , ATR[1] - ninetydeg[0], ATR[2]])
         XYZ_n = np.asarray(spherical_to_cartesian(ATR_n))
     elif v_or_h in ('h', 'horizontal', 'horiz'): 
@@ -233,6 +230,8 @@ def vector_normal(XYZ, v_or_h):
     elif v_or_h in ('v', 'vertical', 'vertical'): 
         ATR_n = np.array([ ATR[0], ATR[1]-ATR[1] , ATR[2]])
         XYZ_n = np.asarray(spherical_to_cartesian(ATR_n))
+    elif v_or_h in ('r', 'radial', 'self'): 
+        XYZ_n = XYZ
 
     return XYZ_n
 
@@ -346,7 +345,7 @@ def mt_angles(mt):
     return np.array([[strike, dip, rake], [DC, CLVD, iso, devi]])
 
 
-def plot_seismicsourcemodel(G, XYZ, style='*', mt=None, comp='r') : 
+def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) : 
     """
     Plot the given seismic wave radiation pattern as a color-coded surface 
     or focal sphere (not exactly as a beach ball diagram).
@@ -355,8 +354,8 @@ def plot_seismicsourcemodel(G, XYZ, style='*', mt=None, comp='r') :
     :param G : The vector of cartessian coordinates of the radiation 
         pattern.
 
-    :type XYZ : 3D array, list | np.array
-    :param XYZ : The cartessian coordinates of the origin points of the
+    :type xyz : 3D array, list | np.array
+    :param xyz : The cartessian coordinates of the origin points of the
         radiation pattern.
 
     :type style : string
@@ -370,22 +369,28 @@ def plot_seismicsourcemodel(G, XYZ, style='*', mt=None, comp='r') :
 
     .. rubric:: _`Supported style`
 
-        ``'None'``
+        ``'*'``
             Plot the amplitudes as surface coding absolute amplitude as 
             radial distance from origin and amplitude polarity with color.
              (uses :func:`numpy.abs`).
 
-        ``'sign' or 'bb' or 'beachball``
+        ``beachball``
             Plot a unit sphere, amplitude sign being coded with color.
              (uses :func:`numpy.abs`).
 
-        ``'frame'``
+        ``'wireframe'``
             Plot the amplitudes as a mesh, coding absolute amplitude as 
             radial distance. Amplitude polarity is not represented.
 
         ``'quiver'``
             Plot each vectors of the radiation pattern, sign and amplidude
             being coded with colors. 
+
+        ``'surface'``
+            Plot ...
+
+        ``'polarities'``
+            Plot ...
     
     .. note::
 
@@ -404,78 +409,110 @@ def plot_seismicsourcemodel(G, XYZ, style='*', mt=None, comp='r') :
         make work in given axe
     ______________________________________________________________________
     """
-    
-    # For unit sphere
-    ## Get norms
-    amplitudes = np.sqrt(G[0]**2 + G[1]**2 + G[2]**2) 
-    if comp in ('r', 'radial') : 
-        ## Get signs on radial dir
-        amplitudes *= np.sign(np.sum(G * XYZ, axis=0)+0.00001)
-    
-    elif comp in ('tv', 'tanv', 'vtan', 'vertical tangent', 'tangent vertical') : 
-        ## Get signs on vertical tangent of source dir
-        amplitudes *= np.sign(np.sum(G * vector_normal(XYZ, 'v'), axis=0)+0.00001)
-    
-    elif comp in ('th', 'tanh', 'htan', 'horizontal tangent', 'tangent horizontal') : 
-        ## Get signs on horizontal tangent of source dir
-        amplitudes *= np.sign(np.sum(G * vector_normal(XYZ, 'h'), axis=0)+0.00001)
 
+    # Component
+    ## Get direction(s)
+    if comp == None: 
+        amplitude_direction = disp      
+    else :
+        amplitude_direction = vector_normal(xyz, comp)
+    ## Project 
+    disp_projected = project_vectors(disp, amplitude_direction) 
+    ## Norms
+    amplitudes = np.sqrt(disp_projected[0]**2 + disp_projected[1]**2 + disp_projected[2]**2) 
+    ## Amplitudes (norm with sign)
+    amplitudes *= np.sign(np.sum(disp * amplitude_direction, axis=0)+0.00001)
+    ## Easiness
+    U, V, W = disp_projected
+    X, Y, Z = xyz
+
+    # Initializing 
     ## Initializing the colormap machinery
     norm = matplotlib.colors.Normalize(vmin=np.min(amplitudes),vmax=np.max(amplitudes))
     c_m = matplotlib.cm.Spectral
     s_m = matplotlib.cm.ScalarMappable(cmap=c_m, norm=norm)
     s_m.set_array([])
-
     ## Initializing the plot
-    fig = plt.figure()
-    ax = fig.gca(projection='3d')  
-    
-    # Styles
-    ## For arrow vectors on obs points
-    if style in ('*', 'quiver', 'arrow', 'vect', 'vector', 'vectors') :    
-        X, Y, Z = XYZ
-        U, V, W = G
-        arrow_scale = (np.max(XYZ)-np.min(XYZ))/15
-        cmap = plt.get_cmap()
-        qs = ax.quiver(X.flatten(), Y.flatten(), Z.flatten(), U.flatten(), V.flatten(), W.flatten(), pivot='tail', length=arrow_scale ) #, length=0.25, alpha=0.5
-        qs.set_array(np.repeat(np.transpose(amplitudes).flatten(), 3))
-
-    if style in ('*', 'surf', 'surface', 'frame', 'wireframe', 'sign', 'bb', 'beachball') :
-        ## For focal sphere, with amplitude sign (~not a beach ball diagram)
-        if style in ('sign', 'bb', 'beachball'):
-            G[G < 0] = -1
-            G[G >= 0] = 1
-            scale=1
-
-        ## For a color-coded surface representing amplitudes
-        else : 
-            scale = np.abs(amplitudes)
-
-        ## Applying amplitudes for a unit sphere 
-        XYZ[0] *= scale 
-        XYZ[1] *= scale 
-        XYZ[2] *= scale
-
-    if style in ('*', 'surf', 'surface', 'sign', 'bb', 'beachball','frame', 'wireframe') :
-
-        # Plot
-        if style in ('frame', 'wireframe') :
-            ax.plot_wireframe(XYZ[0], XYZ[1], XYZ[2], rstride=1, cstride=1, linewidth=0.5, alpha=0.5)
-        else:
-            ax.plot_surface(XYZ[0], XYZ[1], XYZ[2],linewidth=0.5, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes), alpha=1)    
-
-    
-        
-    plt.colorbar(s_m)
-    plt.xlabel('x')
-    plt.ylabel('y')
+    if ax == None:
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')  
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    ## Initializing the colorbar
+    if style not in ('frame', 'wireframe') : 
+        plt.colorbar(s_m)
     ## Initializing figure keys
     if mt is not None : 
         [strike, dip, rake], [DC, CLVD, iso, deviatoric] = mt_angles(mt) 
-        plt.title('S:' + str(int(strike)) + ', D:' + str(int(dip)) + ', R:' + str(int(rake)) + ', iso:' + str(int(iso)) + ', DC:' + str(int(DC)) + ', CLVD:' + str(int(CLVD)) )
+        plt.title('SDR [' + str(int(strike)) + ', ' + str(int(dip)) + ', ' + str(int(rake)) + '] IDC [' + str(int(iso)) + ', ' + str(int(DC)) + ', ' + str(int(CLVD)) +']%' )
+    
+    ## Force axis equal
+    arrow_scale = (np.max(xyz)-np.min(xyz))/15
+    if style in ('p', 'polarities','b', 'bb', 'beachball'):
+        max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
+    elif style in ('f', 'w', 'frame', 'wireframe', 's', 'surf', 'surface'): 
+        max_range = np.array([(X*np.abs(amplitudes)).max()-(X*np.abs(amplitudes)).min(), (Y*np.abs(amplitudes)).max()-(Y*np.abs(amplitudes)).min(), (Z*np.abs(amplitudes)).max()-(Z*np.abs(amplitudes)).min()]).max() / 2.0
+    else : 
+        max_range = np.array([(X+arrow_scale).max()-(X+arrow_scale).min(), (Y+arrow_scale).max()-(Y+arrow_scale).min(), (Z+arrow_scale).max()-(Z+arrow_scale).min()]).max() / 2.0
+    mean_x = X.mean()
+    mean_y = Y.mean()
+    mean_z = Z.mean()
+    ax.set_xlim(mean_x - max_range, mean_x + max_range)
+    ax.set_ylim(mean_y - max_range, mean_y + max_range)
+    ax.set_zlim(mean_z - max_range, mean_z + max_range)
+
+    # Complexe styles
+    ## For a color-coded surface representing amplitudes
+    if style in ('*', 's', 'surf', 'surface'):
+
+        ax.plot_surface(X*np.abs(amplitudes), Y*np.abs(amplitudes), Z*np.abs(amplitudes),linewidth=0.5, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes), alpha=1)    
+
+    ## For arrow vectors on obs points
+    if style in ('*', 'q', 'a', 'v', 'quiver', 'arrow', 'vect', 'vector', 'vectors') :    
+
+        cmap = plt.get_cmap()
+        # qs = ax.quiver(X.flatten(), Y.flatten(), Z.flatten(), U.flatten(), V.flatten(), W.flatten(), pivot='tail', length=arrow_scale ) 
+        # qs.set_color(s_m.to_rgba(amplitudes.flatten())) #set_array(np.transpose(amplitudes.flatten()))
+
+        X = X.flatten()
+        Y = Y.flatten()
+        Z = Z.flatten()
+        U = U.flatten()*arrow_scale
+        V = V.flatten()*arrow_scale
+        W = W.flatten()*arrow_scale
+        A = amplitudes.flatten()
+        N = len(X)
+        for i in xrange(N-1):
+            ax.plot([X[i], X[i]+U[i]], [Y[i], Y[i]+V[i]], [Z[i], Z[i]+W[i]], color=s_m.to_rgba(A[i]) )
+
+    # Simple styles   
+    ## For a wireframe surface representing amplitudes
+    if style in ('*', 'f', 'w', 'frame', 'wireframe') :
+        
+        ax.plot_wireframe(X*np.abs(amplitudes), Y*np.abs(amplitudes), Z*np.abs(amplitudes), rstride=1, cstride=1, linewidth=0.5, alpha=0.5)
+
+    ## For focal sphere, with amplitude sign (~not a beach ball diagram) on unit sphere 
+    if style in ('*', 'p', 'polarities'):
+
+        polarity_area = amplitudes.copy()
+        polarity_area[amplitudes > 0] = np.nan  
+        polarity_area[amplitudes <= 0] = 1
+        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='r', rstride=1, cstride=1, linewidth=.5)
+
+        polarity_area[amplitudes <= 0] = np.nan 
+        polarity_area[amplitudes > 0] = 1
+        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='b', rstride=1, cstride=1, linewidth=.5)
+
+    ## For ~ beach ball diagram 
+    if style in ('b', 'bb', 'beachball'):
+
+        polarity_area = amplitudes.copy()
+        polarity_area[amplitudes >= 0] = 1  
+        polarity_area[amplitudes < 0] = -1
+        ax.plot_surface(X, Y, Z, linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(polarity_area)) 
 
     plt.show() 
-    return fig
+    return ax
 
 
 def energy_seismicsourcemodel(G, XYZ) :    
@@ -685,7 +722,7 @@ class Aki_Richards(object):
 
         return disp, obs_cart
 
-    def plot(self, wave='P',style='*') :    
+    def plot(self, wave='P',style='*', comp=None, ax=None) :    
         """
         Plot the radiation pattern.
         ______________________________________________________________________
@@ -745,14 +782,17 @@ class Aki_Richards(object):
         """
         # Get radiation pattern
         G, XYZ = self.radpat(wave)
-        if wave in ('Sv', 'Sv wave', 'Sv-wave'):
-            plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='tv')
-        elif wave in ('Sn', 'Snrh','Snrh wave', 'Snrh-wave'):
-            plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='tv')
-        elif wave in ('Sh', 'Sh wave', 'Sh-wave'):
-            plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='th')
-        else:
-            plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt)
+        if comp == None :
+            if wave in ('Sv', 'Sv wave', 'Sv-wave'):
+                comp='v'
+            elif wave in ('Sn', 'Snrh','Snrh wave', 'Snrh-wave'):
+                comp='n'
+            elif wave in ('Sh', 'Sh wave', 'Sh-wave'):
+                comp='h'
+            elif wave in ('P', 'P wave', 'P-wave'):
+                comp='r'
+
+        plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp=comp, ax=ax)
 
     def energy(self, wave='P') :   
         """
@@ -987,7 +1027,7 @@ class Vavryeuk(object):
         return np.asarray(G_cart), np.asarray(obs_cart)
 
 
-    def plot(self, wave='P',style='*') :     
+    def plot(self, wave='P',style='*', ax=None) :     
         """
         Plot the radiation pattern.
         ______________________________________________________________________
@@ -1048,7 +1088,7 @@ class Vavryeuk(object):
 
         # Get radiation pattern and plot
         G, XYZ = self.radpat(wave)
-        plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt)
+        plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='r',ax=ax)
 
     def energy(self, wave='P') :   
         """
