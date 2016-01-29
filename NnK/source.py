@@ -425,6 +425,7 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
     ## Easiness
     U, V, W = disp_projected
     X, Y, Z = xyz
+    amplitudes_surf = np.abs(amplitudes)/np.max(np.abs(amplitudes))
 
     # Initializing 
     ## Initializing the colormap machinery
@@ -440,7 +441,8 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
     plt.ylabel('Y')
     ## Initializing the colorbar
     if style not in ('frame', 'wireframe') : 
-        plt.colorbar(s_m)
+        cbar = plt.colorbar(s_m,orientation="horizontal",fraction=0.07)
+        cbar.ax.set_xlabel('Raw amplitudes')
     ## Initializing figure keys
     if mt is not None : 
         [strike, dip, rake], [DC, CLVD, iso, deviatoric] = mt_angles(mt) 
@@ -466,7 +468,7 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
     ## For a wireframe surface representing amplitudes
     if style in ('f', 'w', 'frame', 'wireframe') :
         
-        ax.plot_wireframe(X*np.abs(amplitudes), Y*np.abs(amplitudes), Z*np.abs(amplitudes), rstride=1, cstride=1, linewidth=0.5, alpha=0.5)
+        ax.plot_wireframe(X*amplitudes_surf, Y*amplitudes_surf, Z*amplitudes_surf, rstride=1, cstride=1, linewidth=0.5, alpha=0.5)
 
     ## For focal sphere, with amplitude sign (~not a beach ball diagram) on unit sphere 
     if style in ('*', 'p', 'polarities'):
@@ -507,7 +509,7 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
     ## For a color-coded surface representing amplitudes
     if style in ('*', 's', 'surf', 'surface'):
 
-        ax.plot_surface(X*np.abs(amplitudes), Y*np.abs(amplitudes), Z*np.abs(amplitudes),linewidth=0.5, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes))    
+        ax.plot_surface(X*amplitudes_surf, Y*amplitudes_surf, Z*amplitudes_surf,linewidth=0.5, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes))    
 
     
 
