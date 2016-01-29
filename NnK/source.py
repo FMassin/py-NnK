@@ -447,7 +447,7 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
         plt.title('SDR [' + str(int(strike)) + ', ' + str(int(dip)) + ', ' + str(int(rake)) + '] IDC [' + str(int(iso)) + ', ' + str(int(DC)) + ', ' + str(int(CLVD)) +']%' )
     
     ## Force axis equal
-    arrow_scale = (np.max(xyz)-np.min(xyz))/15
+    arrow_scale = (np.max(xyz)-np.min(xyz))/10
     if style in ('p', 'polarities','b', 'bb', 'beachball'):
         max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
     elif style in ('f', 'w', 'frame', 'wireframe', 's', 'surf', 'surface'): 
@@ -461,33 +461,10 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
     ax.set_ylim(mean_y - max_range, mean_y + max_range)
     ax.set_zlim(mean_z - max_range, mean_z + max_range)
 
-    # Complexe styles
-    ## For a color-coded surface representing amplitudes
-    if style in ('*', 's', 'surf', 'surface'):
-
-        ax.plot_surface(X*np.abs(amplitudes), Y*np.abs(amplitudes), Z*np.abs(amplitudes),linewidth=0.5, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes), alpha=1)    
-
-    ## For arrow vectors on obs points
-    if style in ('*', 'q', 'a', 'v', 'quiver', 'arrow', 'vect', 'vector', 'vectors') :    
-
-        cmap = plt.get_cmap()
-        # qs = ax.quiver(X.flatten(), Y.flatten(), Z.flatten(), U.flatten(), V.flatten(), W.flatten(), pivot='tail', length=arrow_scale ) 
-        # qs.set_color(s_m.to_rgba(amplitudes.flatten())) #set_array(np.transpose(amplitudes.flatten()))
-
-        X = X.flatten()
-        Y = Y.flatten()
-        Z = Z.flatten()
-        U = U.flatten()*arrow_scale
-        V = V.flatten()*arrow_scale
-        W = W.flatten()*arrow_scale
-        A = amplitudes.flatten()
-        N = len(X)
-        for i in xrange(N-1):
-            ax.plot([X[i], X[i]+U[i]], [Y[i], Y[i]+V[i]], [Z[i], Z[i]+W[i]], color=s_m.to_rgba(A[i]) )
 
     # Simple styles   
     ## For a wireframe surface representing amplitudes
-    if style in ('*', 'f', 'w', 'frame', 'wireframe') :
+    if style in ('f', 'w', 'frame', 'wireframe') :
         
         ax.plot_wireframe(X*np.abs(amplitudes), Y*np.abs(amplitudes), Z*np.abs(amplitudes), rstride=1, cstride=1, linewidth=0.5, alpha=0.5)
 
@@ -497,11 +474,11 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
         polarity_area = amplitudes.copy()
         polarity_area[amplitudes > 0] = np.nan  
         polarity_area[amplitudes <= 0] = 1
-        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='r', rstride=1, cstride=1, linewidth=.5)
+        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='r', rstride=1, cstride=1, linewidth=.5, alpha=0.5)
 
         polarity_area[amplitudes <= 0] = np.nan 
         polarity_area[amplitudes > 0] = 1
-        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='b', rstride=1, cstride=1, linewidth=.5)
+        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='b', rstride=1, cstride=1, linewidth=.5, alpha=0.5)
 
     ## For ~ beach ball diagram 
     if style in ('b', 'bb', 'beachball'):
@@ -510,6 +487,29 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
         polarity_area[amplitudes >= 0] = 1  
         polarity_area[amplitudes < 0] = -1
         ax.plot_surface(X, Y, Z, linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(polarity_area)) 
+
+
+    # Complexe styles
+    ## For arrow vectors on obs points
+    if style in ('*', 'q', 'a', 'v', 'quiver', 'arrow', 'vect', 'vector', 'vectors') :    
+
+        cmap = plt.get_cmap()
+        # qs = ax.quiver(X.flatten(), Y.flatten(), Z.flatten(), U.flatten(), V.flatten(), W.flatten(), pivot='tail', length=arrow_scale ) 
+        # qs.set_color(s_m.to_rgba(amplitudes.flatten())) #set_array(np.transpose(amplitudes.flatten()))
+
+        Us, Vs, Ws = disp_projected * arrow_scale / disp_projected.max()
+        ax.scatter((X+Us).flatten(), (Y+Vs).flatten(), (Z+Ws).flatten(), c=s_m.to_rgba(amplitudes.flatten()), marker='.', linewidths=0)
+
+        for i, x_val in np.ndenumerate(X):
+            ax.plot([X[i], X[i]+Us[i]], [Y[i], Y[i]+Vs[i]], [Z[i], Z[i]+Ws[i]],'-', color=s_m.to_rgba(amplitudes[i]) , linewidth=1)
+        
+
+    ## For a color-coded surface representing amplitudes
+    if style in ('*', 's', 'surf', 'surface'):
+
+        ax.plot_surface(X*np.abs(amplitudes), Y*np.abs(amplitudes), Z*np.abs(amplitudes),linewidth=0.5, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes))    
+
+    
 
     plt.show() 
     return ax
