@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-source - Module for seismic sources modeling
-______________________________________________________________________
-This module provide class hierarchy for earthquake modeling and 
-representation.
+source - Module for seismic sources modeling.
 
-The seismic wave displacement  is computed using the theoritical 
-definitions of the seismic source.
+This module provides class hierarchy for earthquake modeling and 
+ representation.
+______________________________________________________________________
+
+.. note::    
+    
+    Functions and classes are ordered from general to specific.
+
 """
 
 
@@ -16,7 +19,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from obspy.imaging.scripts.mopad import MomentTensor
 
-# Functions and classes are ordered from general to specific
+
 
 def sphere(r=1.,n=100.):
     """
