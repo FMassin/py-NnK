@@ -58,7 +58,7 @@ from obspy.core.stream import Stream
 
 import tseries 
 
-def correlate_components(stream, scales=None, **options):
+def correlate_components(stream, scales=None):
     """
     Performs correlation between the components of the
     same seismometers by rolling operation.
@@ -128,12 +128,15 @@ def correlate_components(stream, scales=None, **options):
             npts = trace_component.stats.npts
             time = np.arange(npts, dtype=np.float32) / df
 
-            npairs = 0
+            npairs = 0.
             for scale, rms in enumerate(rms_ts[tc]):
                 for largerscale, largerscale_rms in enumerate(rms_ts[tc]):
                     if scale**1.5 <= largerscale:
-                        npairs +=1
-                        STrms_LTrms[t][0:npts] *= ( rms[0:npts] / largerscale_rms[0:npts] ) / STrms_LTrms[t][0:npts]
+                        npairs +=1.
+                        STrms_LTrms[t][0:npts] += ( rms[0:npts] / largerscale_rms[0:npts] )**2
+            
+            STrms_LTrms[t][0:npts] = STrms_LTrms[t][0:npts]**(1/npairs)
+
             # plot
             fig = plt.figure()
             ax1 = fig.add_subplot(211)
@@ -146,9 +149,10 @@ def correlate_components(stream, scales=None, **options):
 
 
             plt.show()
+        break
             
 
-        break
+        
 
 
     #return corr_mat
