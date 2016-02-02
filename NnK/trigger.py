@@ -49,11 +49,21 @@ This module ...
 #             gg.ggg()
 #         """
 
-def correlatecomponents(a, scales=None, operation='cecm'):
+
+import re
+import copy
+import numpy as np
+import matplotlib.pyplot as plt
+from obspy.core.stream import Stream
+
+import tseries 
+
+def correlate_components(stream, scales=None, **options):
     """
-    correlatecomponents performs correlation between the 
-    components of the same seismometers by rolling 
-    operation.
+    Performs correlation between the components of the
+    same seismometers by rolling operation.
+    ______________________________________________________________________
+
 
     :type a: ObsPy :class:`~obspy.core.stream`
     :param a: datastream of e.g. seismogrammes.
@@ -67,7 +77,7 @@ def correlatecomponents(a, scales=None, operation='cecm'):
 
     .. note::
 
-        The raw data is not accessible anymore afterwards.
+        This trigger has been concepted to stick with obspy.signal.trigger.coincidenceTrigger
 
     .. rubric:: _`Supported Trigger`
 
@@ -92,16 +102,67 @@ def correlatecomponents(a, scales=None, operation='cecm'):
     # 2) ...
     # 3) ... 
 
-    import copy
-    from obspy.core.stream import Stream
-    import numpy as np
-    import re
-
     # Initialize multiscale if undefined
-    (tmax,nmax) = streamdatadim(a)
+    (tmax,nmax) = tseries.streamdatadim(stream)
     if scales is None:
         scales = [2**i for i in range(3,999) if 2**i < (nmax - 2**i)]
         scales = np.require(scales, dtype=np.int) 
     
     # Initialize results at the minimal size
-    correlations = np.zeros(( tmax, len(scales), nmax )) 
+    STrms_LTrms = np.ones(( tmax, nmax )) 
+    stream_copy = stream.copy()
+
+
+    for t, trace in enumerate(stream):
+
+        station_traces = stream.select(network=trace.stats.network, 
+            station=trace.stats.station, 
+            location=trace.stats.location, 
+            channel=(trace.stats.channel)[:-1]+'*')
+        
+        rms_ts, scales_rms = tseries.moving(station_traces, scales=scales)
+
+        for tc, trace_component in enumerate(station_traces):
+
+            df = trace_component.stats.sampling_rate
+            npts = trace_component.stats.npts
+            time = np.arange(npts, dtype=np.float32) / df
+
+            npairs = 0
+            for scale, rms in enumerate(rms_ts[tc]):
+                for largerscale, largerscale_rms in enumerate(rms_ts[tc]):
+                    if scale**1.5 <= largerscale:
+                        npairs +=1
+                        STrms_LTrms[t][0:npts] *= ( rms[0:npts] / largerscale_rms[0:npts] ) / STrms_LTrms[t][0:npts]
+            # plot
+            fig = plt.figure()
+            ax1 = fig.add_subplot(211)
+            ax2 = fig.add_subplot(212, sharex=ax1)
+            fig.suptitle(trace_component.id)
+      #      plt.yscale('log', nonposy='clip')
+
+            ax1.plot(time, trace_component.data, 'k')
+            ax2.plot(time, STrms_LTrms[t][0:npts], 'k')
+
+
+            plt.show()
+            
+
+        break
+
+
+    #return corr_mat
+
+
+
+
+
+
+
+
+
+
+
+
+
+

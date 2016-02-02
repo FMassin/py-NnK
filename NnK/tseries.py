@@ -49,6 +49,32 @@ This module ...
 #             gg.ggg()
 #         """
 
+def streamdatadim(a):
+    """
+    Calculate the dimensions of all data in stream.
+
+    Given a stream (obspy.core.stream) calculate the minimum dimensions 
+    of the array that contents all data from all traces.
+
+    This method is written in pure Python and gets slow as soon as there
+    are more then ... in ...  --- normally
+    this does not happen.
+
+    :type a: ObsPy :class:`~obspy.core.stream`
+    :param a: datastream of e.g. seismogrammes.
+    :rtype: array
+    :return: array of int corresponding to the dimensions of stream.
+    """
+    # 1) Does this
+    # 2) Then does 
+    #    that
+
+    nmax=0
+    for t, tr in enumerate(a):
+        nmax = max((tr.stats.npts, nmax))
+
+    return (t+1, nmax)
+
 
 def moving(a, scales=None, operation='rms'):
     """
@@ -131,28 +157,3 @@ def moving(a, scales=None, operation='rms'):
     
     return timeseries, scales
 
-def streamdatadim(a):
-    """
-    Calculate the dimensions of all data in stream.
-
-    Given a stream (obspy.core.stream) calculate the minimum dimensions 
-    of the array that contents all data from all traces.
-
-    This method is written in pure Python and gets slow as soon as there
-    are more then ... in ...  --- normally
-    this does not happen.
-
-    :type a: ObsPy :class:`~obspy.core.stream`
-    :param a: datastream of e.g. seismogrammes.
-    :rtype: array
-    :return: array of int corresponding to the dimensions of stream.
-    """
-    # 1) Does this
-    # 2) Then does 
-    #    that
-
-    nmax=0
-    for t, tr in enumerate(a):
-        nmax = max((tr.stats.npts, nmax))
-
-    return (t+1, nmax)
