@@ -54,11 +54,123 @@ import re
 import copy
 import numpy as np
 import matplotlib.pyplot as plt
-from obspy.core.stream import Stream
+from obspy import read, Trace, Stream
 
-import tseries 
 
-def correlate_components(stream, scales=None):
+
+
+def streamdatadim(a):
+    """
+    Calculate the dimensions of all data in stream.
+
+    Given a stream (obspy.core.stream) calculate the minimum dimensions 
+    of the array that contents all data from all traces.
+
+    This method is written in pure Python and gets slow as soon as there
+    are more then ... in ...  --- normally
+    this does not happen.
+
+    :type a: ObsPy :class:`~obspy.core.stream`
+    :param a: datastream of e.g. seismogrammes.
+    :rtype: array
+    :return: array of int corresponding to the dimensions of stream.
+    """
+    # 1) Does this
+    # 2) Then does 
+    #    that
+
+    nmax=0
+    for t, tr in enumerate(a):
+        nmax = max((tr.stats.npts, nmax))
+
+    return (t+1, nmax)
+
+
+def recursive(a, scales=None, operation=None):
+    """
+    recursive (sum|average|rms) performs calculation by 
+    creating series of operations of different subsets of 
+    the full data set. This is also called rolling 
+    operation.
+
+    :type a: ObsPy :class:`~obspy.core.stream`
+    :param a: datastream of e.g. seismogrammes.
+    :type scales: vector
+    :param scales: scale(s) of timeseries operation.
+    :type operation: string
+    :param operation: type of operation.
+    :rtype: array
+    :return: array of root mean square time series, scale 
+             in r.stats._format (samples scale unit).
+    """
+    # 1) Iterate on channels
+    # 2) Pre calculate the common part of all scales
+    # 3) Perform channel calculation 
+
+    import copy
+    from obspy.core.stream import Stream
+    import numpy as np
+    
+    # Initialize multiscale if undefined
+    if operation is None:
+        operation = 'rms'
+    (tmax,nmax) = streamdatadim(a)
+    if scales is None:
+        scales = [2**i for i in range(3,999) if 2**i < (nmax - 2**i)]
+        scales = np.require(scales, dtype=np.int) 
+
+    # Initialize results at the minimal size
+    timeseries = np.zeros(( tmax, len(scales), nmax )) 
+
+    for t, tr in enumerate(a) : # the channel-wise calculations         
+            
+        # Avoid clock channels 
+        if not tr.stats.channel == 'YH':
+              
+            if operation is 'rms':  
+                # The cumulative sum can be exploited to calculate a moving average (the
+                # cumsum function is quite efficient)
+                csqr = np.cumsum(tr.detrend('linear').data ** 2)        
+
+            if (operation is 'average') or  (operation is 'sum'):  
+                # The cumulative sum can be exploited to calculate a moving average (the
+                # cumsum function is quite efficient)
+                csqr = np.cumsum(tr.detrend('linear').data)        
+
+            # Convert to float
+            csqr = np.require(csqr, dtype=np.float)
+
+            for n, s in enumerate(scales) :
+                
+                # Avoid scales when too wide for the current channel
+                if (s < (tr.stats.npts - s)) :    
+                    
+                    # Compute the sliding window
+                    if (operation is 'rms') or (operation is 'average') or (operation is 'sum'):  
+                        timeseries[t][n][s:tr.stats.npts] = csqr[s:] - csqr[:-s]
+
+                        # for average and rms only 
+                        if operation is not 'sum':
+                            timeseries[t][n][:] /= s                    
+
+                        # Pad with modified scale definitions
+                        timeseries[t][n][0] = csqr[0]
+                        for x in range(1, s-1):
+                            timeseries[t][n][x] = (csqr[x] - csqr[0])
+
+                            # for average and rms only
+                            if operation is not 'sum':
+                                timeseries[t][n][x] = timeseries[t][n][x]/(1+x)
+
+                    # Avoid division by zero by setting zero values to tiny float
+                    dtiny = np.finfo(0.0).tiny
+                    idx = timeseries[t][n] < dtiny
+                    timeseries[t][n][idx] = dtiny 
+    
+    return timeseries, scales 
+
+
+def multiscale(stream, scales=None, cf_low_type=None, cf_algo=None, corr_scales=None):
     """
     Performs correlation between the components of the
     same seismometers by rolling operation.
@@ -73,7 +185,7 @@ def correlate_components(stream, scales=None):
     :param operation: type of operation.
     :rtype: array
     :return: array of root mean square time series, scale 
-    	in r.stats._format (samples scale unit).
+        in r.stats._format (samples scale unit).
 
     .. note::
 
@@ -103,60 +215,165 @@ def correlate_components(stream, scales=None):
     # 3) ... 
 
     # Initialize multiscale if undefined
-    (tmax,nmax) = tseries.streamdatadim(stream)
+    if cf_algo is None:
+        cf_algo = 'l'
+    if cf_low_type is None:
+        cf_low_type='rms'
+
+    (tmax,nmax) = streamdatadim(stream)
     if scales is None:
         scales = [2**i for i in range(3,999) if 2**i < (nmax - 2**i)]
         scales = np.require(scales, dtype=np.int) 
     
     # Initialize results at the minimal size
-    STrms_LTrms = np.ones(( tmax, nmax )) 
-    stream_copy = stream.copy()
+    multiscale_cf = np.ones(( tmax, nmax ))  # np.zeros(( tmax, nmax )) 
+    stream_white = stream.copy()
+    for t, trace in enumerate(stream_white):
+        stream_white[t].data = np.random.normal(0., 0.00000000001+np.median(np.abs(trace.data)), (trace.data).shape )  # np.ones((trace.data).shape)
 
+    # Pre-calculation
+    white, white_scale = recursive(stream_white, scales=scales, operation=cf_low_type) #
+    cf_low, cf_low_scale = recursive(stream, scales=scales, operation=cf_low_type) #rms|sum|average
+    cf_low_scale = np.asarray(cf_low_scale)
+    
+    if corr_scales is None:
+        corr_scales = cf_low_scale
 
     for t, trace in enumerate(stream):
 
-        station_traces = stream.select(network=trace.stats.network, 
-            station=trace.stats.station, 
-            location=trace.stats.location, 
-            channel=(trace.stats.channel)[:-1]+'*')
-        
-        rms_ts, scales_rms = tseries.moving(station_traces, scales=scales)
+        df = trace.stats.sampling_rate
+        npts = trace.stats.npts
+        time = np.arange(npts, dtype=np.float32) / df
 
-        for tc, trace_component in enumerate(station_traces):
 
-            df = trace_component.stats.sampling_rate
-            npts = trace_component.stats.npts
-            time = np.arange(npts, dtype=np.float32) / df
+        # multiscale standart STrms/LTrms
+        if cf_algo in ('l', 'ST LT') :
+             
+            ## calc
+            n_scale = 0.
+            for scale, cf in enumerate(cf_low[t]):
+                for largerscale, larger_cf in enumerate(cf_low[t]):
+                    if scale**1.5 < largerscale:
+                        n_scale +=1.
+                        
+                        # white_cf =  white[t][scale] / white[t][largerscale]
+                        # white_cf[ ~np.isfinite(white_cf) ] = 0 
+                        # processed_cf[processed_cf <= np.max(white_cf)] = 0.
 
-            npairs = 0.
-            for scale, rms in enumerate(rms_ts[tc]):
-                for largerscale, largerscale_rms in enumerate(rms_ts[tc]):
-                    if scale**1.5 <= largerscale:
-                        npairs +=1.
-                        STrms_LTrms[t][0:npts] += ( rms[0:npts] / largerscale_rms[0:npts] )**2
+                        # processed_cf = cf / larger_cf
+                        # processed_cf = processed_cf**2
+                        # multiscale_cf[t][np.isfinite(processed_cf)] += processed_cf[np.isfinite(processed_cf)] 
+
+                        #print corr_scales[largerscale], cf_low_scale[scale], cf_low_scale[largerscale]
+                        processed_cf = correlationcoef(cf, larger_cf, scales=[2*corr_scales[scale]])
+                        multiscale_cf[t][np.isfinite(processed_cf)] *= processed_cf[np.isfinite(processed_cf)]  
+
             
-            STrms_LTrms[t][0:npts] = STrms_LTrms[t][0:npts]**(1/npairs)
+            #multiscale_cf[t][0:npts] = np.sqrt(multiscale_cf[t][0:npts])
 
-            # plot
-            fig = plt.figure()
-            ax1 = fig.add_subplot(211)
-            ax2 = fig.add_subplot(212, sharex=ax1)
-            fig.suptitle(trace_component.id)
-      #      plt.yscale('log', nonposy='clip')
+        # multiscale RTrms/LTrms
+        elif cf_algo in ('r', 'RW LW') :
+             
+            ## calc
+            n_scale = 0.
+            for scale, cf in enumerate(cf_low[t]):
+                n_scale +=1.
+                
+                # white_cf =  white[t][scale] / white[t][largerscale]
+                # white_cf[ ~np.isfinite(white_cf) ] = 0 
+                # processed_cf[processed_cf <= np.max(white_cf)] = 0.
 
-            ax1.plot(time, trace_component.data, 'k')
-            ax2.plot(time, STrms_LTrms[t][0:npts], 'k')
-
-
-            plt.show()
-        break
+                processed_cf = np.zeros((cf_low[t][scale]).shape)
+                processed_cf[cf_low_scale[scale]:] = cf_low[t][scale][cf_low_scale[scale]:] / cf_low[t][scale][0:-cf_low_scale[scale]]
+                processed_cf = processed_cf**2
+                multiscale_cf[t][np.isfinite(processed_cf)] += processed_cf[np.isfinite(processed_cf)] 
+            
+            multiscale_cf[t][0:npts] = np.sqrt(multiscale_cf[t][0:npts])
             
 
+        # station_traces = stream.select(network=trace.stats.network, 
+        #     station=trace.stats.station, 
+        #     location=trace.stats.location, 
+        #     channel=(trace.stats.channel)[:-1]+'*')
         
 
+        # for tc, trace_component in enumerate(station_traces):
 
-    #return corr_mat
+    return multiscale_cf
+    
+            
+def correlationcoef(a, b, scales=None, maxscales=None):
 
+    if maxscales is None:
+        maxscales = len(a)
+
+    if scales is None:
+        scales = [2**i for i in range(2,999) if 2**i <= (maxscales - 2**i)]
+    
+    scales = np.require(scales, dtype=np.int) 
+    scales = np.asarray(scales)
+    nscale = len(scales)
+
+
+    cc = np.ones(a.shape)
+    prod_cumsum = np.cumsum( a * b )
+    a_squarecumsum = np.cumsum( a**2 )
+    b_squarecumsum = np.cumsum( b**2 )
+
+    for s in scales :
+
+        for i in range(s) :
+
+            scaled_prod_cumsum = prod_cumsum[i] - prod_cumsum[0]
+            scaled_a_squarecumsum = a_squarecumsum[i] - a_squarecumsum[0]
+            scaled_b_squarecumsum = b_squarecumsum[i] - b_squarecumsum[0]
+
+            cc[i] *= (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
+
+        scaled_prod_cumsum = prod_cumsum[s:] - prod_cumsum[:-s]
+        scaled_a_squarecumsum = a_squarecumsum[s:] - a_squarecumsum[:-s]
+        scaled_b_squarecumsum = b_squarecumsum[s:] - b_squarecumsum[:-s]
+        
+        scaled_prod_cumsum[scaled_prod_cumsum == 0 ] = 1
+        scaled_a_squarecumsum[scaled_a_squarecumsum == 0 ] = 1
+        scaled_b_squarecumsum[scaled_b_squarecumsum == 0 ] = 1
+
+        cc[s:] *= (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
+
+
+    return cc**(1./nscale)
+
+def stream_cf_plot(stream,cf):
+    
+    fontsize = 12
+
+    fig = plt.figure()#figsize=plt.figaspect(1.2))
+    ax = fig.gca() 
+    (tmax,nmax) = streamdatadim(stream)
+    labels = ["" for x in range(tmax)]
+    for t, trace in enumerate(stream):
+        df = trace.stats.sampling_rate
+        npts = trace.stats.npts
+        time = np.arange(npts, dtype=np.float32) / df
+        ## plot
+        #fig.suptitle(trace.id)
+        #ax.annotate(trace.id, xy=(0, t), xytext=(0, t+1./6.))
+        ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), 'k')
+        #ax.plot(time, t+stream_white[t].data/(2*np.max(np.abs(trace.data))), 'g')
+        ax.plot(time, t-.5+cf[t][0:npts]/(np.max(np.abs(cf[t][0:npts]))), 'r') # 
+        labels[t] = trace.id
+
+    plt.yticks(np.arange(0, tmax, 1.0))
+    ax.set_yticklabels(labels)
+
+
+    ax.set_xlabel('Time (s)', fontsize=fontsize)
+    ax.set_ylabel('Channel', fontsize=fontsize)
+    plt.axis('tight')
+    plt.ylim( -0.5, t+0.5 ) 
+    plt.tight_layout()
+
+    return ax
 
 
 
