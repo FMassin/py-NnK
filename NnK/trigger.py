@@ -170,6 +170,9 @@ def recursive(a, scales=None, operation=None):
     return timeseries, scales 
 
 
+
+
+
 def multiscale(stream, scales=None, cf_low_type=None, cf_algo=None, corr_scales=None):
     """
     Performs correlation between the components of the
@@ -304,16 +307,16 @@ def multiscale(stream, scales=None, cf_low_type=None, cf_algo=None, corr_scales=
             
 def correlationcoef(a, b, scales=None, maxscales=None):
 
+    na = len(a)
     if maxscales is None:
-        maxscales = len(a)
+        maxscales = na
 
     if scales is None:
-        scales = [2**i for i in range(2,999) if 2**i <= (maxscales - 2**i)]
+        scales = [2**i for i in range(2,999) if ((2**i <= (maxscales - 2**i)) and (2**i <= (na - 2**i)))]
     
     scales = np.require(scales, dtype=np.int) 
     scales = np.asarray(scales)
     nscale = len(scales)
-
 
     cc = np.ones(a.shape)
     prod_cumsum = np.cumsum( a * b )
@@ -321,14 +324,6 @@ def correlationcoef(a, b, scales=None, maxscales=None):
     b_squarecumsum = np.cumsum( b**2 )
 
     for s in scales :
-
-        for i in range(s) :
-
-            scaled_prod_cumsum = prod_cumsum[i] - prod_cumsum[0]
-            scaled_a_squarecumsum = a_squarecumsum[i] - a_squarecumsum[0]
-            scaled_b_squarecumsum = b_squarecumsum[i] - b_squarecumsum[0]
-
-            cc[i] *= (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
 
         scaled_prod_cumsum = prod_cumsum[s:] - prod_cumsum[:-s]
         scaled_a_squarecumsum = a_squarecumsum[s:] - a_squarecumsum[:-s]
@@ -338,10 +333,21 @@ def correlationcoef(a, b, scales=None, maxscales=None):
         scaled_a_squarecumsum[scaled_a_squarecumsum == 0 ] = 1
         scaled_b_squarecumsum[scaled_b_squarecumsum == 0 ] = 1
 
-        cc[s:] *= (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
+        cc[:-s] *= (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
 
+        # pading with modified def
+        scaled_prod_cumsum = prod_cumsum[na-1] - prod_cumsum[-s+1:]
+        scaled_a_squarecumsum = a_squarecumsum[na-1] - a_squarecumsum[-s+1:]
+        scaled_b_squarecumsum = b_squarecumsum[na-1] - b_squarecumsum[-s+1:]
+        
+        scaled_prod_cumsum[scaled_prod_cumsum == 0 ] = 1
+        scaled_a_squarecumsum[scaled_a_squarecumsum == 0 ] = 1
+        scaled_b_squarecumsum[scaled_b_squarecumsum == 0 ] = 1
+
+        cc[-s+1:] *= (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
 
     return cc**(1./nscale)
+
 
 def stream_cf_plot(stream,cf):
     
@@ -376,14 +382,71 @@ def stream_cf_plot(stream,cf):
     return ax
 
 
+class StLt():
+    # short long terms 
+    def __init__(self):
+        pass
 
+    def RMS(self):
+        # return rec rms
 
+    def Average(self):
+        # return rec average
 
+class LtRt():
+    # right left terms multiplexing
+    def __init__(self):
+        pass
 
+    def RMS(self):
+        # return rec rms
 
+    def Average(self):
+        # return rec average
 
+class Components():
+    # components terms multiplexing
+    def __init__(self):
+        pass
 
+    def RMS(self):
+        # return rec rms
 
+    def Average(self):
+        # return rec average
 
+class Ratio():
+    # ratio proc
+    def __init__(self):
+        self.StLt = StLt(self)
+        self.LtRt = LtRt(self)
+        self.Components = Components(self)
+        # return ratio
 
+class Correlate():
+    # ratio proc
+    def __init__(self):
+        self.StLt = StLt(self)
+        self.LtRt = LtRt(self)
+        self.Components = Components(self)
+        # return correlation
+
+class Multiscale():
+    # scaling
+    def __init__(self):
+        self.Ratio = StLt(self)
+        self.Correlation = LtRt(self)
+        # return muliscaled proc
+
+class Derivate():
+    # post-proc
+    def __init__(self):
+        self.Multiscale = Multiscale(self)
+        # return derivative
+
+class Kurtosis():
+    # post-proc
+    def __init__(self):
+        self.Multiscale = Multiscale(self)
+        # return Kurtosis
 
