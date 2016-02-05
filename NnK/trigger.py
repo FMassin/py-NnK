@@ -86,6 +86,27 @@ def streamdatadim(a):
     return (t+1, nmax)
 
 
+def trace2stream(trace_or_stream):
+
+    if isinstance(trace_or_stream, Stream):
+        newstream = trace_or_stream
+    elif isinstance(trace_or_stream, Trace):
+        newstream = Stream()
+        newstream.append(trace_or_stream)
+    else:
+        try:
+            dims = trace_or_stream.shape
+            if len(dims) == 3:
+                newstream = trace_or_stream
+            elif len(dims) == 2  :
+                newstream = np.zeros(( 1, dims[0], dims[1] )) 
+                newstream[0] = trace_or_stream
+        except:
+            raise Exception('I/O dimensions: only obspy.Stream or obspy.Trace input supported.')
+
+    return newstream, trace_or_stream 
+
+
 def recursive(a, scales=None, operation=None):
     """
     recursive (sum|average|rms) performs calculation by 
@@ -106,10 +127,12 @@ def recursive(a, scales=None, operation=None):
     # 1) Iterate on channels
     # 2) Pre calculate the common part of all scales
     # 3) Perform channel calculation 
+        
+    # data: obspy.stream (|obspy.trace ####################################################################### TODO)
+    # si c'est une trace revoyer un truc en (1, nscale, npoints)
+    # si c'est un stream revoyer un truc en (nchan, nscale, npoints)
 
-    import copy
-    from obspy.core.stream import Stream
-    import numpy as np
+    a, input_a = trace2stream(a)
     
     # Initialize multiscale if undefined
     if operation is None:
@@ -135,7 +158,7 @@ def recursive(a, scales=None, operation=None):
             if (operation is 'average') or  (operation is 'sum'):  
                 # The cumulative sum can be exploited to calculate a moving average (the
                 # cumsum function is quite efficient)
-                csqr = np.cumsum(tr.detrend('linear').data)        
+                csqr = np.cumsum(np.abs(tr.detrend('linear').data))        
 
             # Convert to float
             csqr = np.require(csqr, dtype=np.float)
@@ -154,6 +177,7 @@ def recursive(a, scales=None, operation=None):
                             timeseries[t][n][:] /= s                    
 
                         # Pad with modified scale definitions
+                        # (vectorization ####################################################################### TODO)
                         timeseries[t][n][0] = csqr[0]
                         for x in range(1, s-1):
                             timeseries[t][n][x] = (csqr[x] - csqr[0])
@@ -349,10 +373,8 @@ def correlationcoef(a, b, scales=None, maxscales=None):
     return cc**(1./nscale)
 
 
-def stream_cf_plot(stream,cf):
+def stream_processor_plot(stream,cf):
     
-    fontsize = 12
-
     fig = plt.figure()#figsize=plt.figaspect(1.2))
     ax = fig.gca() 
     (tmax,nmax) = streamdatadim(stream)
@@ -361,92 +383,221 @@ def stream_cf_plot(stream,cf):
         df = trace.stats.sampling_rate
         npts = trace.stats.npts
         time = np.arange(npts, dtype=np.float32) / df
-        ## plot
-        #fig.suptitle(trace.id)
-        #ax.annotate(trace.id, xy=(0, t), xytext=(0, t+1./6.))
-        ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), 'k')
-        #ax.plot(time, t+stream_white[t].data/(2*np.max(np.abs(trace.data))), 'g')
-        ax.plot(time, t-.5+cf[t][0:npts]/(np.max(np.abs(cf[t][0:npts]))), 'r') # 
         labels[t] = trace.id
+        ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), 'k')
+        ax.plot(time, t-.5+cf[t][0:npts]/(np.max(np.abs(cf[t][0:npts]))), 'r')         
 
     plt.yticks(np.arange(0, tmax, 1.0))
     ax.set_yticklabels(labels)
-
-
-    ax.set_xlabel('Time (s)', fontsize=fontsize)
-    ax.set_ylabel('Channel', fontsize=fontsize)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Channel')
     plt.axis('tight')
-    plt.ylim( -0.5, t+0.5 ) 
+    #plt.ylim( -0.5, t+0.5 ) 
     plt.tight_layout()
 
     return ax
 
 
-class StLt():
-    # short long terms 
-    def __init__(self):
-        pass
+def stream_multiplexor_plot(stream,cf):
+    
+    fig = plt.figure()#figsize=plt.figaspect(1.2))
+    ax = fig.gca() 
+    (tmax,nmax) = streamdatadim(stream)
+    labels = ["" for x in range(tmax)]
+    for t, trace in enumerate(stream):
+        df = trace.stats.sampling_rate
+        npts = trace.stats.npts
+        time = np.arange(npts, dtype=np.float32) / df
+        labels[t] = trace.id
+        ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), 'k')
 
-    def RMS(self):
-        # return rec rms
+        for c, channel in enumerate(cf[0][t]):
+            if np.sum(cf[1][t][c][0:npts]) != 0 :
+                ax.plot(time, t-.5+cf[0][t][c][0:npts]/(np.max(np.abs(cf[0][t][c][0:npts]))), 'r')        
+                ax.plot(time, t-.5+cf[1][t][c][0:npts]/(np.max(np.abs(cf[1][t][c][0:npts]))), 'b')       
 
-    def Average(self):
-        # return rec average
+    plt.yticks(np.arange(0, tmax, 1.0))
+    ax.set_yticklabels(labels)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Channel')
+    plt.axis('tight')
+    #plt.ylim( -0.5, t+0.5 ) 
+    plt.tight_layout()
 
-class LtRt():
-    # right left terms multiplexing
-    def __init__(self):
-        pass
+    return ax
 
-    def RMS(self):
-        # return rec rms
 
-    def Average(self):
-        # return rec average
+class Ratio(object):
+    def __init__(self, pre_processed_data, data=None):
 
-class Components():
-    # components terms multiplexing
-    def __init__(self):
-        pass
+        self.data = data
+        self.pre_processed_data = pre_processed_data[0]
+        self.enhancement_factor = pre_processed_data[1]
 
-    def RMS(self):
-        # return rec rms
+    def output(self):
 
-    def Average(self):
-        # return rec average
+        dtiny = np.finfo(0.0).tiny
+        (tmax,nmax) = streamdatadim(self.data)
+        cf = np.ones(( tmax, nmax ))  
 
-class Ratio():
-    # ratio proc
-    def __init__(self):
-        self.StLt = StLt(self)
-        self.LtRt = LtRt(self)
-        self.Components = Components(self)
-        # return ratio
+        for station_i, station_data in enumerate(self.pre_processed_data[0]):
+            for enhancement_i, enhancement_data in enumerate(self.pre_processed_data[0][station_i]):
 
-class Correlate():
-    # ratio proc
-    def __init__(self):
-        self.StLt = StLt(self)
-        self.LtRt = LtRt(self)
-        self.Components = Components(self)
-        # return correlation
+                buf = self.pre_processed_data[0][station_i][enhancement_i] 
+                buf /= self.pre_processed_data[1][station_i][enhancement_i]
+                # no ~zeros
+                buf[buf < dtiny] = dtiny
+                # product enhancement (no nans, no infs)
+                cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
 
-class Multiscale():
-    # scaling
-    def __init__(self):
-        self.Ratio = StLt(self)
-        self.Correlation = LtRt(self)
-        # return muliscaled proc
+            # rescaling 
+            cf[station_i] **= (1./self.enhancement_factor) 
 
-class Derivate():
-    # post-proc
-    def __init__(self):
-        self.Multiscale = Multiscale(self)
-        # return derivative
+        # ###################################################################################### why is this not ok ??????
+        # ratio = self.pre_processed_data[0] / self.pre_processed_data[1]
+        
+        # # no ~zeros
+        # ratio[ ratio < dtiny ] = dtiny
+        # # no nans, no infs
+        # ratio[ ~np.isfinite(ratio) ] = 1.
 
-class Kurtosis():
-    # post-proc
-    def __init__(self):
-        self.Multiscale = Multiscale(self)
-        # return Kurtosis
+        # # returns product enhanced and rescaled
+        # cf = (np.prod(ratio, axis=1))**(1/self.enhancement_factor)
+
+        return cf
+
+    def plot(self):
+
+        return stream_processor_plot( self.data, self.output()  )
+
+
+class ShortLongTerms(object):
+    # Multiplex the data after pre-process
+
+    def __init__(self, data, windowlengths=None, statistic='average'): 
+
+        # get (station, scale, sample) array any way (for Trace & Stream inputs)
+        self.data, self.original_data = trace2stream(data)
+
+        # pre_processed: array of pre-processed data
+        # statistic: sum|average|rms
+        # windowlengths: list
+        self.pre_processed, self.windowlengths = recursive(data, windowlengths, statistic) 
+
+        # stores input parameters
+        self.statistic = statistic
+
+        self.ratio = Ratio(self.output(), self.data)
+
+    def output(self):
+        # Multiplex the pre-processed data
+        # return cf as (prod( STA/LTA ))^1/N
+    
+        # Initialize results at the minimal size
+        (tmax,nmax) = streamdatadim(self.data)
+        nscale = len(self.windowlengths)
+        channels = np.ones(( 2, tmax, nscale**2, nmax ))  # np.zeros(( tmax, nmax )) 
+        dtiny = np.finfo(0.0).tiny
+        
+        # along stations
+        for station_i, station_data in enumerate(self.pre_processed):
+            n_enhancements = -1
+            # along scales
+            for smallscale_i, smallscale_data in enumerate(station_data):
+                for bigscale_i, bigscale_data in enumerate(station_data):
+
+                    if self.windowlengths[smallscale_i] < self.windowlengths[bigscale_i] :
+
+                        n_enhancements += 1
+                        # no divide by ~zeros
+                        bigscale_data[bigscale_data < dtiny] = dtiny
+
+                        channels[0][station_i][n_enhancements] = smallscale_data
+                        channels[1][station_i][n_enhancements] = bigscale_data
+
+            #             buf = smallscale_data / bigscale_data
+            #             # no ~zeros
+            #             buf[buf < dtiny] = dtiny
+            #             # product enhancement (no nans, no infs)
+            #             cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
+            # # rescaling 
+            # cf[station_i] **= (1./n_enhancements) 
+
+        for i in range(n_enhancements+1, nscale**2):
+            channels = np.delete(channels, n_enhancements+1, axis=2)
+
+        return channels, n_enhancements+1
+
+
+    def plot(self):
+        channels, n = self.output() 
+        return stream_multiplexor_plot( self.data, channels )
+
+
+
+
+        
+
+
+# class Ratio(object):
+#     # Processor, returns characteristic function using ratio operator 
+    
+#     def __init__(self, data, windowlengths=None, statistic='average'):
+        
+#         self.data = data
+
+#         # add multiplexor
+#         self.ShortLongTerms = ShortLongTerms( data, windowlengths,  statistic )
+
+#     def cf(self):
+#         return self.ShortLongTerms.cf()
+
+#     def plot(self):
+#         return stream_cf_plot( self.data, self.cf() )
+
+#     # def RightLeftTerms(self):
+#     #     # Multiplex the pre-processed data
+#     #     # return cf as (prod( RT/LT ))^1/N
+#     #     cf = []
+#     #     return cf
+
+#     # def MultiComponents(self):
+#     #     # Multiplex the pre-processed data
+#     #     # return cf as (prod( ZT/HT ))^1/N
+#     #     cf = []
+#     #     return cf
+
+#     # def Plot(self):
+        
+        
+
+
+# class Correlate():
+#     # ratio proc
+#     def __init__(self):
+#     def StLt(self):
+#     def LtRt(self):
+#     def Components(self):
+#         # return correlation
+
+# class Multiscale():
+#     # scaling
+#     def __init__(self)::
+#     def StLt(self):
+#     def LtRt(self):
+#         # return muliscaled proc
+
+# class Derivate():
+#     # post-proc
+#     def __init__(self):
+#         pass
+#     def Multiscale(self):
+#         # return derivative
+
+# class Kurtosis():
+#     # post-proc
+#     def __init__(self):
+#         pass
+#     def Multiscale(self):
+#         # return Kurtosis
 
