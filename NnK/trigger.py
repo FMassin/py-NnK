@@ -108,60 +108,6 @@ def trace2stream(trace_or_stream):
     return newstream, trace_or_stream 
 
 
-def stream_processor_plot(stream,cf):
-    
-    fig = plt.figure()#figsize=plt.figaspect(1.2))
-    ax = fig.gca() 
-    (tmax,nmax) = streamdatadim(stream)
-    labels = ["" for x in range(tmax)]
-    for t, trace in enumerate(stream):
-        df = trace.stats.sampling_rate
-        npts = trace.stats.npts
-        time = np.arange(npts, dtype=np.float32) / df
-        labels[t] = trace.id + '(%3.1e)' % (np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])) )
-        ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), '0.5')
-        ax.plot(time, t-.5+(cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])) ), 'g')         
-
-    plt.yticks(np.arange(0, tmax, 1.0))
-    ax.set_yticklabels(labels)
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Channel')
-    plt.axis('tight')
-    #plt.ylim( -0.5, t+0.5 ) 
-    plt.tight_layout()
-
-    return ax
-
-
-def stream_multiplexor_plot(stream,cf):
-    
-    fig = plt.figure()#figsize=plt.figaspect(1.2))
-    ax = fig.gca() 
-    (tmax,nmax) = streamdatadim(stream)
-    labels = ["" for x in range(tmax)]
-    for t, trace in enumerate(stream):
-        df = trace.stats.sampling_rate
-        npts = trace.stats.npts
-        time = np.arange(npts, dtype=np.float32) / df
-        labels[t] = trace.id
-        ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), 'k')
-
-        for c, channel in enumerate(cf[0][t]):
-            if np.sum(cf[1][t][c][0:npts]) != 0 :
-                ax.plot(time, t-.5+cf[0][t][c][0:npts]/(np.max(np.abs(cf[0][t][c][0:npts]))), 'r')        
-                ax.plot(time, t-.5+cf[1][t][c][0:npts]/(np.max(np.abs(cf[1][t][c][0:npts]))), 'b')       
-
-    plt.yticks(np.arange(0, tmax, 1.0))
-    ax.set_yticklabels(labels)
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Channel')
-    plt.axis('tight')
-    #plt.ylim( -0.5, t+0.5 ) 
-    plt.tight_layout()
-
-    return ax
-
-
 def recursive(a, scales=None, operation=None, maxscale=None):
     """
     recursive (sum|average|rms) performs calculation by 
@@ -297,6 +243,64 @@ def correlationcoef(a, b, scales=None, maxscale=None):
     return cc**(1./nscale)
 
 
+def stream_processor_plot(stream,cf):
+    
+    fig = plt.figure()#figsize=plt.figaspect(1.2))
+    ax = fig.gca() 
+    (tmax,nmax) = streamdatadim(stream)
+    labels = ["" for x in range(tmax)]
+    for t, trace in enumerate(stream):
+        df = trace.stats.sampling_rate
+        npts = trace.stats.npts
+        time = np.arange(npts, dtype=np.float32) / df
+        labels[t] = trace.id + '(%3.1e)' % (np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])) )
+        ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), '0.5')
+        ax.plot(time, t-.5+(cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])) ), 'g')         
+
+    plt.yticks(np.arange(0, tmax, 1.0))
+    ax.set_yticklabels(labels)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Channel')
+    plt.axis('tight')
+    #plt.ylim( -0.5, t+0.5 ) 
+    plt.tight_layout()
+
+    return ax
+
+
+def stream_multiplexor_plot(stream,cf):
+    
+    fig = plt.figure()#figsize=plt.figaspect(1.2))
+    ax = fig.gca() 
+    (tmax,nmax) = streamdatadim(stream)
+    labels = ["" for x in range(tmax)]
+    for t, trace in enumerate(stream):
+        df = trace.stats.sampling_rate
+        npts = trace.stats.npts
+        time = np.arange(npts, dtype=np.float32) / df
+        labels[t] = trace.id
+        ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), 'k')
+
+        for c, channel in enumerate(cf[0][t]):
+            if np.sum(cf[1][t][c][0:npts]) != 0 :
+                if len(cf) > 0 :
+                	ax.plot(time, t-.5+cf[0][t][c][0:npts]/(np.nanmax(np.abs(cf[0][t][c][0:npts]))), 'r')        
+                if len(cf) > 1 :
+                	ax.plot(time, t-.5+cf[1][t][c][0:npts]/(np.nanmax(np.abs(cf[1][t][c][0:npts]))), 'b')        
+                if len(cf) > 2 :
+                	ax.plot(time, t-.5+cf[2][t][c][0:npts]/(np.nanmax(np.abs(cf[1][t][c][0:npts]))), 'g')        
+
+    plt.yticks(np.arange(0, tmax, 1.0))
+    ax.set_yticklabels(labels)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Channel')
+    plt.axis('tight')
+    #plt.ylim( -0.5, t+0.5 ) 
+    plt.tight_layout()
+
+    return ax
+
+
 class Ratio(object):
     def __init__(self, pre_processed_data, data=None):
 
@@ -345,7 +349,7 @@ class Ratio(object):
 
 
 class Correlate(object):
-    def __init__(self, pre_processed_data, data=None, windowlengths=None):
+    def __init__(self, pre_processed_data, data=None, scales=None):
 
         self.data = data
         self.pre_processed_data = pre_processed_data[0]
@@ -363,18 +367,20 @@ class Correlate(object):
 
                 for channel_i in range(1,len(self.pre_processed_data)) :
 
-                    buf = correlationcoef( a = self.pre_processed_data[0][station_i][enhancement_i], \
-                        b = self.pre_processed_data[channel_i][station_i][enhancement_i], \
-                        maxscale = self.l_windows[0][enhancement_i])
-                    # no ~zeros
-                    buf[buf < dtiny] = dtiny
+                	if np.nansum(np.abs( self.pre_processed_data[channel_i][station_i][enhancement_i] )) > 0:
 
-                    # product enhancement (no nans, no infs)
-                    cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
+	                    buf = correlationcoef( a = self.pre_processed_data[0][station_i][enhancement_i], \
+	                        b = self.pre_processed_data[channel_i][station_i][enhancement_i], \
+	                        maxscale = self.l_windows[0][enhancement_i])
+	                    # no ~zeros
+	                    buf[buf < dtiny] = dtiny
 
-                    # if no signal
-                    cf[station_i][ np.isnan(self.pre_processed_data[0][station_i][enhancement_i]) ] = np.nan
-                    cf[station_i][ np.isnan(self.pre_processed_data[channel_i][station_i][enhancement_i]) ] = np.nan
+	                    # product enhancement (no nans, no infs)
+	                    cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
+
+	                    # if no signal
+	                    cf[station_i][ np.isnan(self.pre_processed_data[0][station_i][enhancement_i]) ] = np.nan
+	                    cf[station_i][ np.isnan(self.pre_processed_data[channel_i][station_i][enhancement_i]) ] = np.nan
 
 
         return 1-(cf**(1./self.enhancement_factor))
@@ -439,7 +445,7 @@ class ShortLongTerms(object):
         return channels, n_enhancements+1, l_windows
 
     def plot(self):
-        channels, n, l = self.output() 
+        channels, n, l = self.output()
         return stream_multiplexor_plot( self.data, channels )
 
 
@@ -505,6 +511,41 @@ class leftRightTerms(object):
         channels, n, l = self.output() 
         return stream_multiplexor_plot( self.data, channels )
 
+def streamselectindex(data, delta=None, id=None, network=None, station=None, location=None, channel=None, starttime=None, endtime=None, npts=None):
+	
+	(tmax,nmax) = streamdatadim(data)
+	indexes = np.asarray([])
+	for station_j in range(tmax):
+		if delta is not None:
+			if delta != (data[station_j]).stats.delta :
+				continue
+		if starttime is not None:
+			if starttime != (data[station_j]).stats.starttime :
+				continue
+		if endtime is not None:
+			if endtime != (data[station_j]).stats.endtime :
+				continue
+		if npts is not None:
+			if npts != (data[station_j]).stats.npts :
+				continue
+		if id is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.id, id) :
+				continue
+		if network is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.network, network) :
+				continue
+		if station is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.station, station) :
+				continue
+		if location is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.location, location) :
+				continue
+		if channel is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.channel, channel) :
+				continue
+		indexes = np.append(indexes, station_j)
+
+	return indexes
 
 class Component(object):
     # Multiplex the data after pre-process
@@ -537,37 +578,40 @@ class Component(object):
         dtiny = np.finfo(0.0).tiny
         
         # along stations
-        for station_i, station_data in enumerate(self.pre_processed):            
+        for station_i in range(tmax):
+			delta = (self.data[station_i]).stats.delta
+			net = (self.data[station_i]).stats.network
+			sta = (self.data[station_i]).stats.station
+			loc = (self.data[station_i]).stats.location
+			chan = (self.data[station_i]).stats.channel
+			stime = (self.data[station_i]).stats.starttime
+			etime = (self.data[station_i]).stats.endtime
+			npts = (self.data[station_i]).stats.npts
+			chan = chan[:-1] + '*'
+			n_samechannel=-1
+			#print station_i, ':',  delta, net, sta, loc, chan, stime, etime, npts
 
-            npts = (self.data[station_i]).stats.npts
-            net = (self.data[station_i]).stats.network
-            sta = (self.data[station_i]).stats.station
-            loc = (self.data[station_i]).stats.location
-            chan = (self.data[station_i]).stats.channel
+			print streamselectindex(self.data, delta=delta, network=net, station=sta, location=loc, channel=chan, starttime=stime)
+			
+			for station_j in range(tmax):
+				delta_p = (self.data[station_j]).stats.delta
+				net_p = (self.data[station_j]).stats.network
+				sta_p = (self.data[station_j]).stats.station
+				loc_p = (self.data[station_j]).stats.location
+				chan_p = (self.data[station_j]).stats.channel
+				stime_p = (self.data[station_j]).stats.starttime
+				etime_p = (self.data[station_j]).stats.endtime
+				npts_p = (self.data[station_j]).stats.npts
+				#print '#', station_j, ':',  delta_p, net_p, sta_p, loc_p, chan_p, stime_p, etime_p, npts_p
 
-            for station_j, otherstation_data in enumerate(self.pre_processed):
+				if delta_p == delta and fnmatch.fnmatch(net_p, net) and fnmatch.fnmatch(sta_p, sta) and fnmatch.fnmatch(loc_p, loc) and fnmatch.fnmatch(chan_p, chan) and stime_p == stime :
+				    n_samechannel += 1
 
-                print (self.data[station_j]).stats.network, (self.data[station_j]).stats.station, (self.data[station_j]).stats.location, (self.data[station_j]).stats.channel #net, sta, loc, chan[:-1]+'*' #(self.data[station_j]).id
-
-                if fnmatch.fnmatch(net, (self.data[station_j]).stats.network) and \
-                    fnmatch.fnmatch(sta, (self.data[station_j]).stats.station) and \
-                    fnmatch.fnmatch(loc, (self.data[station_j]).stats.location) and \
-                    fnmatch.fnmatch(chan[:-1]+'*', (self.data[station_j]).stats.channel) :
-
-                    # along scales
-                    n_enhancements = -1
-                    for scale_i, scale_data in enumerate(otherstation_data):
-
-                        n_enhancements += 1
-
-                        l_windows[station_j][n_enhancements] = self.scales[scale_i]
-                        channels[station_j][station_i][n_enhancements] = scale_data
-
-        for i in range(n_enhancements+1, nscale**2):
-            channels = np.delete(channels, n_enhancements+1, axis=2)
-            l_windows = np.delete(l_windows, n_enhancements+1, axis=1)
-
-        return channels, n_enhancements+1, l_windows
+				    #print '## match', station_j, ':',  delta_p, net_p, sta_p, loc_p, chan_p, stime_p, etime_p, npts_p 
+				    for scale_i in range(nscale):
+						l_windows[n_samechannel][scale_i] = self.scales[scale_i]
+						channels[n_samechannel][station_i][scale_i] = self.pre_processed[station_j][scale_i]
+        return channels, nscale+1, l_windows
 
     def plot(self):
         channels, n, l = self.output() 
