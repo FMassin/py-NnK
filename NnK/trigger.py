@@ -108,6 +108,55 @@ def trace2stream(trace_or_stream):
 	return newstream, trace_or_stream 
 
 
+def stream_indices(data, delta=None, id=None, network=None, station=None, location=None, channel=None, starttime=None, endtime=None, npts=None, maxendtime=None, minstarttime=None, reftime=None):
+	
+	(tmax,nmax) = streamdatadim(data)
+	trace_indexes = np.asarray([])
+	data_indexes = np.asarray([]) 
+	for station_j in range(tmax):
+		if delta is not None:
+			if delta != (data[station_j]).stats.delta :
+				continue
+		if starttime is not None:
+			if starttime != (data[station_j]).stats.starttime :
+				continue
+		if endtime is not None:
+			if endtime != (data[station_j]).stats.endtime :
+				continue
+		if npts is not None:
+			if npts != (data[station_j]).stats.npts :
+				continue
+		if id is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.id, id) :
+				continue
+		if network is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.network, network) :
+				continue
+		if station is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.station, station) :
+				continue
+		if location is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.location, location) :
+				continue
+		if channel is not None:
+			if not fnmatch.fnmatch((data[station_j]).stats.channel, channel) :
+				continue
+		
+		if maxendtime is not None:
+			if maxendtime < (data[station_j]).stats.starttime :
+				continue
+		if minstarttime is not None:
+			if minstarttime > (data[station_j]).stats.endtime :
+				continue
+		
+		if reftime is not None:
+			data_indexes = np.append(data_indexes, ( reftime - (data[station_j]).stats.starttime ) / (data[station_j]).stats.delta )
+
+		trace_indexes = np.append(trace_indexes, station_j)
+
+	return trace_indexes.astype(int), data_indexes.astype(int)
+
+
 def recursive(a, scales=None, operation=None, maxscale=None):
 	"""
 	recursive (sum|average|rms) performs calculation by 
@@ -156,15 +205,19 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 		if not tr.stats.channel == 'YH':
 			npts = tr.stats.npts
 
+			apod_b = (np.require(range(100) , dtype=np.float) / 100.)**0.5
+			apod = np.ones((tr.data).size)
+			apod[0:100] *= apod_b
+			apod[npts-100:] *= apod_b[::-1]
+
 			if operation is 'rms':                  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum(tr.detrend('linear').data ** 2)
-
+				csqr = np.cumsum( ( tr.detrend('linear').data * apod )** 2 )
 			elif (operation is 'average') or  (operation is 'sum'):  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum(np.abs(tr.detrend('linear').data))  
+				csqr = np.cumsum(np.abs(( tr.detrend('linear').data * apod )))  
 			# Convert to float
 			csqr = np.require(csqr, dtype=np.float)
 			for n, s in enumerate(scales) : # Avoid scales when too wide for the current channel
@@ -179,7 +232,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 						# Pad with modified scale definitions(vectorization ###################################### TODO)
 						timeseries[t][n][0] = csqr[0]
 						for x in range(1, s):
-							timeseries[t][n][x] = (csqr[x] - csqr[0])
+							timeseries[t][n][x] = (csqr[x] - csqr[0]) 
 							# for average and rms only
 							if operation is not 'sum':
 								timeseries[t][n][x] = timeseries[t][n][x]/(1+x)
@@ -188,7 +241,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 					idx = timeseries[t][n] < dtiny
 					timeseries[t][n][idx] = dtiny 
 					# Avoid zeros
-					timeseries[t][n][npts:] = timeseries[t][n][npts-1]
+					#timeseries[t][n][npts:] = timeseries[t][n][npts-1]
 	
 	return timeseries, scales 
 
@@ -200,7 +253,7 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 		maxscale = na
 
 	if scales is None:
-		scales = [2**i for i in range(6,999) if ((2**i <= (maxscale)) and (2**i <= (na - 2**i)))]
+		scales = [2**i for i in range(4,999) if ((2**i <= (maxscale)) and (2**i <= (na - 2**i)))]
 	
 	scales = np.require(scales, dtype=np.int) 
 	scales = np.asarray(scales)
@@ -217,9 +270,9 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 		scaled_a_squarecumsum = a_squarecumsum[s:] - a_squarecumsum[:-s]
 		scaled_b_squarecumsum = b_squarecumsum[s:] - b_squarecumsum[:-s]
 		
-		scaled_prod_cumsum[scaled_prod_cumsum == 0 ] = 1
-		scaled_a_squarecumsum[scaled_a_squarecumsum == 0 ] = 1
-		scaled_b_squarecumsum[scaled_b_squarecumsum == 0 ] = 1
+		# scaled_prod_cumsum[scaled_prod_cumsum == 0 ] = 1
+		# scaled_a_squarecumsum[scaled_a_squarecumsum == 0 ] = 1
+		# scaled_b_squarecumsum[scaled_b_squarecumsum == 0 ] = 1
 
 		cc[s:] *= (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
 
@@ -228,11 +281,11 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 		scaled_a_squarecumsum = a_squarecumsum[:s] - a_squarecumsum[0]
 		scaled_b_squarecumsum = b_squarecumsum[:s] - b_squarecumsum[0]
 		
-		scaled_prod_cumsum[scaled_prod_cumsum == 0 ] = 1
-		scaled_a_squarecumsum[scaled_a_squarecumsum == 0 ] = 1
-		scaled_b_squarecumsum[scaled_b_squarecumsum == 0 ] = 1
+		# scaled_prod_cumsum[scaled_prod_cumsum == 0 ] = 1
+		# scaled_a_squarecumsum[scaled_a_squarecumsum == 0 ] = 1
+		# scaled_b_squarecumsum[scaled_b_squarecumsum == 0 ] = 1
 
-		cc[:s] *= 1#(scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
+		cc[:s] *= 1# (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
 
 	return cc**(1./nscale)
 
@@ -247,9 +300,9 @@ def stream_processor_plot(stream,cf):
 		df = trace.stats.sampling_rate
 		npts = trace.stats.npts
 		time = np.arange(npts, dtype=np.float32) / df
-		labels[t] = trace.id + '(%3.1e)' % (np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])) )
+		labels[t] = trace.id + '(%3.1e)' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
 		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), '0.5')
-		ax.plot(time, t-.5+(cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])) ), 'g')         
+		ax.plot(time, t-.5+ (cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ), 'g')         
 
 	plt.yticks(np.arange(0, tmax, 1.0))
 	ax.set_yticklabels(labels)
@@ -317,6 +370,7 @@ class Ratio(object):
 					buf /= self.pre_processed_data[channel_i][station_i][enhancement_i]
 					# no ~zeros
 					buf[buf < dtiny] = dtiny
+					buf[0:100] = np.nan
 					# product enhancement (no nans, no infs)
 					cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
 
@@ -389,12 +443,12 @@ class ShortLongTerms(object):
 	def __init__(self, data, scales=None, statistic='average', maxscale=None): 
 
 		# get (station, scale, sample) array any way (for Trace & Stream inputs)
-		self.data, self.original_data = trace2stream(data)
+		self.data, self.original_data = trace2stream(data.copy())
 
 		# pre_processed: array of pre-processed data
 		# statistic: sum|average|rms
 		# scales: list
-		self.pre_processed, self.scales = recursive(data, scales, statistic, maxscale) 
+		self.pre_processed, self.scales = recursive(self.data, scales, statistic, maxscale) 
 
 		# stores input parameters
 		self.statistic = statistic
@@ -449,12 +503,12 @@ class leftRightTerms(object):
 	def __init__(self, data, scales=None, statistic='rms', maxscale=None): 
 
 		# get (station, scale, sample) array any way (for Trace & Stream inputs)
-		self.data, self.original_data = trace2stream(data)
+		self.data, self.original_data = trace2stream(data.copy())
 
 		# pre_processed: array of pre-processed data
 		# statistic: sum|average|rms
 		# scales: list
-		self.pre_processed, self.scales = recursive(data, scales, statistic, maxscale) 
+		self.pre_processed, self.scales = recursive(self.data, scales, statistic, maxscale) 
 
 		# stores input parameters
 		self.statistic = statistic
@@ -489,11 +543,19 @@ class leftRightTerms(object):
 					# no divide by ~zeros
 					scale_data[scale_data < dtiny] = dtiny
 
-					channels[1][station_i][n_enhancements][:-1*(self.scales[scale_i])] = scale_data[:-1*(self.scales[scale_i])]
+					channels[1][station_i][n_enhancements] = scale_data
 					channels[0][station_i][n_enhancements][:-1*(self.scales[scale_i])] = scale_data[self.scales[scale_i]:]
 
-					channels[0][station_i][n_enhancements][ (npts-self.scales[scale_i]): ] = np.nan
-					channels[1][station_i][n_enhancements][ (npts-self.scales[scale_i]): ] = np.nan
+					channels[0][station_i][n_enhancements][npts:] = np.nan
+					channels[1][station_i][n_enhancements][npts:] = np.nan
+
+					# apod = (np.require( range(self.scales[scale_i]) , dtype=np.float) / np.require(self.scales[scale_i], dtype=np.float))**0.5
+					# channels[0][station_i][scale_i][:self.scales[scale_i]] *= apod
+					# channels[1][station_i][scale_i][:self.scales[scale_i]] *= apod
+
+					# channels[0][station_i][n_enhancements][ (npts-2*self.scales[scale_i]):(npts-self.scales[scale_i]) ] *= apod[::-1]
+					# channels[1][station_i][n_enhancements][ (npts-self.scales[scale_i]):npts ] *= apod[::-1]
+
 
 		for i in range(n_enhancements+1, nscale**2):
 			channels = np.delete(channels, n_enhancements+1, axis=2)
@@ -505,53 +567,6 @@ class leftRightTerms(object):
 		channels, n, l = self.output() 
 		return stream_multiplexor_plot( self.data, channels )
 
-def streamselectindex(data, delta=None, id=None, network=None, station=None, location=None, channel=None, starttime=None, endtime=None, npts=None, maxendtime=None, minstarttime=None, reftime=None):
-	
-	(tmax,nmax) = streamdatadim(data)
-	trace_indexes = np.asarray([])
-	data_indexes = np.asarray([]) 
-	for station_j in range(tmax):
-		if delta is not None:
-			if delta != (data[station_j]).stats.delta :
-				continue
-		if starttime is not None:
-			if starttime != (data[station_j]).stats.starttime :
-				continue
-		if endtime is not None:
-			if endtime != (data[station_j]).stats.endtime :
-				continue
-		if npts is not None:
-			if npts != (data[station_j]).stats.npts :
-				continue
-		if id is not None:
-			if not fnmatch.fnmatch((data[station_j]).stats.id, id) :
-				continue
-		if network is not None:
-			if not fnmatch.fnmatch((data[station_j]).stats.network, network) :
-				continue
-		if station is not None:
-			if not fnmatch.fnmatch((data[station_j]).stats.station, station) :
-				continue
-		if location is not None:
-			if not fnmatch.fnmatch((data[station_j]).stats.location, location) :
-				continue
-		if channel is not None:
-			if not fnmatch.fnmatch((data[station_j]).stats.channel, channel) :
-				continue
-		
-		if maxendtime is not None:
-			if maxendtime < (data[station_j]).stats.starttime :
-				continue
-		if minstarttime is not None:
-			if minstarttime > (data[station_j]).stats.endtime :
-				continue
-		
-		if reftime is not None:
-			data_indexes = np.append(data_indexes, ( reftime - (data[station_j]).stats.starttime ) / (data[station_j]).stats.delta )
-
-		trace_indexes = np.append(trace_indexes, station_j)
-
-	return trace_indexes.astype(int), data_indexes.astype(int)
 
 class Component(object):
 	# Multiplex the data after pre-process
@@ -559,12 +574,12 @@ class Component(object):
 	def __init__(self, data, scales=None, statistic='rms', maxscale=None): 
 
 		# get (station, scale, sample) array any way (for Trace & Stream inputs)
-		self.data, self.original_data = trace2stream(data)
+		self.data, self.original_data = trace2stream(data.copy())
 
 		# pre_processed: array of pre-processed data
 		# statistic: sum|average|rms
 		# scales: list
-		self.pre_processed, self.scales = recursive(data, scales, statistic, maxscale) 
+		self.pre_processed, self.scales = recursive(self.data, scales, statistic, maxscale) 
 
 		# stores input parameters
 		self.statistic = statistic
@@ -628,7 +643,7 @@ class Component(object):
 			ZNE_di = np.asarray([])
 			for i in range(len(ZNE)):
 				#print ZNE_sta[i], ZNE[i]
-				i, di = streamselectindex(self.data, delta=delta, network=net, station=ZNE_sta[i], location=loc, channel=ZNE[i], minstarttime=stime, maxendtime=etime, reftime=stime )
+				i, di = stream_indices(self.data, delta=delta, network=net, station=ZNE_sta[i], location=loc, channel=ZNE[i], minstarttime=stime, maxendtime=etime, reftime=stime )
 				ZNE_i = np.append(ZNE_i, i )
 				ZNE_di = np.append(ZNE_di, di )
 
@@ -651,8 +666,8 @@ class Component(object):
 				for scale_i in range(nscale):
 					l_windows[i][scale_i] = self.scales[scale_i]
 					channels[i][station_i][scale_i][s[0]:e[0]] = self.pre_processed[ZNE_i[i]][scale_i][s[1]:e[1]]
-					channels[i][station_i][scale_i][:s[0]]   = self.pre_processed[ZNE_i[i]][scale_i][s[1]+1]
-					channels[i][station_i][scale_i][e[0]:]   = self.pre_processed[ZNE_i[i]][scale_i][e[1]-1]
+					# channels[i][station_i][scale_i][:s[0]]   = self.pre_processed[ZNE_i[i]][scale_i][s[1]+1]
+					# channels[i][station_i][scale_i][e[0]:]   = self.pre_processed[ZNE_i[i]][scale_i][e[1]-1]
 
 		return channels, nscale+1, l_windows
 
