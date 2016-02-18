@@ -48,9 +48,13 @@ This module ...
 #             gg.ggggg("ggggg", ggggg=3456)
 #             gg.ggg()
 #         """
-
+import glob
+import sys  
 import os
-
+import random
+import re
+from obspy.core.stream import Stream, read
+    
 def readallchannels(dataset, operation='eventdir'):
     """
     wrapps obspy.core.stream.read so various seismic file 
@@ -68,9 +72,7 @@ def readallchannels(dataset, operation='eventdir'):
     # 2) Get all available channel of each file 
     # 3) Read individually in stream.
 
-    from obspy.core.stream import Stream, read
-    import glob
-    import sys
+    
 
     
     # Reading the waveforms
@@ -117,7 +119,6 @@ def readfullfilenames(paths, operation=None):
     # 2) Read files and add to returned list.
     # 3) Concatenate list and catalog paths if asked.
     
-    import glob
     
     files=[]
     dataset=[]
@@ -186,8 +187,6 @@ def randomsample(dataset,Nsample,searchregex=None, test=None) :
     # 2) Read files and add to returned list.
     # 3) Concatenate list and catalog paths if asked.
     
-    import random
-    import re
 
     # Usual instance of random.sample, if no optinal test are 
     # requested, the wrapper is not usefull at all

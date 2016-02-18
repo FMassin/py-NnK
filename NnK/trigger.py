@@ -56,7 +56,7 @@ import fnmatch
 import numpy as np
 import matplotlib.pyplot as plt
 from obspy import read, Trace, Stream
-
+from obspy.signal.tf_misfit import plotTfr
 
 
 
@@ -193,7 +193,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 		maxscale = nmax
 
 	if scales is None:
-		scales = [2**i for i in range(6,999) if ((2**i <= (maxscale)) and (2**i <= (nmax - 2**i)))]
+		scales = [2**i for i in range(4,999) if ((2**i <= (maxscale)) and (2**i <= (nmax - 2**i)))]
 		scales = np.require(scales, dtype=np.int) 
 
 	# Initialize results at the minimal size
@@ -205,32 +205,34 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 		if not tr.stats.channel == 'YH':
 			npts = tr.stats.npts
 
-			apod_b = (np.require(range(100) , dtype=np.float) / 100.)**0.5
+			apod_n = max([1, min([100., npts/50.])])
+			apod_b = (np.require(range(int(apod_n)) , dtype=np.float) / apod_n)**0.5
 			apod = np.ones((tr.data).size)
-			apod[0:100] *= apod_b
-			apod[npts-100:] *= apod_b[::-1]
+			apod[0:apod_n] *= apod_b
+			apod[npts-apod_n:] *= apod_b[::-1]
 
 			if operation is 'rms':                  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum( ( tr.detrend('linear').data * apod )** 2 )
+				csqr = np.cumsum( ( tr.detrend('linear').data * apod )** 2 ) #
 			elif (operation is 'average') or  (operation is 'sum'):  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum(np.abs(( tr.detrend('linear').data * apod )))  
+				csqr = np.cumsum(np.abs(( tr.detrend('linear').data * apod )))  #.detrend('linear')
 			# Convert to float
 			csqr = np.require(csqr, dtype=np.float)
 			for n, s in enumerate(scales) : # Avoid scales when too wide for the current channel
 				if (s < (npts - s)) :    
 					# Compute the sliding window
 					if (operation is 'rms') or (operation is 'average') or (operation is 'sum'):  
-						timeseries[t][n][s:npts] = csqr[s:] - csqr[:-s]
+						timeseries[t][n][s:npts] = csqr[s:] - csqr[:npts-s]
+						#timeseries[t][n][:npts-s] = csqr[s:] - csqr[:npts-s]
 						# for average and rms only 
 						if operation is not 'sum':
 							timeseries[t][n][:] /= s     
 
 						# Pad with modified scale definitions(vectorization ###################################### TODO)
-						timeseries[t][n][0] = csqr[0]
+						timeseries[t][n][0] = 0#csqr[0]
 						for x in range(1, s):
 							timeseries[t][n][x] = (csqr[x] - csqr[0]) 
 							# for average and rms only
@@ -240,6 +242,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 					dtiny = np.finfo(0.0).tiny
 					idx = timeseries[t][n] < dtiny
 					timeseries[t][n][idx] = dtiny 
+					timeseries[t][n][12000:] = dtiny 
 					# Avoid zeros
 					#timeseries[t][n][npts:] = timeseries[t][n][npts-1]
 	
@@ -253,16 +256,23 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 		maxscale = na
 
 	if scales is None:
-		scales = [2**i for i in range(4,999) if ((2**i <= (maxscale)) and (2**i <= (na - 2**i)))]
+		scales = [2**i for i in range(2,999) if ((2**i <= (maxscale)) and (2**i <= (na - 2**i)))]
 	
 	scales = np.require(scales, dtype=np.int) 
 	scales = np.asarray(scales)
 	nscale = len(scales)
+	if nscale == 0 : 
+		scale = [max([4, maxscale/10])]
+		nscale = 1
 
 	cc = np.ones(a.shape)
 	prod_cumsum = np.cumsum( a * b )
 	a_squarecumsum = np.cumsum( a**2 )
 	b_squarecumsum = np.cumsum( b**2 )
+
+	dtiny = np.finfo(0.0).tiny
+	b_squarecumsum[b_squarecumsum < dtiny] = dtiny
+	a_squarecumsum[a_squarecumsum < dtiny] = dtiny
 
 	for s in scales :
 
@@ -290,27 +300,80 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 	return cc**(1./nscale)
 
 
+def stream_trim_cf(stream, cf):
+
+	wavelets = stream.copy()
+
+	(tmax,nmax) = streamdatadim(stream)
+	cflets = np.ones(( tmax, 2+(stream[0]).stats.sampling_rate*2 ))  
+
+	for t, trace in enumerate(wavelets):
+
+		cf[t][:trace.stats.sampling_rate]=0
+		pick = np.argmax(cf[t])
+
+		wlstart = trace.stats.starttime + pick * trace.stats.delta - 1
+		wlend = trace.stats.starttime + pick * trace.stats.delta + 1
+		trace.trim(wlstart, wlend)
+		
+		cflets[t][:trace.stats.sampling_rate*2+2] = cf[t][pick - trace.stats.sampling_rate -1 : pick + trace.stats.sampling_rate+1]
+
+		plotTfr(trace.data, dt=trace.stats.delta, fmin=0.1, fmax=trace.stats.sampling_rate/2)
+
+
+
+	# nfft=(wavelets[0]).stats.sampling_rate
+	# spec = np.zeros((tmax, nfft // 2 + 1), dtype=np.complex)
+
+	# fig = plt.figure()
+	# ax = fig.gca() 
+	# f_lin = np.linspace(0, 0.5 / (wavelets[0]).stats.delta, nfft // 2 + 1)
+
+	# for t, trace in enumerate(wavelets): 
+	# 	spec[t] = np.abs( np.fft.rfft(trace.data, n=int(nfft)) * trace.stats.delta ) ** 2
+	# 	ax.semilogx(f_lin, spec[t])
+
+	return wavelets, cflets
+
 def stream_processor_plot(stream,cf):
 	
-	fig = plt.figure()#figsize=plt.figaspect(1.2))
+	fig = plt.figure( figsize=(8, 10) )#figsize=plt.figaspect(1.2))
 	ax = fig.gca() 
 	(tmax,nmax) = streamdatadim(stream)
 	labels = ["" for x in range(tmax)]
+	anots = ["" for x in range(tmax)]
 	for t, trace in enumerate(stream):
 		df = trace.stats.sampling_rate
 		npts = trace.stats.npts
 		time = np.arange(npts, dtype=np.float32) / df
-		labels[t] = trace.id + '(%3.1e)' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
-		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), '0.5')
-		ax.plot(time, t-.5+ (cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ), 'g')         
+		channel=trace.stats.channel #copy.deepcopy()
+		if trace.stats.channel[-1] in ('Z','l', 'L', '1'):
+			if trace.stats.channel in ('vertical', 'VERTICAL', '1'):
+				channel='Z'
+			color = '0.5'
+		elif trace.stats.channel[-1] in ('E','t', 'T', '2'):
+			if trace.stats.channel in ('east', 'EAST', '2'):
+				channel='E'
+			color = '0.8'
+		elif trace.stats.channel[-1] in ('N','h', 'H', '3'):
+			if trace.stats.channel in ('north', 'NORTH', '3'):
+				channel ='N'
+			color = '0.7'
+		labels[t] = trace.stats.station[0:3] +'.'+ channel
+		anots[t] =  ' %3.1e' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
+		#ax.text(0, t, anots[t] , verticalalignment='bottom', horizontalalignment='left', color='green')
+		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), color)
+		ax.plot(time, t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**.5, 'm')         
 
 	plt.yticks(np.arange(0, tmax, 1.0))
 	ax.set_yticklabels(labels)
+	ax.text(0, -.25, anots[0] , verticalalignment='bottom', horizontalalignment='left', color='m')
 	ax.set_xlabel('Time (s)')
 	ax.set_ylabel('Channel')
 	plt.axis('tight')
-	#plt.ylim( -0.5, t+0.5 ) 
 	plt.tight_layout()
+	# plt.ylim( 10.5, 13.5) 
+	plt.xlim( 0, min([120, max(time)])) 
 
 	return ax
 
@@ -326,7 +389,7 @@ def stream_multiplexor_plot(stream,cf):
 		npts = trace.stats.npts
 		time = np.arange(npts, dtype=np.float32) / df
 		labels[t] = trace.id
-		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), 'k')
+		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), '0.5')
 
 		for c, channel in enumerate(cf[0][t]):
 			if np.sum(cf[1][t][c][0:npts]) != 0 :
@@ -336,6 +399,32 @@ def stream_multiplexor_plot(stream,cf):
 					ax.plot(time, t-.5+cf[1][t][c][0:npts]/(np.nanmax(np.abs(cf[1][t][c][0:npts]))), 'b')        
 				if len(cf) > 2 :
 					ax.plot(time, t-.5+cf[2][t][c][0:npts]/(np.nanmax(np.abs(cf[1][t][c][0:npts]))), 'g')        
+
+	plt.yticks(np.arange(0, tmax, 1.0))
+	ax.set_yticklabels(labels)
+	ax.set_xlabel('Time (s)')
+	ax.set_ylabel('Channel')
+	plt.axis('tight')
+	plt.tight_layout()
+
+	return ax
+
+def stream_preprocessor_plot(stream,cf):
+	
+	fig = plt.figure()#figsize=plt.figaspect(1.2))
+	ax = fig.gca() 
+	(tmax,nmax) = streamdatadim(stream)
+	labels = ["" for x in range(tmax)]
+	for t, trace in enumerate(stream):
+		df = trace.stats.sampling_rate
+		npts = trace.stats.npts
+		time = np.arange(npts, dtype=np.float32) / df
+		labels[t] = trace.id
+		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), '0.5')
+
+		for c, channel in enumerate(cf[t]):
+			if np.sum(cf[t][c][0:npts]) != 0 :
+					ax.plot(time, t-.5+cf[t][c][0:npts]/(np.nanmax(np.abs(cf[t][c][0:npts]))), 'g')        
 
 	plt.yticks(np.arange(0, tmax, 1.0))
 	ax.set_yticklabels(labels)
@@ -370,7 +459,7 @@ class Ratio(object):
 					buf /= self.pre_processed_data[channel_i][station_i][enhancement_i]
 					# no ~zeros
 					buf[buf < dtiny] = dtiny
-					buf[0:100] = np.nan
+					#buf[0:100] = np.nan
 					# product enhancement (no nans, no infs)
 					cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
 
@@ -391,7 +480,6 @@ class Ratio(object):
 		return cf
 
 	def plot(self):
-
 		return stream_processor_plot( self.data, self.output()  )
 
 
@@ -403,6 +491,7 @@ class Correlate(object):
 		self.pre_processed_data = pre_processed_data[0]
 		self.enhancement_factor = pre_processed_data[1]
 		self.l_windows = pre_processed_data[2]
+		self.scales = scales
 
 	def output(self):
 
@@ -419,12 +508,14 @@ class Correlate(object):
 
 						buf = correlationcoef( a = self.pre_processed_data[0][station_i][enhancement_i], \
 							b = self.pre_processed_data[channel_i][station_i][enhancement_i], \
-							maxscale = self.l_windows[0][enhancement_i])
+							maxscale = int(self.l_windows[0][enhancement_i]/5), scales=self.scales)
+
 						# no ~zeros
 						buf[buf < dtiny] = dtiny
 
 						# product enhancement (no nans, no infs)
 						cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
+						#cf[station_i][np.isfinite(buf)] += (1-buf[np.isfinite(buf)])**2
 
 						# if no signal
 						cf[station_i][ np.isnan(self.pre_processed_data[0][station_i][enhancement_i]) ] = np.nan
@@ -432,6 +523,7 @@ class Correlate(object):
 
 
 		return 1-(cf**(1./self.enhancement_factor))
+		#return cf**(.5)
 
 	def plot(self):        
 		return stream_processor_plot( self.data, self.output()  )
@@ -455,7 +547,7 @@ class ShortLongTerms(object):
 
 		# processors as class attributs
 		self.ratio = Ratio(self.output(), self.data)
-		self.correlate = Correlate(self.output(), self.data)
+		#self.correlate = Correlate(self.output(), self.data)
 
 	def output(self):
 		# Multiplex the pre-processed data
@@ -474,7 +566,7 @@ class ShortLongTerms(object):
 			for smallscale_i, smallscale_data in enumerate(station_data):
 				for bigscale_i, bigscale_data in enumerate(station_data):
 
-					if self.scales[smallscale_i] < self.scales[bigscale_i] :
+					if self.scales[smallscale_i]*10 <= self.scales[bigscale_i] :
 
 						n_enhancements += 1
 						l_windows[0][n_enhancements] = self.scales[smallscale_i]
@@ -485,6 +577,9 @@ class ShortLongTerms(object):
 
 						channels[0][station_i][n_enhancements] = smallscale_data
 						channels[1][station_i][n_enhancements] = bigscale_data
+
+		if n_enhancements == -1:
+			print "scales must a least 1 orders apart (*10)"
 
 		for i in range(n_enhancements+1, nscale**2):
 			channels = np.delete(channels, n_enhancements+1, axis=2)
@@ -676,6 +771,8 @@ class Component(object):
 		return stream_multiplexor_plot( self.data, channels )
 
 		
+
+
 
 
 
