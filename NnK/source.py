@@ -362,7 +362,7 @@ def mt_angles(mt):
     return np.array([[strike, dip, rake], [DC, CLVD, iso, devi]])
 
 
-def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) : 
+def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, alpha=0.5) : 
     """
     Plot the given seismic wave radiation pattern as a color-coded surface 
     or focal sphere (not exactly as a beach ball diagram).
@@ -510,19 +510,22 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None) :
     ## For a wireframe surface representing amplitudes
     if style in ('f', 'w', 'frame', 'wireframe') :
         
-        ax.plot_wireframe(X*amplitudes_surf, Y*amplitudes_surf, Z*amplitudes_surf, rstride=1, cstride=1, linewidth=0.5, alpha=0.5)
+        ax.plot_wireframe(X*amplitudes_surf, Y*amplitudes_surf, Z*amplitudes_surf, rstride=1, cstride=1, linewidth=0.5, alpha=alpha)
 
     ## For focal sphere, with amplitude sign (~not a beach ball diagram) on unit sphere 
     if style in ('*', 'p', 'polarities'):
 
+        if style is '*':
+            alpha =0.1
+
         polarity_area = amplitudes.copy()
         polarity_area[amplitudes > 0] = np.nan  
         polarity_area[amplitudes <= 0] = 1
-        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='r', rstride=1, cstride=1, linewidth=.5, alpha=0.5)
+        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='r', rstride=1, cstride=1, linewidth=.5, alpha=alpha)
 
         polarity_area[amplitudes <= 0] = np.nan 
         polarity_area[amplitudes > 0] = 1
-        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='b', rstride=1, cstride=1, linewidth=.5, alpha=0.5)
+        ax.plot_wireframe(X*polarity_area, Y*polarity_area, Z*polarity_area, color='b', rstride=1, cstride=1, linewidth=.5, alpha=alpha)
 
     ## For ~ beach ball diagram 
     if style in ('b', 'bb', 'beachball'):
@@ -586,11 +589,11 @@ def energy_seismicsourcemodel(G, XYZ) :
     amplitudes = np.sqrt( G[0]**2 + G[1]**2 + G[2]**2 ) #* amplitudes_correction            
     
     # Classic rms
-    rms = np.sum(amplitudes**2)/np.prod(amplitudes.shape)  
+    rms = np.nansum(amplitudes**2)/np.prod(amplitudes.shape)  
     # Euclidian norm
-    norm = np.sqrt(np.sum(amplitudes**2))  
+    norm = np.sqrt(np.nansum(amplitudes**2))  
     # Amplitude average
-    average = np.average(np.abs(amplitudes))  
+    average = np.nanmean(np.abs(amplitudes))  
 
     return [rms, norm, average]
 

@@ -312,13 +312,15 @@ def stream_trim_cf(stream, cf):
 		cf[t][:trace.stats.sampling_rate]=0
 		pick = np.argmax(cf[t])
 
-		wlstart = trace.stats.starttime + pick * trace.stats.delta - 1
-		wlend = trace.stats.starttime + pick * trace.stats.delta + 1
+		l = 0.25 # dominant period
+
+		wlstart = trace.stats.starttime + pick * trace.stats.delta - 0
+		wlend = trace.stats.starttime + pick * trace.stats.delta + l
 		trace.trim(wlstart, wlend)
 		
-		cflets[t][:trace.stats.sampling_rate*2+2] = cf[t][pick - trace.stats.sampling_rate -1 : pick + trace.stats.sampling_rate+1]
+		cflets[t][:l*trace.stats.sampling_rate+2] = cf[t][pick -1 : pick + l * trace.stats.sampling_rate+1]
 
-		plotTfr(trace.data, dt=trace.stats.delta, fmin=0.1, fmax=trace.stats.sampling_rate/2)
+		#plotTfr(trace.data, dt=trace.stats.delta, fmin=0.1, fmax=trace.stats.sampling_rate/2)
 
 
 
