@@ -54,10 +54,69 @@ import re
 import copy
 import fnmatch
 import numpy as np
+import numpy.matlib
 import matplotlib.pyplot as plt
 from obspy import read, Trace, Stream
+from obspy.core.trace import Stats
 from obspy.signal.tf_misfit import plotTfr
+from mpl_toolkits.mplot3d import Axes3D
 
+
+def ideal_stream(noise=[0.5, 1, 1], P=[1, 8, 2], S=[1.5, 4, 0.5], npts=1000) : 
+
+	Fs = 100.
+
+	stats3_z = Stats({'network':"T", 'station':"pol", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats3_e = Stats({'network':"T", 'station':"pol", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats3_n = Stats({'network':"T", 'station':"pol", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
+	stats2 = Stats({'network':"T", 'station':"fre", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats1 = Stats({'network':"T", 'station':"amp", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats0 = Stats({'network':"T", 'station':"noi", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+
+	noise_signal   = np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. #normal(0, noise[0]/100., npts)
+	noise_signal_e = np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. #normal(0, noise[0]/100., npts)
+	noise_signal_n = np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. #normal(0, noise[0]/100., npts)
+
+	# change the noise pol polarization to isotropic to vertical (P) and horizontal (S)
+	pola_z = np.copy(noise_signal)
+	pola_e = np.copy(noise_signal_e)
+	pola_n = np.copy(noise_signal_n)
+	pola_e[npts/3:npts/3+npts/6] = pola_z[npts/3:npts/3+npts/6] 
+	pola_n[npts/3:npts/3+npts/6] = pola_z[npts/3:npts/3+npts/6] 
+	pola_z[npts*3/6:npts*3/6+npts/6] = pola_e[npts*3/6:npts*3/6+npts/6] 
+	pola_n[npts*3/6:npts*3/6+npts/6] = -pola_e[npts*3/6:npts*3/6+npts/6]
+
+	# roughly change amplitudes at P and S wave amplitudes
+	ampl = np.copy(noise_signal)
+	ampl[npts/3:npts/3+npts/6]     *= (P[0]/noise[0] -1) * (npts/6 - np.arange(npts/6))/(npts/6.) + 1 
+	ampl[npts*3/6:npts*3/6+npts/6] *= (S[0]/noise[0] -1) * (npts/6 - np.arange(npts/6))/(npts/6.) + 1 
+
+	# roughly remap frequencies at P and S wave frequencies
+	freq = np.copy(noise_signal)
+	freq[npts/3:npts/3+npts/6]     += np.sin(2 * np.pi * P[1] * np.arange(npts/6) / Fs)/2*noise[0]
+	freq[npts/3:npts/3+npts/6]     /= 2
+	freq[npts*3/6:npts*3/6+npts/6] += np.sin(2 * np.pi * S[1] * np.arange(npts/6) / Fs)/2*noise[0]
+	freq[npts*3/6:npts*3/6+npts/6] /= 2	
+
+	a = Stream(traces=[Trace(data=noise_signal, header=stats0), \
+		Trace(data=ampl, header=stats1), \
+		Trace(data=freq, header=stats2), \
+		Trace(data=pola_z, header=stats3_z), \
+		Trace(data=pola_e, header=stats3_e), \
+		Trace(data=pola_n, header=stats3_n)])
+
+	# for t, tr in enumerate(a):
+	# 	plotTfr(tr.data, dt=.01, fmin=0.1, fmax=25)
+
+	# fig = plt.figure()
+	# ax = fig.gca(projection='3d')
+	# ax.plot(a[3].data, a[4].data, a[5].data, label='noise', alpha=.2, color='g')
+	# ax.plot(a[3].data[npts/3:npts/3+npts/6],a[4].data[npts/3:npts/3+npts/6],a[5].data[npts/3:npts/3+npts/6], label='P', color='b')
+	# ax.plot(a[3].data[npts*3/6:npts*3/6+npts/6],a[4].data[npts*3/6:npts*3/6+npts/6],a[5].data[npts*3/6:npts*3/6+npts/6], label='S', color='r')
+	# ax.legend()
+	# plt.show()
+
+	return a
 
 
 def streamdatadim(a):
@@ -356,11 +415,11 @@ def stream_processor_plot(stream,cf):
 		elif trace.stats.channel[-1] in ('E','t', 'T', '2'):
 			if trace.stats.channel in ('east', 'EAST', '2'):
 				channel='E'
-			color = '0.8'
+			color = '0.7'
 		elif trace.stats.channel[-1] in ('N','h', 'H', '3'):
 			if trace.stats.channel in ('north', 'NORTH', '3'):
 				channel ='N'
-			color = '0.7'
+			color = '0.8'
 		labels[t] = trace.stats.station[0:3] +'.'+ channel
 		anots[t] =  ' %3.1e' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
 		#ax.text(0, t, anots[t] , verticalalignment='bottom', horizontalalignment='left', color='green')
@@ -568,7 +627,8 @@ class ShortLongTerms(object):
 			for smallscale_i, smallscale_data in enumerate(station_data):
 				for bigscale_i, bigscale_data in enumerate(station_data):
 
-					if self.scales[smallscale_i]*10 <= self.scales[bigscale_i] :
+					# en fait on peut dire len(STA)*9 = len(LTA) d'apres Withers, M., Aster, R., Young, C., Beiriger, J., Harris, M., Moore, S., & Trujillo, J. (1998). A comparison of select trigger algorithms for automated global seismic phase and event detection. Bulletin of the Seismological Society of America, 88(1), 95–106.
+					if self.scales[bigscale_i] <= self.scales[smallscale_i]*10 and self.scales[bigscale_i] >= self.scales[smallscale_i]*7:
 
 						n_enhancements += 1
 						l_windows[0][n_enhancements] = self.scales[smallscale_i]
@@ -581,7 +641,7 @@ class ShortLongTerms(object):
 						channels[1][station_i][n_enhancements] = bigscale_data
 
 		if n_enhancements == -1:
-			print "scales must a least 1 orders apart (*10)"
+			print "scales must around 1 orders apart (from *7 to *10)"
 
 		for i in range(n_enhancements+1, nscale**2):
 			channels = np.delete(channels, n_enhancements+1, axis=2)
