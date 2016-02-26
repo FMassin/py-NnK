@@ -62,7 +62,7 @@ from obspy.signal.tf_misfit import plotTfr
 from mpl_toolkits.mplot3d import Axes3D
 
 
-def ideal_stream(noise=[0.5, 1, 1], P=[1, 8, 2], S=[1.5, 4, 0.5], npts=1000) : 
+def ideal_stream(noise=[1., 1., 100.], P=[2.5, 8., 2.5], S=[3., 4., 2.5], npts=1000) : 
 
 	Fs = 100.
 
@@ -73,48 +73,58 @@ def ideal_stream(noise=[0.5, 1, 1], P=[1, 8, 2], S=[1.5, 4, 0.5], npts=1000) :
 	stats1 = Stats({'network':"T", 'station':"amp", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
 	stats0 = Stats({'network':"T", 'station':"noi", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
 
-	noise_signal   = np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. #normal(0, noise[0]/100., npts)
-	noise_signal_e = np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. #normal(0, noise[0]/100., npts)
-	noise_signal_n = np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. #normal(0, noise[0]/100., npts)
+	noise_signal   = np.asarray([ np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. , 
+		np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. , 
+		np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. ] ) #normal(0, noise[0]/100., npts)
+
+	common = np.random.random_integers(0, noise[2]*100, npts)/100.
+	noise_signal *= np.asarray([ common, common, common ])
+	noise_signal /= (noise[0]*noise[2]) * noise[0]
 
 	# change the noise pol polarization to isotropic to vertical (P) and horizontal (S)
-	pola_z = np.copy(noise_signal)
-	pola_e = np.copy(noise_signal_e)
-	pola_n = np.copy(noise_signal_n)
-	pola_e[npts/3:npts/3+npts/6] = pola_z[npts/3:npts/3+npts/6] 
-	pola_n[npts/3:npts/3+npts/6] = pola_z[npts/3:npts/3+npts/6] 
-	pola_z[npts*3/6:npts*3/6+npts/6] = pola_e[npts*3/6:npts*3/6+npts/6] 
-	pola_n[npts*3/6:npts*3/6+npts/6] = -pola_e[npts*3/6:npts*3/6+npts/6]
+	pola = np.copy(noise_signal)
+	# onde P
+	pola[0][npts/3:npts/3+npts/6] += np.random.random_integers(-P[2]*50, P[2]*50, int(npts/6))/100.
+	pola[0][npts/3:npts/3+npts/6] /= (P[2]+noise[0]) * noise[0]
+	# onde S
+	common = np.random.random_integers(-S[2]*50, S[2]*50, int(npts/6))/100.
+	pola[2][npts/2:npts/2+npts/6] += common
+	pola[2][npts/2:npts/2+npts/6] /= (S[2]+noise[0]) * noise[0]
+	pola[1][npts/2:npts/2+npts/6] += common
+	pola[1][npts/2:npts/2+npts/6] /= (S[2]+noise[0]) * noise[0]
+
 
 	# roughly change amplitudes at P and S wave amplitudes
-	ampl = np.copy(noise_signal)
+	ampl = np.copy(noise_signal[0])
 	ampl[npts/3:npts/3+npts/6]     *= (P[0]/noise[0] -1) * (npts/6 - np.arange(npts/6))/(npts/6.) + 1 
 	ampl[npts*3/6:npts*3/6+npts/6] *= (S[0]/noise[0] -1) * (npts/6 - np.arange(npts/6))/(npts/6.) + 1 
 
 	# roughly remap frequencies at P and S wave frequencies
-	freq = np.copy(noise_signal)
-	freq[npts/3:npts/3+npts/6]     += np.sin(2 * np.pi * P[1] * np.arange(npts/6) / Fs)/2*noise[0]
-	freq[npts/3:npts/3+npts/6]     /= 2
-	freq[npts*3/6:npts*3/6+npts/6] += np.sin(2 * np.pi * S[1] * np.arange(npts/6) / Fs)/2*noise[0]
-	freq[npts*3/6:npts*3/6+npts/6] /= 2	
+	freq = np.copy(noise_signal[0])
+	freq[npts/3:npts/3+npts/6]     += np.sin(2 * np.pi * P[1] * np.arange(npts/6) / Fs)
+	freq[npts/3:npts/3+npts/6]     /= (2+noise[0]) * noise[0]
+	freq[npts*3/6:npts*3/6+npts/6] += np.sin(2 * np.pi * S[1] * np.arange(npts/6) / Fs)
+	freq[npts*3/6:npts*3/6+npts/6] /= (2+noise[0]) * noise[0]	
 
-	a = Stream(traces=[Trace(data=noise_signal, header=stats0), \
+	a = Stream(traces=[Trace(data=noise_signal[0], header=stats0), \
 		Trace(data=ampl, header=stats1), \
 		Trace(data=freq, header=stats2), \
-		Trace(data=pola_z, header=stats3_z), \
-		Trace(data=pola_e, header=stats3_e), \
-		Trace(data=pola_n, header=stats3_n)])
+		Trace(data=pola[0], header=stats3_z), \
+		Trace(data=pola[1], header=stats3_e), \
+		Trace(data=pola[2], header=stats3_n)])
 
+	plotTfr((a[0]).data, dt=.01, fmin=0.1, fmax=25)
+	plotTfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
 	# for t, tr in enumerate(a):
 	# 	plotTfr(tr.data, dt=.01, fmin=0.1, fmax=25)
 
-	# fig = plt.figure()
-	# ax = fig.gca(projection='3d')
-	# ax.plot(a[3].data, a[4].data, a[5].data, label='noise', alpha=.2, color='g')
-	# ax.plot(a[3].data[npts/3:npts/3+npts/6],a[4].data[npts/3:npts/3+npts/6],a[5].data[npts/3:npts/3+npts/6], label='P', color='b')
-	# ax.plot(a[3].data[npts*3/6:npts*3/6+npts/6],a[4].data[npts*3/6:npts*3/6+npts/6],a[5].data[npts*3/6:npts*3/6+npts/6], label='S', color='r')
-	# ax.legend()
-	# plt.show()
+	fig = plt.figure()
+	ax = fig.gca(projection='3d')
+	ax.plot(a[3].data, a[4].data, a[5].data, label='noise', alpha=.2, color='g')
+	ax.plot(a[3].data[npts/3:npts/3+npts/6],a[4].data[npts/3:npts/3+npts/6],a[5].data[npts/3:npts/3+npts/6], label='P', color='b')
+	ax.plot(a[3].data[npts*3/6:npts*3/6+npts/6],a[4].data[npts*3/6:npts*3/6+npts/6],a[5].data[npts*3/6:npts*3/6+npts/6], label='S', color='r')
+	ax.legend()
+	plt.show()
 
 	return a
 
@@ -320,9 +330,11 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 	scales = np.require(scales, dtype=np.int) 
 	scales = np.asarray(scales)
 	nscale = len(scales)
+	#print scales, nscale
 	if nscale == 0 : 
-		scale = [max([4, maxscale/10])]
+		scales = [max([4, maxscale/10.])]
 		nscale = 1
+		#print '=>',max([4, maxscale/10.]), scales, nscale
 
 	cc = np.ones(a.shape)
 	prod_cumsum = np.cumsum( a * b )
@@ -570,6 +582,8 @@ class Correlate(object):
 						buf = correlationcoef( a = self.pre_processed_data[0][station_i][enhancement_i], \
 							b = self.pre_processed_data[channel_i][station_i][enhancement_i], \
 							maxscale = int(self.l_windows[0][enhancement_i]/5), scales=self.scales)
+
+						# print 'maxscale = ', int(self.l_windows[0][enhancement_i]/5), ', scales=', self.scales
 
 						# no ~zeros
 						buf[buf < dtiny] = dtiny
