@@ -62,9 +62,9 @@ from obspy.signal.tf_misfit import plotTfr
 from mpl_toolkits.mplot3d import Axes3D
 
 
-def ideal_stream(noise=[1., 1., 100.], P=[2.5, 8., 2.5], S=[3., 4., 2.5], npts=1000) : 
+def ideal_stream(npts=1000., noise=[1., 1., 5], P=[4.5, 8., 2.5], S=[6., 4., 2.5]) : 
 
-	Fs = 100.
+	Fs = npts/10.
 
 	stats3_z = Stats({'network':"T", 'station':"pol", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
 	stats3_e = Stats({'network':"T", 'station':"pol", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
@@ -77,21 +77,21 @@ def ideal_stream(noise=[1., 1., 100.], P=[2.5, 8., 2.5], S=[3., 4., 2.5], npts=1
 		np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. , 
 		np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. ] ) #normal(0, noise[0]/100., npts)
 
-	common = np.random.random_integers(0, noise[2]*100, npts)/100.
-	noise_signal *= np.asarray([ common, common, common ])
-	noise_signal /= (noise[0]*noise[2]) * noise[0]
+	common = np.random.random_integers(noise[2]*-50., noise[2]*50., npts)/100.
+	noise_signal += np.asarray([ common, common, common ])
+	noise_signal /= (noise[0]+noise[2]) * noise[0]
 
 	# change the noise pol polarization to isotropic to vertical (P) and horizontal (S)
 	pola = np.copy(noise_signal)
 	# onde P
-	pola[0][npts/3:npts/3+npts/6] += np.random.random_integers(-P[2]*50, P[2]*50, int(npts/6))/100.
-	pola[0][npts/3:npts/3+npts/6] /= (P[2]+noise[0]) * noise[0]
+	pola[0][npts/3:npts/3+npts/6] += np.random.random_integers(-P[2]*50., P[2]*50., int(npts/6))/100.
+	pola[0][npts/3:npts/3+npts/6] /= (P[2]+noise[0]/2) * noise[0]
 	# onde S
 	common = np.random.random_integers(-S[2]*50, S[2]*50, int(npts/6))/100.
 	pola[2][npts/2:npts/2+npts/6] += common
-	pola[2][npts/2:npts/2+npts/6] /= (S[2]+noise[0]) * noise[0]
+	pola[2][npts/2:npts/2+npts/6] /= (S[2]+noise[0]/2) * noise[0]
 	pola[1][npts/2:npts/2+npts/6] += common
-	pola[1][npts/2:npts/2+npts/6] /= (S[2]+noise[0]) * noise[0]
+	pola[1][npts/2:npts/2+npts/6] /= (S[2]+noise[0]/2) * noise[0]
 
 
 	# roughly change amplitudes at P and S wave amplitudes
@@ -113,18 +113,18 @@ def ideal_stream(noise=[1., 1., 100.], P=[2.5, 8., 2.5], S=[3., 4., 2.5], npts=1
 		Trace(data=pola[1], header=stats3_e), \
 		Trace(data=pola[2], header=stats3_n)])
 
-	plotTfr((a[0]).data, dt=.01, fmin=0.1, fmax=25)
-	plotTfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
-	# for t, tr in enumerate(a):
-	# 	plotTfr(tr.data, dt=.01, fmin=0.1, fmax=25)
+	# plotTfr((a[0]).data, dt=.01, fmin=0.1, fmax=25)
+	# plotTfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
+	# # for t, tr in enumerate(a):
+	# # 	plotTfr(tr.data, dt=.01, fmin=0.1, fmax=25)
 
-	fig = plt.figure()
-	ax = fig.gca(projection='3d')
-	ax.plot(a[3].data, a[4].data, a[5].data, label='noise', alpha=.2, color='g')
-	ax.plot(a[3].data[npts/3:npts/3+npts/6],a[4].data[npts/3:npts/3+npts/6],a[5].data[npts/3:npts/3+npts/6], label='P', color='b')
-	ax.plot(a[3].data[npts*3/6:npts*3/6+npts/6],a[4].data[npts*3/6:npts*3/6+npts/6],a[5].data[npts*3/6:npts*3/6+npts/6], label='S', color='r')
-	ax.legend()
-	plt.show()
+	# fig = plt.figure()
+	# ax = fig.gca(projection='3d')
+	# ax.plot(a[3].data, a[4].data, a[5].data, label='noise', alpha=.2, color='g')
+	# ax.plot(a[3].data[npts/3:npts/3+npts/6],a[4].data[npts/3:npts/3+npts/6],a[5].data[npts/3:npts/3+npts/6], label='P', color='b')
+	# ax.plot(a[3].data[npts*3/6:npts*3/6+npts/6],a[4].data[npts*3/6:npts*3/6+npts/6],a[5].data[npts*3/6:npts*3/6+npts/6], label='S', color='r')
+	# ax.legend()
+	# plt.show()
 
 	return a
 
@@ -274,7 +274,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 		if not tr.stats.channel == 'YH':
 			npts = tr.stats.npts
 
-			apod_n = max([1, min([100., npts/50.])])
+			apod_n = max([1, min([10., npts/100.])])
 			apod_b = (np.require(range(int(apod_n)) , dtype=np.float) / apod_n)**0.5
 			apod = np.ones((tr.data).size)
 			apod[0:apod_n] *= apod_b
@@ -290,6 +290,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 				csqr = np.cumsum(np.abs(( tr.detrend('linear').data * apod )))  #.detrend('linear')
 			# Convert to float
 			csqr = np.require(csqr, dtype=np.float)
+
 			for n, s in enumerate(scales) : # Avoid scales when too wide for the current channel
 				if (s < (npts - s)) :    
 					# Compute the sliding window
@@ -301,12 +302,15 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 							timeseries[t][n][:] /= s     
 
 						# Pad with modified scale definitions(vectorization ###################################### TODO)
-						timeseries[t][n][0] = 0#csqr[0]
-						for x in range(1, s):
-							timeseries[t][n][x] = (csqr[x] - csqr[0]) 
-							# for average and rms only
-							if operation is not 'sum':
-								timeseries[t][n][x] = timeseries[t][n][x]/(1+x)
+						timeseries[t][n][1:s] = csqr[1:s] - csqr[0]
+						# for average and rms only
+						if operation is not 'sum':
+							timeseries[t][n][1:s] = timeseries[t][n][1:s]/np.asarray(range(1, s), dtype=np.float32)
+						# detrending
+						timeseries[t][n][1:s] = timeseries[t][n][1:s]+(timeseries[t][n][1:s]-timeseries[t][n][1])*np.asarray(range(s, 1, -1), dtype=np.float32)/s
+						# filtering
+						f = np.cumsum(timeseries[t][n][:])
+						timeseries[t][n][0:s] = (f[s+1]-f[0:s])/np.asarray(range(s+1,1,-1), dtype=np.float32)
 					# Avoid division by zero by setting zero values to tiny float
 					dtiny = np.finfo(0.0).tiny
 					idx = timeseries[t][n] < dtiny
@@ -336,7 +340,7 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 		nscale = 1
 		#print '=>',max([4, maxscale/10.]), scales, nscale
 
-	cc = np.ones(a.shape)
+	cc = np.ones(a.shape)*1.0
 	prod_cumsum = np.cumsum( a * b )
 	a_squarecumsum = np.cumsum( a**2 )
 	b_squarecumsum = np.cumsum( b**2 )
@@ -358,15 +362,15 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 		cc[s:] *= (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
 
 		# pading with modified def
-		scaled_prod_cumsum = prod_cumsum[:s] - prod_cumsum[0]
-		scaled_a_squarecumsum = a_squarecumsum[:s] - a_squarecumsum[0]
-		scaled_b_squarecumsum = b_squarecumsum[:s] - b_squarecumsum[0]
+		scaled_prod_cumsum = prod_cumsum[1:s] - prod_cumsum[0]
+		scaled_a_squarecumsum = a_squarecumsum[1:s] - a_squarecumsum[0]
+		scaled_b_squarecumsum = b_squarecumsum[1:s] - b_squarecumsum[0]
 		
 		# scaled_prod_cumsum[scaled_prod_cumsum == 0 ] = 1
 		# scaled_a_squarecumsum[scaled_a_squarecumsum == 0 ] = 1
 		# scaled_b_squarecumsum[scaled_b_squarecumsum == 0 ] = 1
 
-		cc[:s] *= 1# (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
+		cc[1:s] *= 1# (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
 
 	return cc**(1./nscale)
 
@@ -436,7 +440,7 @@ def stream_processor_plot(stream,cf):
 		anots[t] =  ' %3.1e' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
 		#ax.text(0, t, anots[t] , verticalalignment='bottom', horizontalalignment='left', color='green')
 		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), color)
-		ax.plot(time, t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**.5, 'm')         
+		ax.plot(time, t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**1., 'm')         
 
 	plt.yticks(np.arange(0, tmax, 1.0))
 	ax.set_yticklabels(labels)
@@ -622,7 +626,7 @@ class ShortLongTerms(object):
 
 		# processors as class attributs
 		self.ratio = Ratio(self.output(), self.data)
-		#self.correlate = Correlate(self.output(), self.data)
+		self.correlate = Correlate(self.output(), self.data)
 
 	def output(self):
 		# Multiplex the pre-processed data
