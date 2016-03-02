@@ -60,51 +60,78 @@ from obspy import read, Trace, Stream
 from obspy.core.trace import Stats
 from obspy.signal.tf_misfit import plotTfr
 from mpl_toolkits.mplot3d import Axes3D
+from source import spherical_to_cartesian
 
-
-def ideal_stream(npts=1000., noise=[1., 1., 5], P=[4.5, 8., 2.5], S=[6., 4., 2.5]) : 
+def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[5, 8., 100.], S=[6., 4., 100.]) : 
 
 	Fs = npts/10.
+	Fnl = npts/30.
+	npts_c = npts+ Fnl
+	Pspot = range(npts/3,npts/2)
+	Sspot = range(npts/2,npts*2/3)
 
-	stats3_z = Stats({'network':"T", 'station':"pol", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats3_e = Stats({'network':"T", 'station':"pol", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
-	stats3_n = Stats({'network':"T", 'station':"pol", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
-	stats2 = Stats({'network':"T", 'station':"fre", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats1 = Stats({'network':"T", 'station':"amp", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats0 = Stats({'network':"T", 'station':"noi", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats3_z = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats3_e = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats3_n = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
+	stats2 = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats1 = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats0 = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
 
-	noise_signal   = np.asarray([ np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. , 
-		np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. , 
-		np.random.random_integers(-noise[0]*50, noise[0]*50, npts)/100. ] ) #normal(0, noise[0]/100., npts)
+	noise_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
+		np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
+		np.random.random_integers(-noise[0]*500, noise[0]*500, npts)/1000. ] ) #normal(0, noise[0]/100., npts)
 
-	common = np.random.random_integers(noise[2]*-50., noise[2]*50., npts)/100.
-	noise_signal += np.asarray([ common, common, common ])
-	noise_signal /= (noise[0]+noise[2]) * noise[0]
+	common_N = np.random.random_integers(-noise[2]*500, noise[2]*500, npts_c)/1000.
+	common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
+	noise_signal[2] += (common_N )
+
+	common_N = np.random.random_integers(-np.pi*1000, np.pi*1000, npts_c)/1000.
+	common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
+	noise_signal[1] += (common_N )
+
+	common_N = np.random.random_integers(-np.pi*1000, np.pi*1000, npts_c)/1000.
+	common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
+	noise_signal[0] += (common_N )
+
+	noise_signal = spherical_to_cartesian(noise_signal)
+
+	noise_signal /= np.max(np.abs(noise_signal)) 
+	noise_signal *= noise[0]/2.
+	
+	
 
 	# change the noise pol polarization to isotropic to vertical (P) and horizontal (S)
 	pola = np.copy(noise_signal)
-	# onde P
-	pola[0][npts/3:npts/3+npts/6] += np.random.random_integers(-P[2]*50., P[2]*50., int(npts/6))/100.
-	pola[0][npts/3:npts/3+npts/6] /= (P[2]+noise[0]/2) * noise[0]
-	# onde S
-	common = np.random.random_integers(-S[2]*50, S[2]*50, int(npts/6))/100.
-	pola[2][npts/2:npts/2+npts/6] += common
-	pola[2][npts/2:npts/2+npts/6] /= (S[2]+noise[0]/2) * noise[0]
-	pola[1][npts/2:npts/2+npts/6] += common
-	pola[1][npts/2:npts/2+npts/6] /= (S[2]+noise[0]/2) * noise[0]
-
+	## onde P
+	common = np.random.random_integers(-50., 50., len(Pspot)+2)/100.
+	pola[0][Pspot] += common[:len(Pspot)] * P[2]
+	pola[0][Pspot] /= np.max(np.abs(pola[0][Pspot])) 
+	pola[0][Pspot] *= noise[0]/2.
+	## onde S
+	pola[2][Sspot] += common[:len(Sspot)] * S[2]
+	pola[2][Sspot] /= np.max(np.abs(pola[2][Sspot])) 
+	pola[2][Sspot] *= noise[0]/2.
+	pola[1][Sspot] += common[:len(Sspot)] * S[2]
+	pola[1][Sspot] /= np.max(np.abs(pola[1][Sspot])) 
+	pola[1][Sspot] *= noise[0]/2.
 
 	# roughly change amplitudes at P and S wave amplitudes
 	ampl = np.copy(noise_signal[0])
-	ampl[npts/3:npts/3+npts/6]     *= (P[0]/noise[0] -1) * (npts/6 - np.arange(npts/6))/(npts/6.) + 1 
-	ampl[npts*3/6:npts*3/6+npts/6] *= (S[0]/noise[0] -1) * (npts/6 - np.arange(npts/6))/(npts/6.) + 1 
+	ampl[Pspot] += common[:len(Pspot)] * P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[Pspot] /= np.max(np.abs( ampl[Pspot] )) 
+	ampl[Pspot] *= P[0]/2.
+	ampl[Sspot] += common[:len(Sspot)] * S[0]  * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	ampl[Sspot] /= np.max(np.abs( ampl[Sspot]  )) 
+	ampl[Sspot] *= S[0]/2.
 
 	# roughly remap frequencies at P and S wave frequencies
 	freq = np.copy(noise_signal[0])
-	freq[npts/3:npts/3+npts/6]     += np.sin(2 * np.pi * P[1] * np.arange(npts/6) / Fs)
-	freq[npts/3:npts/3+npts/6]     /= (2+noise[0]) * noise[0]
-	freq[npts*3/6:npts*3/6+npts/6] += np.sin(2 * np.pi * S[1] * np.arange(npts/6) / Fs)
-	freq[npts*3/6:npts*3/6+npts/6] /= (2+noise[0]) * noise[0]	
+	freq[Pspot] += noise[0]/2. * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[Pspot] /= np.max(np.abs( freq[Pspot] )) 
+	freq[Pspot] *= noise[0]/2.
+	freq[Sspot] += noise[0]/2. * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
+	freq[Sspot] /= np.max(np.abs( freq[Sspot] )) 
+	freq[Sspot] *= noise[0]/2.
 
 	a = Stream(traces=[Trace(data=noise_signal[0], header=stats0), \
 		Trace(data=ampl, header=stats1), \
@@ -113,8 +140,10 @@ def ideal_stream(npts=1000., noise=[1., 1., 5], P=[4.5, 8., 2.5], S=[6., 4., 2.5
 		Trace(data=pola[1], header=stats3_e), \
 		Trace(data=pola[2], header=stats3_n)])
 
-	# plotTfr((a[0]).data, dt=.01, fmin=0.1, fmax=25)
-	# plotTfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
+	# plotTfr(noise_signal[0], dt=.01, fmin=0.1, fmax=25)
+	# plotTfr(ampl, dt=.01, fmin=0.1, fmax=25)
+	# plotTfr(freq, dt=.01, fmin=0.1, fmax=25)
+	# plotTfr(pola[0], dt=.01, fmin=0.1, fmax=25)
 	# # for t, tr in enumerate(a):
 	# # 	plotTfr(tr.data, dt=.01, fmin=0.1, fmax=25)
 
@@ -316,6 +345,8 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 					idx = timeseries[t][n] < dtiny
 					timeseries[t][n][idx] = dtiny 
 					timeseries[t][n][12000:] = dtiny 
+					if (operation is 'rms') :
+						timeseries[t][n][:npts] = timeseries[t][n][:npts]**.5
 					# Avoid zeros
 					#timeseries[t][n][npts:] = timeseries[t][n][npts-1]
 	
@@ -334,11 +365,11 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 	scales = np.require(scales, dtype=np.int) 
 	scales = np.asarray(scales)
 	nscale = len(scales)
-	#print scales, nscale
 	if nscale == 0 : 
 		scales = [max([4, maxscale/10.])]
 		nscale = 1
 		#print '=>',max([4, maxscale/10.]), scales, nscale
+	#print scales, nscale
 
 	cc = np.ones(a.shape)*1.0
 	prod_cumsum = np.cumsum( a * b )
@@ -412,10 +443,11 @@ def stream_trim_cf(stream, cf):
 
 	return wavelets, cflets
 
-def stream_processor_plot(stream,cf):
+def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None):
 	
-	fig = plt.figure( figsize=(8, 10) )#figsize=plt.figaspect(1.2))
-	ax = fig.gca() 
+	if ax is None : 
+		ax = (plt.figure( figsize=(8, 10) )).gca()
+
 	(tmax,nmax) = streamdatadim(stream)
 	labels = ["" for x in range(tmax)]
 	anots = ["" for x in range(tmax)]
@@ -440,11 +472,11 @@ def stream_processor_plot(stream,cf):
 		anots[t] =  ' %3.1e' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
 		#ax.text(0, t, anots[t] , verticalalignment='bottom', horizontalalignment='left', color='green')
 		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), color)
-		ax.plot(time, t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**1., 'm')         
-
+		ax.plot(time, t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**1., cfcolor, label=label)         
+		label = None
 	plt.yticks(np.arange(0, tmax, 1.0))
 	ax.set_yticklabels(labels)
-	ax.text(0, -.25, anots[0] , verticalalignment='bottom', horizontalalignment='left', color='m')
+	ax.text(0, -.25, anots[0] , verticalalignment='bottom', horizontalalignment='left', color=cfcolor)
 	ax.set_xlabel('Time (s)')
 	ax.set_ylabel('Channel')
 	plt.axis('tight')
@@ -556,8 +588,8 @@ class Ratio(object):
 
 		return cf
 
-	def plot(self):
-		return stream_processor_plot( self.data, self.output()  )
+	def plot(self, **kwargs):
+		return stream_processor_plot( self.data, self.output(), **kwargs)
 
 
 
@@ -585,9 +617,9 @@ class Correlate(object):
 
 						buf = correlationcoef( a = self.pre_processed_data[0][station_i][enhancement_i], \
 							b = self.pre_processed_data[channel_i][station_i][enhancement_i], \
-							maxscale = int(self.l_windows[0][enhancement_i]/5), scales=self.scales)
+							maxscale = int(self.l_windows[0][enhancement_i]*3.), scales=self.scales)
 
-						# print 'maxscale = ', int(self.l_windows[0][enhancement_i]/5), ', scales=', self.scales
+						#print 'RMS scale = ', self.l_windows[0][enhancement_i], ', scales=', self.scales
 
 						# no ~zeros
 						buf[buf < dtiny] = dtiny
@@ -604,14 +636,14 @@ class Correlate(object):
 		return 1-(cf**(1./self.enhancement_factor))
 		#return cf**(.5)
 
-	def plot(self):        
-		return stream_processor_plot( self.data, self.output()  )
+	def plot(self, **kwargs):        
+		return stream_processor_plot( self.data, self.output(), **kwargs)
 
 
 class ShortLongTerms(object):
 	# Multiplex the data after pre-process
 
-	def __init__(self, data, scales=None, statistic='average', maxscale=None): 
+	def __init__(self, data, scales=None, statistic='average', maxscale=None, **kwargs): 
 
 		# get (station, scale, sample) array any way (for Trace & Stream inputs)
 		self.data, self.original_data = trace2stream(data.copy())
