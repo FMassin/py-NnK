@@ -59,6 +59,7 @@ import matplotlib.pyplot as plt
 from obspy import read, Trace, Stream
 from obspy.core.trace import Stats
 from obspy.signal.tf_misfit import plotTfr
+from obspy.signal.filter import highpass
 from mpl_toolkits.mplot3d import Axes3D
 from source import spherical_to_cartesian
 
@@ -309,14 +310,15 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 			apod[0:apod_n] *= apod_b
 			apod[npts-apod_n:] *= apod_b[::-1]
 
+			tr_preproc = tr.detrend('linear')
 			if operation is 'rms':                  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum( ( tr.detrend('linear').data * apod )** 2 ) #
+				csqr = np.cumsum( ( tr_preproc.data * apod )** 2 ) #
 			elif (operation is 'average') or  (operation is 'sum'):  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum(np.abs(( tr.detrend('linear').data * apod )))  #.detrend('linear')
+				csqr = np.cumsum(np.abs(( tr_preproc.data * apod )))  #.detrend('linear')
 			# Convert to float
 			csqr = np.require(csqr, dtype=np.float)
 
@@ -443,14 +445,20 @@ def stream_trim_cf(stream, cf):
 
 	return wavelets, cflets
 
-def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None):
+def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, shift = 0):
 	
 	if ax is None : 
 		ax = (plt.figure( figsize=(8, 10) )).gca()
 
 	(tmax,nmax) = streamdatadim(stream)
-	labels = ["" for x in range(tmax)]
+	labels = ["" for x in range(shift+tmax)]
 	anots = ["" for x in range(tmax)]
+
+	if shift>0:
+		label = None
+		for i,item in enumerate(ax.get_yticklabels()):
+			labels[i] = str(item.get_text())
+
 	for t, trace in enumerate(stream):
 		df = trace.stats.sampling_rate
 		npts = trace.stats.npts
@@ -468,15 +476,17 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None):
 			if trace.stats.channel in ('north', 'NORTH', '3'):
 				channel ='N'
 			color = '0.8'
-		labels[t] = trace.stats.station[0:3] +'.'+ channel
+		#print labels[shift+t]
+		labels[shift+t] = trace.stats.station[0:3] +'.'+ channel
 		anots[t] =  ' %3.1e' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
 		#ax.text(0, t, anots[t] , verticalalignment='bottom', horizontalalignment='left', color='green')
-		ax.plot(time, t+trace.data/(2*np.max(np.abs(trace.data))), color)
-		ax.plot(time, t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**1., cfcolor, label=label)         
+		ax.plot(time, shift+t+trace.data/(2*np.max(np.abs(trace.data))), color)
+		ax.plot(time, shift+t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**1., cfcolor, label=label)         
 		label = None
-	plt.yticks(np.arange(0, tmax, 1.0))
+
+	plt.yticks(np.arange(0, shift+tmax, 1.0))
 	ax.set_yticklabels(labels)
-	ax.text(0, -.25, anots[0] , verticalalignment='bottom', horizontalalignment='left', color=cfcolor)
+	ax.text(0, shift-.25, anots[0] , verticalalignment='bottom', horizontalalignment='left', color=cfcolor)
 	ax.set_xlabel('Time (s)')
 	ax.set_ylabel('Channel')
 	plt.axis('tight')
@@ -484,7 +494,7 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None):
 	# plt.ylim( 10.5, 13.5) 
 	plt.xlim( 0, min([120, max(time)])) 
 
-	return ax
+	return ax, shift+t+1
 
 
 def stream_multiplexor_plot(stream,cf):
@@ -615,9 +625,11 @@ class Correlate(object):
 
 					if np.nansum(np.abs( self.pre_processed_data[channel_i][station_i][enhancement_i] )) > 0:
 
-						buf = correlationcoef( a = self.pre_processed_data[0][station_i][enhancement_i], \
-							b = self.pre_processed_data[channel_i][station_i][enhancement_i], \
-							maxscale = int(self.l_windows[0][enhancement_i]*3.), scales=self.scales)
+						a = self.pre_processed_data[0][station_i][enhancement_i] #highpass(self.pre_processed_data[0][station_i][enhancement_i], 1/(self.l_windows[0][enhancement_i]*(self.data[station_i]).stats.delta)/2, (self.data[station_i]).stats.sampling_rate)
+						b = self.pre_processed_data[channel_i][station_i][enhancement_i] #highpass(self.pre_processed_data[channel_i][station_i][enhancement_i], 1/(self.l_windows[0][enhancement_i]*(self.data[station_i]).stats.delta)/2, (self.data[station_i]).stats.sampling_rate)
+						
+						buf = correlationcoef( a = a, b = b, \
+							maxscale = int(self.l_windows[0][enhancement_i]/2.), scales=self.scales)
 
 						#print 'RMS scale = ', self.l_windows[0][enhancement_i], ', scales=', self.scales
 
