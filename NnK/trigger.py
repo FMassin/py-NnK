@@ -298,44 +298,46 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 	# Initialize results at the minimal size
 	timeseries = np.zeros(( tmax, len(scales), nmax )) 
 
+	a.detrend('linear')
+	a.taper(10, type='triang', max_length=300)
+	a.filter("highpass", freq=1.0)  
+	a.taper(10, type='triang', max_length=300)
+
 	for t, tr in enumerate(a) : # the channel-wise calculations      
 
 		# Avoid clock channels 
 		if not tr.stats.channel == 'YH':
 			npts = tr.stats.npts
 
-			apod_n = max([1, min([10., npts/100.])])
-			apod_b = (np.require(range(int(apod_n)) , dtype=np.float) / apod_n)**0.5
-			apod = np.ones((tr.data).size)
-			apod[0:apod_n] *= apod_b
-			apod[npts-apod_n:] *= apod_b[::-1]
-
-			tr_preproc = tr.detrend('linear')
 			if operation is 'rms':                  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum( ( tr_preproc.data * apod )** 2 ) #
+				csqr = np.cumsum( tr.data ** 2 ) #
+			elif (operation is 'averageabs') or  (operation is 'sumabs'):  
+				# The cumulative sum can be exploited to calculate a 
+				# moving average (the cumsum function is quite efficient)
+				csqr = np.cumsum(np.abs( tr.data )) 
 			elif (operation is 'average') or  (operation is 'sum'):  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum(np.abs(( tr_preproc.data * apod )))  #.detrend('linear')
+				csqr = np.cumsum( tr.data )  
 			# Convert to float
 			csqr = np.require(csqr, dtype=np.float)
 
 			for n, s in enumerate(scales) : # Avoid scales when too wide for the current channel
 				if (s < (npts - s)) :    
 					# Compute the sliding window
-					if (operation is 'rms') or (operation is 'average') or (operation is 'sum'):  
+					if (operation is 'rms') or (operation is 'average') or (operation is 'averageabs') or (operation is 'sumabs') or (operation is 'sum'):  
 						timeseries[t][n][s:npts] = csqr[s:] - csqr[:npts-s]
 						#timeseries[t][n][:npts-s] = csqr[s:] - csqr[:npts-s]
 						# for average and rms only 
-						if operation is not 'sum':
+						if operation is not 'sum' and operation is not 'sumabs':
 							timeseries[t][n][:] /= s     
 
 						# Pad with modified scale definitions(vectorization ###################################### TODO)
 						timeseries[t][n][1:s] = csqr[1:s] - csqr[0]
 						# for average and rms only
-						if operation is not 'sum':
+						if operation is not 'sum' and operation is not 'sumabs':
 							timeseries[t][n][1:s] = timeseries[t][n][1:s]/np.asarray(range(1, s), dtype=np.float32)
 						# detrending
 						timeseries[t][n][1:s] = timeseries[t][n][1:s]+(timeseries[t][n][1:s]-timeseries[t][n][1])*np.asarray(range(s, 1, -1), dtype=np.float32)/s
@@ -655,7 +657,7 @@ class Correlate(object):
 class ShortLongTerms(object):
 	# Multiplex the data after pre-process
 
-	def __init__(self, data, scales=None, statistic='average', maxscale=None, **kwargs): 
+	def __init__(self, data, scales=None, statistic='averageabs', maxscale=None, **kwargs): 
 
 		# get (station, scale, sample) array any way (for Trace & Stream inputs)
 		self.data, self.original_data = trace2stream(data.copy())
@@ -719,7 +721,7 @@ class ShortLongTerms(object):
 class leftRightTerms(object):
 	# Multiplex the data after pre-process
 
-	def __init__(self, data, scales=None, statistic='rms', maxscale=None): 
+	def __init__(self, data, scales=None, statistic='averageabs', maxscale=None): 
 
 		# get (station, scale, sample) array any way (for Trace & Stream inputs)
 		self.data, self.original_data = trace2stream(data.copy())
@@ -857,6 +859,13 @@ class Component(object):
 					ZNE_sta[0] = sta[:-1] + 'z'
 					ZNE_sta[1] = sta[:-1] + 'n'
 					ZNE_sta[2] = sta[:-1] + 'e'
+
+			if chan[-1] in ('N', '2') or chan in ('NORTH', 'north'):
+				ZNE     = [    ZNE[1],     ZNE[0]]#,     ZNE[2]]
+				ZNE_sta = [ZNE_sta[1], ZNE_sta[0]]#, ZNE_sta[2]]
+			elif chan[-1] in ('E', '1') or chan in ('EAST', 'east'):
+				ZNE     = [    ZNE[2],     ZNE[0]]#,     ZNE[1]]
+				ZNE_sta = [ZNE_sta[2], ZNE_sta[0]]#, ZNE_sta[1]]
 
 			ZNE_i = np.asarray([])
 			ZNE_di = np.asarray([])

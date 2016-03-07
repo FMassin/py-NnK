@@ -53,8 +53,62 @@ import sys
 import os
 import random
 import re
+import numpy as np
 from obspy.core.stream import Stream, read
+from matplotlib.patches import Circle
+
+def colormap_rgba(ax = None, bits = 256., labels=['R', 'G', 'B', 'A'] ):
+
+    half_bits = bits/2.
+
+    RGBA_map_NSPE = np.ones([bits,bits,4]) 
+    c = np.matlib.repmat(np.arange(bits),bits,1)
+    l = np.transpose(c)
+
+    g = [ half_bits-np.cos(np.pi/6)*half_bits , half_bits+np.sin(np.pi/6)*half_bits]
+    b = [ half_bits+np.cos(np.pi/6)*half_bits , half_bits+np.sin(np.pi/6)*half_bits]
     
+    l_triangle = (((b[1]**2+half_bits**2)**.5)) 
+    hc = ( l_triangle/2 / np.cos(np.pi/6) )
+
+    print g, b
+
+    RGBA_map_NSPE[:,:,0] = (((half_bits - c)**2 + (       0. - l)**2 )**.5)    # red is noise
+    RGBA_map_NSPE[:,:,1] = (((     g[0] - c)**2 + (     g[1] - l)**2 )**.5)    # green is S
+    RGBA_map_NSPE[:,:,2] = (((     b[0] - c)**2 + (     b[1] - l)**2 )**.5)    # Blue is P
+    RGBA_map_NSPE[:,:,3] = (((half_bits - c)**2 + (half_bits - l)**2 )**.5)    # brighness is error
+
+    RGBA_map_NSPE[RGBA_map_NSPE[:,:,3]>=half_bits,:] = 0
+    for i in [0, 1, 2] :
+        RGBA_map_NSPE[RGBA_map_NSPE[:,:,i]>=l_triangle,i] = l_triangle
+
+    RGBA_map_NSPE[:,:,0] /= np.max(RGBA_map_NSPE[:,:,0])
+    RGBA_map_NSPE[:,:,1] /= np.max(RGBA_map_NSPE[:,:,1])
+    RGBA_map_NSPE[:,:,2] /= np.max(RGBA_map_NSPE[:,:,2])
+    RGBA_map_NSPE[:,:,3] = RGBA_map_NSPE[:,:,3]**0.5
+    RGBA_map_NSPE[:,:,3] /= np.max(RGBA_map_NSPE[:,:,3])
+
+    RGBA_map_NSPE[:,:,:3] = 1-RGBA_map_NSPE[:,:,:3]
+
+    #RGBA_map_NSPE[:,:,0] = 0 # mute red
+    #RGBA_map_NSPE[:,:,1] = 0 # mute green
+    #RGBA_map_NSPE[:,:,2] = 0 # mute blue
+    #RGBA_map_NSPE[:,:,3] = 0 # mute brightness
+
+    imgplot = ax.imshow(RGBA_map_NSPE, interpolation='nearest')#, extent=(0,bits,0,bits))
+    
+    ax.text(         half_bits,     0-half_bits/10, labels[0], verticalalignment='center', horizontalalignment='center')
+    ax.text( g[0]-half_bits/10,  g[1]+half_bits/10, labels[1], verticalalignment='center', horizontalalignment='center', rotation=-60.)
+    ax.text( b[0]+half_bits/10,  b[1]+half_bits/10, labels[2], verticalalignment='center', horizontalalignment='center', rotation=60.)
+    ax.text(         half_bits,          half_bits, labels[3], verticalalignment='center', horizontalalignment='center')
+    ax.add_patch(Circle((half_bits, half_bits), half_bits,fill=False,edgecolor="white",linewidth=3) )
+    ax.add_patch(Circle((half_bits, half_bits), half_bits-half_bits/50,fill=False) )
+    ax.axis('off')
+    ax.set_xlim([-2, bits+2])
+    ax.set_ylim([bits+2, -2])
+
+    return imgplot
+
 def readallchannels(dataset, operation='eventdir'):
     """
     wrapps obspy.core.stream.read so various seismic file 
