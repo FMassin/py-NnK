@@ -85,7 +85,7 @@ def colormap_rgba(ax = None, bits = 256., labels=['R', 'G', 'B', 'A'] ):
     RGBA_map_NSPE[:,:,0] /= np.max(RGBA_map_NSPE[:,:,0])
     RGBA_map_NSPE[:,:,1] /= np.max(RGBA_map_NSPE[:,:,1])
     RGBA_map_NSPE[:,:,2] /= np.max(RGBA_map_NSPE[:,:,2])
-    RGBA_map_NSPE[:,:,3] = RGBA_map_NSPE[:,:,3]**0.5
+    RGBA_map_NSPE[:,:,3] = RGBA_map_NSPE[:,:,3]**0.3
     RGBA_map_NSPE[:,:,3] /= np.max(RGBA_map_NSPE[:,:,3])
 
     RGBA_map_NSPE[:,:,:3] = 1-RGBA_map_NSPE[:,:,:3]

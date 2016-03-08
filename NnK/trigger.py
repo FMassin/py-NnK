@@ -62,6 +62,8 @@ from obspy.signal.tf_misfit import plotTfr
 from obspy.signal.filter import highpass
 from mpl_toolkits.mplot3d import Axes3D
 from source import spherical_to_cartesian
+import scipy.signal
+
 
 def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[5, 8., 100.], S=[6., 4., 100.]) : 
 
@@ -299,28 +301,38 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 	timeseries = np.zeros(( tmax, len(scales), nmax )) 
 
 	a.detrend('linear')
-	a.taper(10, type='triang', max_length=300)
-	a.filter("highpass", freq=1.0)  
-	a.taper(10, type='triang', max_length=300)
+	a.taper(.01, type='triang', max_length=10) 
+	a.filter("highpass", freq=.5)  
+	a.taper(.01, type='triang', max_length=10) 
+	a.filter("highpass", freq=.5)  
+	a.taper(.01, type='triang', max_length=10) 
 
 	for t, tr in enumerate(a) : # the channel-wise calculations      
 
 		# Avoid clock channels 
 		if not tr.stats.channel == 'YH':
+
+			#
 			npts = tr.stats.npts
+			dt = np.zeros((tr.data).shape)
+			dt[1:] = np.abs(tr.data[:-1]-tr.data[1:])
+			data = tr.data.copy() 
+			data *= dt < (np.median(dt)+2.*np.std(dt))
+			data = scipy.signal.detrend(data)
+			data[data==0] = np.nan
 
 			if operation is 'rms':                  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum( tr.data ** 2 ) #
+				csqr = np.nan_to_num(data**2).cumsum() #np.nancumsum( data ** 2 ) #
 			elif (operation is 'averageabs') or  (operation is 'sumabs'):  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum(np.abs( tr.data )) 
+				csqr = np.nan_to_num(np.abs(data)).cumsum() # np.nancumsum(np.abs( data )) 
 			elif (operation is 'average') or  (operation is 'sum'):  
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				csqr = np.cumsum( tr.data )  
+				csqr = np.nan_to_num(data).cumsum() #np.nancumsum( data )  
 			# Convert to float
 			csqr = np.require(csqr, dtype=np.float)
 
@@ -407,7 +419,7 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 
 		cc[1:s] *= 1# (scaled_prod_cumsum / np.sqrt( scaled_a_squarecumsum * scaled_b_squarecumsum ))
 
-	return cc**(1./nscale)
+	return cc#**(1./nscale)
 
 
 def stream_trim_cf(stream, cf):
@@ -486,15 +498,15 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 		ax.plot(time, shift+t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**1., cfcolor, label=label)         
 		label = None
 
-	plt.yticks(np.arange(0, shift+tmax, 1.0))
+	ax.set_yticks(np.arange(0, shift+tmax, 1.0))
 	ax.set_yticklabels(labels)
 	ax.text(0, shift-.25, anots[0] , verticalalignment='bottom', horizontalalignment='left', color=cfcolor)
 	ax.set_xlabel('Time (s)')
 	ax.set_ylabel('Channel')
-	plt.axis('tight')
-	plt.tight_layout()
+	ax.axis('tight')
+	(ax.get_figure()).tight_layout()
 	# plt.ylim( 10.5, 13.5) 
-	plt.xlim( 0, min([120, max(time)])) 
+	ax.set_xlim( 0, min([120, max(time)])) 
 
 	return ax, shift+t+1
 
