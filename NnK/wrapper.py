@@ -56,6 +56,8 @@ import re
 import numpy as np
 from obspy.core.stream import Stream, read
 from matplotlib.patches import Circle
+from  obspy.clients.filesystem.sds import Client
+from  obspy.core.utcdatetime import UTCDateTime
 
 def colormap_rgba(ax = None, bits = 256., labels=['R', 'G', 'B', 'A'] ):
 
@@ -71,7 +73,6 @@ def colormap_rgba(ax = None, bits = 256., labels=['R', 'G', 'B', 'A'] ):
     l_triangle = (((b[1]**2+half_bits**2)**.5)) 
     hc = ( l_triangle/2 / np.cos(np.pi/6) )
 
-    print g, b
 
     RGBA_map_NSPE[:,:,0] = (((half_bits - c)**2 + (       0. - l)**2 )**.5)    # red is noise
     RGBA_map_NSPE[:,:,1] = (((     g[0] - c)**2 + (     g[1] - l)**2 )**.5)    # green is S
@@ -93,7 +94,7 @@ def colormap_rgba(ax = None, bits = 256., labels=['R', 'G', 'B', 'A'] ):
     #RGBA_map_NSPE[:,:,0] = 0 # mute red
     #RGBA_map_NSPE[:,:,1] = 0 # mute green
     #RGBA_map_NSPE[:,:,2] = 0 # mute blue
-    #RGBA_map_NSPE[:,:,3] = 0 # mute brightness
+    #RGBA_map_NSPE[:,:,3] = 1 # mute brightness
 
     imgplot = ax.imshow(RGBA_map_NSPE, interpolation='nearest')#, extent=(0,bits,0,bits))
     
@@ -151,6 +152,68 @@ def readallchannels(dataset, operation='eventdir'):
                 #plotTrigger(waveformset[-1], cft, 1.5, 0.5)
 
     return waveformset
+
+def rand2mat(client, D_range, M_range, T_range, metadata, ratetarget=.95, ntarget=1000, snr=3):
+
+    M_step = (M_range[1]-M_range[0])/2.
+    D_step = (D_range[1]-D_range[0])/2.
+    [M_grid, D_grid] = np.meshgrid( M_range, D_range)
+    occupied = np.zeros([len(D_range),len(M_range),4]) 
+    RGBA_NSPE = np.zeros([len(D_range),len(M_range),4]) 
+
+    target = len(M_range)*len(D_range)* 4 * ratetarget
+
+    ntest = 0
+
+    for arrival in np.random.permutation(len(metadata)) :
+
+        D_cell = np.where(np.logical_and(D_range >= metadata[arrival][5]-D_step, D_range < metadata[arrival][5]+D_step))
+        M_cell = np.where(np.logical_and(M_range >= metadata[arrival][9]-M_step, M_range < metadata[arrival][9]+M_step))
+        
+        #print metadata[arrival]
+        #print D_cell, M_cell, T_range.index(metadata[arrival][2][0]), occupied[D_cell[0], M_cell[0],T_range.index(metadata[arrival][2][0])]
+        
+        if (metadata[arrival][2][0] in T_range) and (len(D_cell[0]) == 1) and (len(M_cell[0]) == 1):       
+
+            T_cell = T_range.index(metadata[arrival][2][0])
+
+            if  occupied[D_cell[0], M_cell[0],T_cell] == 0 :#and np.isfinite(metadata[arrival][8]):            
+
+                t = 0
+                try:
+                    t = UTCDateTime(str(metadata[arrival][4]))  
+                except:
+                    pass#print metadata[arrival][4]            
+                try:
+                    t += (metadata[arrival][6]-t.hour)*60*60 + \
+                        (metadata[arrival][7]-t.minute)*60 + \
+                        (metadata[arrival][8]-(t.second+t.microsecond/1000000.))
+                except:
+                    pass#print  metadata[arrival][6], metadata[arrival][7], metadata[arrival][8]
+
+                if t>0:
+                    st = client.get_waveforms(metadata[arrival][0], metadata[arrival][1], "*", "*[ENZ]", t-10, t+10)
+                    st.trim(t-10, t+10)  
+                    
+                    if len(st) > 1 and st[0].stats.starttime == t-10 :
+                        if np.sum((st[0]).data[(st[0]).stats.npts/2.:(st[0]).stats.npts/2.+40]**2.) > snr*np.sum((st[0]).data[(st[0]).stats.npts/2.-40:(st[0]).stats.npts/2.]**2.) : 
+                            
+                            RGBA_NSPE[D_cell[0], M_cell[0], T_cell] = int(arrival)
+                            
+                            occupied[D_cell[0], M_cell[0],3] = 1
+                            occupied[D_cell[0], M_cell[0],0] = 1
+                            occupied[D_cell[0], M_cell[0],T_cell] = 1
+
+                            #print D_cell[0], M_cell[0], T_cell
+                            if np.sum(occupied) >= target: 
+                                print "fill breaking"
+                                break               
+        ntest +=1
+        if ntest >= ntarget: 
+            print "N breaking"
+            break 
+
+    return RGBA_NSPE
 
 def readfullfilenames(paths, operation=None):
     """

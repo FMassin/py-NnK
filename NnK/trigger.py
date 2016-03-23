@@ -49,7 +49,6 @@ This module ...
 #             gg.ggg()
 #         """
 
-
 import re
 import copy
 import fnmatch
@@ -65,8 +64,9 @@ from source import spherical_to_cartesian
 import scipy.signal
 
 
-def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[5, 8., 100.], S=[6., 4., 100.]) : 
+def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[7., 15., 100.], S=[9., 15., 100.]) : 
 
+	ZHr = [3.**.5, 3.**.5]
 	Fs = npts/10.
 	Fnl = npts/30.
 	npts_c = npts+ Fnl
@@ -76,72 +76,127 @@ def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[5, 8., 100.], S=[6., 4., 100
 	stats3_z = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
 	stats3_e = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
 	stats3_n = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
-	stats2 = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats1 = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats0 = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats2_z = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats2_e = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats2_n = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
+	stats1_z = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats1_e = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats1_n = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
+	stats0_z = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats0_e = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats0_n = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
 
 	noise_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
 		np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
 		np.random.random_integers(-noise[0]*500, noise[0]*500, npts)/1000. ] ) #normal(0, noise[0]/100., npts)
 
-	common_N = np.random.random_integers(-noise[2]*500, noise[2]*500, npts_c)/1000.
-	common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
-	noise_signal[2] += (common_N )
+	# common_N = np.random.random_integers(-noise[2]*500, noise[2]*500, npts_c)/1000.
+	# common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
+	# noise_signal[2] += (common_N )
+	# noise_signal[2] /= np.max(np.max(noise_signal[2]))
+	# noise_signal[2] *= noise[0]/2.
 
-	common_N = np.random.random_integers(-np.pi*1000, np.pi*1000, npts_c)/1000.
-	common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
-	noise_signal[1] += (common_N )
+	# common_N = np.random.random_integers(-np.pi*1000, np.pi*1000, npts_c)/1000.
+	# common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
+	# noise_signal[1] += (common_N )
 
-	common_N = np.random.random_integers(-np.pi*1000, np.pi*1000, npts_c)/1000.
-	common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
-	noise_signal[0] += (common_N )
+	# common_N = np.random.random_integers(-np.pi*1000, np.pi*1000, npts_c)/1000.
+	# common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
+	# noise_signal[0] += (common_N )
 
-	noise_signal = spherical_to_cartesian(noise_signal)
-
-	noise_signal /= np.max(np.abs(noise_signal)) 
-	noise_signal *= noise[0]/2.
-	
-	
+	noise_signal = np.asarray(spherical_to_cartesian(noise_signal))
 
 	# change the noise pol polarization to isotropic to vertical (P) and horizontal (S)
 	pola = np.copy(noise_signal)
 	## onde P
 	common = np.random.random_integers(-50., 50., len(Pspot)+2)/100.
-	pola[0][Pspot] += common[:len(Pspot)] * P[2]
-	pola[0][Pspot] /= np.max(np.abs(pola[0][Pspot])) 
-	pola[0][Pspot] *= noise[0]/2.
+
+	p_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Pspot))/1000. , 
+		np.random.random_integers(np.pi*1000/1.3, np.pi*1000/0.7, len(Pspot))/1000. , 
+		np.random.random_integers(-noise[0]*500, noise[0]*500, len(Pspot))/1000. ] ) #normal(0, noise[0]/100., npts)
+	p_signal = np.asarray(spherical_to_cartesian(p_signal))
+	s_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Sspot))/1000. , 
+		np.random.random_integers(np.pi*1000/2.3, np.pi*1000/1.7, len(Sspot))/1000. , 
+		np.random.random_integers(-noise[0]*500, noise[0]*500, len(Sspot))/1000. ] ) #normal(0, noise[0]/100., npts)
+	s_signal = np.asarray(spherical_to_cartesian(s_signal))
+
+	pola[0][Pspot] += p_signal[2]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	pola[1][Pspot] += p_signal[1]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	pola[2][Pspot] += p_signal[0]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
 	## onde S
-	pola[2][Sspot] += common[:len(Sspot)] * S[2]
-	pola[2][Sspot] /= np.max(np.abs(pola[2][Sspot])) 
-	pola[2][Sspot] *= noise[0]/2.
-	pola[1][Sspot] += common[:len(Sspot)] * S[2]
-	pola[1][Sspot] /= np.max(np.abs(pola[1][Sspot])) 
-	pola[1][Sspot] *= noise[0]/2.
+	pola[0][Sspot] += s_signal[2]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	pola[1][Sspot] += s_signal[1]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	pola[2][Sspot] += s_signal[0]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+
+	# pola[0][Pspot] += common[:len(Pspot)] * P[2]
+	# pola[0][Pspot] /= np.max(np.abs(pola[0][Pspot])) 
+	# pola[0][Pspot] *= noise[0]/2.
+
+	# pola[2][Sspot] += common[:len(Sspot)] * S[2]
+	# pola[2][Sspot] /= np.max(np.abs(pola[2][Sspot])) 
+	# pola[2][Sspot] *= noise[0]/2.
+	# pola[1][Sspot] += common[:len(Sspot)] * S[2]
+	# pola[1][Sspot] /= np.max(np.abs(pola[1][Sspot])) 
+	# pola[1][Sspot] *= noise[0]/2.
 
 	# roughly change amplitudes at P and S wave amplitudes
-	ampl = np.copy(noise_signal[0])
-	ampl[Pspot] += common[:len(Pspot)] * P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	ampl[Pspot] /= np.max(np.abs( ampl[Pspot] )) 
-	ampl[Pspot] *= P[0]/2.
-	ampl[Sspot] += common[:len(Sspot)] * S[0]  * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	ampl[Sspot] /= np.max(np.abs( ampl[Sspot]  )) 
-	ampl[Sspot] *= S[0]/2.
+	ampl = np.copy(noise_signal)
+
+	ampl[0][Pspot] += ampl[0][Pspot] * P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[0][Pspot] /= np.max(np.abs( ampl[0][Pspot] )) 
+	ampl[0][Pspot] *= P[0]/2.
+	ampl[1][Pspot] += ampl[1][Pspot] * P[0]*1./ZHr[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[1][Pspot] /= np.max(np.abs( ampl[1][Pspot] )) 
+	ampl[1][Pspot] *= P[0]*1/ZHr[0]/2.
+	ampl[2][Pspot] += ampl[2][Pspot] * P[0]*1./ZHr[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[2][Pspot] /= np.max(np.abs( ampl[2][Pspot] )) 
+	ampl[2][Pspot] *= P[0]*1/ZHr[0]/2.
+
+	ampl[0][Sspot] += ampl[0][Sspot] * S[0]*1./ZHr[1]  * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	ampl[0][Sspot] /= np.max(np.abs( ampl[0][Sspot]  )) 
+	ampl[0][Sspot] *= S[0]*1/ZHr[1]/2.
+	ampl[1][Sspot] += ampl[1][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	ampl[1][Sspot] /= np.max(np.abs( ampl[1][Sspot]  )) 
+	ampl[1][Sspot] *= S[0]/2.
+	ampl[2][Sspot] += ampl[2][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	ampl[2][Sspot] /= np.max(np.abs( ampl[2][Sspot]  )) 
+	ampl[2][Sspot] *= S[0]/2.
+
 
 	# roughly remap frequencies at P and S wave frequencies
-	freq = np.copy(noise_signal[0])
-	freq[Pspot] += noise[0]/2. * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
-	freq[Pspot] /= np.max(np.abs( freq[Pspot] )) 
-	freq[Pspot] *= noise[0]/2.
-	freq[Sspot] += noise[0]/2. * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
-	freq[Sspot] /= np.max(np.abs( freq[Sspot] )) 
-	freq[Sspot] *= noise[0]/2.
+	freq = np.copy(noise_signal)
+	freq[0][Pspot] += P[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[0][Pspot] /= np.max(np.abs( freq[0][Pspot] )) 
+	freq[0][Pspot] *= noise[0]/2.
+	freq[1][Pspot] += P[0]*1./ZHr[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[1][Pspot] /= np.max(np.abs( freq[1][Pspot] )) 
+	freq[1][Pspot] *= noise[0]/2.
+	freq[2][Pspot] += P[0]*1/ZHr[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[2][Pspot] /= np.max(np.abs( freq[2][Pspot] )) 
+	freq[2][Pspot] *= noise[0]/2.
 
-	a = Stream(traces=[Trace(data=noise_signal[0], header=stats0), \
-		Trace(data=ampl, header=stats1), \
-		Trace(data=freq, header=stats2), \
-		Trace(data=pola[0], header=stats3_z), \
-		Trace(data=pola[1], header=stats3_e), \
-		Trace(data=pola[2], header=stats3_n)])
+	freq[0][Sspot] += S[0]*1./ZHr[1] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
+	freq[0][Sspot] /= np.max(np.abs( freq[0][Sspot] )) 
+	freq[0][Sspot] *= noise[0]/2.
+	freq[1][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
+	freq[1][Sspot] /= np.max(np.abs( freq[1][Sspot] )) 
+	freq[1][Sspot] *= noise[0]/2.
+	freq[2][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
+	freq[2][Sspot] /= np.max(np.abs( freq[2][Sspot] )) 
+	freq[2][Sspot] *= noise[0]/2.
+
+	a = Stream(traces=[Trace(data=noise_signal[0], header=stats0_z), \
+						# Trace(data=noise_signal[1], header=stats0_e), \
+						# Trace(data=noise_signal[2], header=stats0_n), \
+						Trace(data=freq[0], header=stats2_z), \
+						# Trace(data=freq[1], header=stats2_e), \
+						# Trace(data=freq[2], header=stats2_n), \
+						Trace(data=ampl[0], header=stats1_z), \
+						Trace(data=ampl[1], header=stats1_e), \
+						Trace(data=ampl[2], header=stats1_n), \
+						Trace(data=pola[0], header=stats3_z), \
+						Trace(data=pola[1], header=stats3_e), \
+						Trace(data=pola[2], header=stats3_n)])
 
 	# plotTfr(noise_signal[0], dt=.01, fmin=0.1, fmax=25)
 	# plotTfr(ampl, dt=.01, fmin=0.1, fmax=25)
@@ -294,17 +349,18 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 		maxscale = nmax
 
 	if scales is None:
-		scales = [2**i for i in range(4,999) if ((2**i <= (maxscale)) and (2**i <= (nmax - 2**i)))]
+		scales = [2**i for i in range(4,10) if ((2**i <= (maxscale)) and (2**i <= (nmax - 2**i)))]
 		scales = np.require(scales, dtype=np.int) 
 
 	# Initialize results at the minimal size
 	timeseries = np.zeros(( tmax, len(scales), nmax )) 
+	bandpass_timeseries = np.zeros(( tmax, len(scales), nmax )) 
 
 	a.detrend('linear')
 	a.taper(.01, type='triang', max_length=10) 
-	a.filter("highpass", freq=.5)  
+	a.filter("highpass", freq=1.)  
 	a.taper(.01, type='triang', max_length=10) 
-	a.filter("highpass", freq=.5)  
+	a.filter("highpass", freq=1.)  
 	a.taper(.01, type='triang', max_length=10) 
 
 	for t, tr in enumerate(a) : # the channel-wise calculations      
@@ -312,31 +368,40 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 		# Avoid clock channels 
 		if not tr.stats.channel == 'YH':
 
-			#
-			npts = tr.stats.npts
-			dt = np.zeros((tr.data).shape)
-			dt[1:] = np.abs(tr.data[:-1]-tr.data[1:])
-			data = tr.data.copy() 
-			data *= dt < (np.median(dt)+2.*np.std(dt))
-			data = scipy.signal.detrend(data)
-			data[data==0] = np.nan
+			for n, s in reversed(list(enumerate(scales))) : # Avoid scales when too wide for the current channel
+				#
+				npts = tr.stats.npts
+				dt = np.zeros((tr.data).shape)
+				dt[1:] = np.abs(tr.data[:-1]-tr.data[1:])
+				data = tr.data.copy()
 
-			if operation is 'rms':                  
-				# The cumulative sum can be exploited to calculate a 
-				# moving average (the cumsum function is quite efficient)
-				csqr = np.nan_to_num(data**2).cumsum() #np.nancumsum( data ** 2 ) #
-			elif (operation is 'averageabs') or  (operation is 'sumabs'):  
-				# The cumulative sum can be exploited to calculate a 
-				# moving average (the cumsum function is quite efficient)
-				csqr = np.nan_to_num(np.abs(data)).cumsum() # np.nancumsum(np.abs( data )) 
-			elif (operation is 'average') or  (operation is 'sum'):  
-				# The cumulative sum can be exploited to calculate a 
-				# moving average (the cumsum function is quite efficient)
-				csqr = np.nan_to_num(data).cumsum() #np.nancumsum( data )  
-			# Convert to float
-			csqr = np.require(csqr, dtype=np.float)
+				if len(scales)>1 and n < len(scales)-1 :
+					tr_filt = tr.copy()
+					tr_filt.filter('highpass', freq=1/(scales[n+1]*tr_filt.stats.delta), corners=2, zerophase=True)
+					# if len(scales)>2 and n > 0 :
+					# 	tr_filt.filter('lowpass', freq=1/(scales[n-1]*tr_filt.stats.delta), corners=2, zerophase=True)
+					data = tr_filt.data.copy()
 
-			for n, s in enumerate(scales) : # Avoid scales when too wide for the current channel
+				data *= dt < (np.median(dt)+2.*np.std(dt))
+				data = scipy.signal.detrend(data)
+
+				data[data==0] = np.nan
+				
+				if operation is 'rms':                  
+					# The cumulative sum can be exploited to calculate a 
+					# moving average (the cumsum function is quite efficient)
+					csqr = np.nan_to_num(data**2).cumsum() #np.nancumsum( data ** 2 ) #
+				elif (operation is 'averageabs') or  (operation is 'sumabs'):  
+					# The cumulative sum can be exploited to calculate a 
+					# moving average (the cumsum function is quite efficient)
+					csqr = np.nan_to_num(np.abs(data)).cumsum() # np.nancumsum(np.abs( data )) 
+				elif (operation is 'average') or  (operation is 'sum'):  
+					# The cumulative sum can be exploited to calculate a 
+					# moving average (the cumsum function is quite efficient)
+					csqr = np.nan_to_num(data).cumsum() #np.nancumsum( data )  
+				# Convert to float
+				csqr = np.require(csqr, dtype=np.float)
+
 				if (s < (npts - s)) :    
 					# Compute the sliding window
 					if (operation is 'rms') or (operation is 'average') or (operation is 'averageabs') or (operation is 'sumabs') or (operation is 'sum'):  
@@ -363,8 +428,6 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 					timeseries[t][n][12000:] = dtiny 
 					if (operation is 'rms') :
 						timeseries[t][n][:npts] = timeseries[t][n][:npts]**.5
-					# Avoid zeros
-					#timeseries[t][n][npts:] = timeseries[t][n][npts-1]
 	
 	return timeseries, scales 
 
@@ -376,7 +439,7 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 		maxscale = na
 
 	if scales is None:
-		scales = [2**i for i in range(2,999) if ((2**i <= (maxscale)) and (2**i <= (na - 2**i)))]
+		scales = [2**i for i in range(3,999) if ((2**i <= (maxscale)) and (2**i <= (na - 2**i)))]
 	
 	scales = np.require(scales, dtype=np.int) 
 	scales = np.asarray(scales)
@@ -459,10 +522,11 @@ def stream_trim_cf(stream, cf):
 
 	return wavelets, cflets
 
-def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, shift = 0):
+def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, shift = 0, f=None, rescale=None):
 	
 	if ax is None : 
 		ax = (plt.figure( figsize=(8, 10) )).gca()
+		(ax.get_figure()).tight_layout()
 
 	(tmax,nmax) = streamdatadim(stream)
 	labels = ["" for x in range(shift+tmax)]
@@ -494,17 +558,22 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 		labels[shift+t] = trace.stats.station[0:3] +'.'+ channel
 		anots[t] =  ' %3.1e' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
 		#ax.text(0, t, anots[t] , verticalalignment='bottom', horizontalalignment='left', color='green')
-		ax.plot(time, shift+t+trace.data/(2*np.max(np.abs(trace.data))), color)
-		ax.plot(time, shift+t-.5+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) ))**1., cfcolor, label=label)         
+		if f is None : 
+			d = -1*abs(trace.data.copy())
+			ax.plot(time, shift+t-0.25+trace.data/(2*np.max(np.abs(trace.data))), color, zorder=1)
+		if rescale is None :
+			ax.plot(time, shift+t+0.+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(2*(np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])))))**1., cfcolor, label=label, zorder=2)         
+		else : 
+			ax.plot(time, shift+t+0.+cf[t][:npts], cfcolor, label=label, zorder=2)         
+		
 		label = None
 
 	ax.set_yticks(np.arange(0, shift+tmax, 1.0))
 	ax.set_yticklabels(labels)
-	ax.text(0, shift-.25, anots[0] , verticalalignment='bottom', horizontalalignment='left', color=cfcolor)
+	#ax.text(0, shift-.25, anots[0] , verticalalignment='bottom', horizontalalignment='left', color=cfcolor)
 	ax.set_xlabel('Time (s)')
 	ax.set_ylabel('Channel')
 	ax.axis('tight')
-	(ax.get_figure()).tight_layout()
 	# plt.ylim( 10.5, 13.5) 
 	ax.set_xlim( 0, min([120, max(time)])) 
 
@@ -597,7 +666,7 @@ class Ratio(object):
 					cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
 
 			# rescaling 
-			cf[station_i] **= (1./self.enhancement_factor) 
+			#cf[station_i] **= (1./self.enhancement_factor) 
 
 		# ###################################################################################### why is this not ok ??????
 		# ratio = self.pre_processed_data[0] / self.pre_processed_data[1]
@@ -651,7 +720,7 @@ class Correlate(object):
 						buf[buf < dtiny] = dtiny
 
 						# product enhancement (no nans, no infs)
-						cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
+						cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)] 
 						#cf[station_i][np.isfinite(buf)] += (1-buf[np.isfinite(buf)])**2
 
 						# if no signal
@@ -659,7 +728,7 @@ class Correlate(object):
 						cf[station_i][ np.isnan(self.pre_processed_data[channel_i][station_i][enhancement_i]) ] = np.nan
 
 
-		return 1-(cf**(1./self.enhancement_factor))
+		return 1-(cf)#**(1./self.enhancement_factor))
 		#return cf**(.5)
 
 	def plot(self, **kwargs):        
@@ -779,7 +848,7 @@ class leftRightTerms(object):
 					channels[1][station_i][n_enhancements] = scale_data
 					channels[0][station_i][n_enhancements][:-1*(self.scales[scale_i])] = scale_data[self.scales[scale_i]:]
 
-					channels[0][station_i][n_enhancements][npts:] = np.nan
+					channels[0][station_i][n_enhancements][-1*(self.scales[scale_i]):] = np.nan
 					channels[1][station_i][n_enhancements][npts:] = np.nan
 
 					# apod = (np.require( range(self.scales[scale_i]) , dtype=np.float) / np.require(self.scales[scale_i], dtype=np.float))**0.5
