@@ -17,56 +17,93 @@ This module ...
 """
 
 # def ggg(...):
-#         """
-#         Run a ...
-#
-#         :param type: String that specifies which trigger is applied (e.g.
-#             ``'recstalta'``).
-#         :param options: Necessary keyword arguments for the respective
-#             trigger.
-#
-#         .. note::
-#
-#             The raw data is not accessible anymore afterwards.
-#
-#         .. rubric:: _`Supported Trigger`
-#
-#         ``'classicstalta'``
-#             Computes the classic STA/LTA characteristic function (uses
-#             :func:`obspy.signal.trigger.classicSTALTA`).
-#
-#         .. rubric:: Example
-#
-#         >>> ss.ssss('sss', ss=1, sss=4)  # doctest: +ELLIPSIS
-#         <...aaa...>
-#         >>> aaa.aaa()  # aaa
-#
-#         .. plot::
-#
-#             from ggg import ggg
-#             gg = ggg()
-#             gg.ggggg("ggggg", ggggg=3456)
-#             gg.ggg()
-#         """
+# 	"""
+# 	Plot the given seismic wave radiation pattern as a color-coded surface 
+# 	or focal sphere (not exactly as a beach ball diagram).
+# 	______________________________________________________________________
+
+# 	:param type: String that specifies which trigger is applied (e.g.
+# 	    ``'recstalta'``).
+# 	:param options: Necessary keyword arguments for the respective
+# 		trigger.
+
+# 	.. note::
+
+# 		The raw data is not accessible anymore afterwards.
+
+# 	.. rubric:: _`Supported Trigger`
+
+# 	``'classicstalta'``
+# 		Computes the classic STA/LTA characteristic function (uses
+# 		:func:`obspy.signal.trigger.classicSTALTA`).
+
+# 	.. rubric:: Example
+
+# 		>>> ss.ssss('sss', ss=1, sss=4)  # doctest: +ELLIPSIS
+# 		<...aaa...>
+# 		>>> aaa.aaa()  # aaa
+
+# 	.. plot::
+
+# 		from ggg import ggg
+# 		gg = ggg()
+# 		gg.ggggg("ggggg", ggggg=3456)
+# 		gg.ggg()
+# 	"""
 
 import re
 import copy
 import fnmatch
 import numpy as np
-import numpy.matlib
 import matplotlib.pyplot as plt
 from obspy import read, Trace, Stream
 from obspy.core.trace import Stats
-from obspy.signal.tf_misfit import plotTfr
 from obspy.signal.filter import highpass
-from mpl_toolkits.mplot3d import Axes3D
 from source import spherical_to_cartesian
 import scipy.signal
 
 
-def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[7., 15., 100.], S=[9., 15., 100.]) : 
+def artificial_stream(npts=1000., noise=1., P=[7., 15., 3.**.5], S=[9., 15., 3.**.5]) : 
+	"""
+	Generate artificial data for testing purposes.
+	______________________________________________________________________
+	:param npts: data length in samples.
+	:param noise: amplitude of noise.
+	:param P: P-wave properties [amplitude, frequency, H/Z ratio]
+	:param S: S-wave properties [amplitude, frequency, Z/H ratio]
+	
+	:rtype: stream
+	:return: artificial noisy data with [noise only, frequency change, 
+		amplitude change, polarization change].
+	
+	.. note::
 
-	ZHr = [3.**.5, 3.**.5]
+		The noise is a random 3d motion projection on 3 cartesian 
+		components.
+
+		The amplitude decays are linear and the body-wave span a third of 
+		the signal duration (npts/6 samples each).
+
+	.. rubric:: Example
+
+		>>> import trigger
+		>>> a = trigger.artificial_stream(npts=1000)
+		>>> print a
+
+	.. plot::
+
+		>>> import trigger
+		>>> plotTfr((a[1]).data, dt=.01, fmin=0.1, fmax=25)
+		>>> plotTfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
+		>>> fig = plt.figure()
+		>>> ax = fig.gca(projection='3d')
+		>>> ax.plot(a[5].data, a[6].data, a[7].data, label='noise', alpha=.5, color='g')
+		>>> ax.plot(a[5].data[npts/3:npts/2],a[6].data[npts/3:npts/2],a[7].data[npts/3:npts/2], label='P', color='b')
+		>>> ax.plot(a[5].data[npts/2:npts*2/3],a[6].data[npts/2:npts*2/3],a[7].data[npts/2:npts*2/3], label='S', color='r')
+		>>> ax.legend()
+		>>> plt.show()
+	"""
+
 	Fs = npts/10.
 	Fnl = npts/30.
 	npts_c = npts+ Fnl
@@ -88,21 +125,7 @@ def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[7., 15., 100.], S=[9., 15., 
 
 	noise_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
 		np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
-		np.random.random_integers(-noise[0]*500, noise[0]*500, npts)/1000. ] ) #normal(0, noise[0]/100., npts)
-
-	# common_N = np.random.random_integers(-noise[2]*500, noise[2]*500, npts_c)/1000.
-	# common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
-	# noise_signal[2] += (common_N )
-	# noise_signal[2] /= np.max(np.max(noise_signal[2]))
-	# noise_signal[2] *= noise[0]/2.
-
-	# common_N = np.random.random_integers(-np.pi*1000, np.pi*1000, npts_c)/1000.
-	# common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
-	# noise_signal[1] += (common_N )
-
-	# common_N = np.random.random_integers(-np.pi*1000, np.pi*1000, npts_c)/1000.
-	# common_N = (np.cumsum(common_N[Fnl:])-np.cumsum(common_N[:-Fnl]))/Fnl
-	# noise_signal[0] += (common_N )
+		np.random.random_integers(-noise*500, noise*500, npts)/1000. ] )
 
 	noise_signal = np.asarray(spherical_to_cartesian(noise_signal))
 
@@ -113,11 +136,11 @@ def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[7., 15., 100.], S=[9., 15., 
 
 	p_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Pspot))/1000. , 
 		np.random.random_integers(np.pi*1000/1.3, np.pi*1000/0.7, len(Pspot))/1000. , 
-		np.random.random_integers(-noise[0]*500, noise[0]*500, len(Pspot))/1000. ] ) #normal(0, noise[0]/100., npts)
+		np.random.random_integers(-noise*500, noise*500, len(Pspot))/1000. ] ) 
 	p_signal = np.asarray(spherical_to_cartesian(p_signal))
 	s_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Sspot))/1000. , 
 		np.random.random_integers(np.pi*1000/2.3, np.pi*1000/1.7, len(Sspot))/1000. , 
-		np.random.random_integers(-noise[0]*500, noise[0]*500, len(Sspot))/1000. ] ) #normal(0, noise[0]/100., npts)
+		np.random.random_integers(-noise*500, noise*500, len(Sspot))/1000. ] )
 	s_signal = np.asarray(spherical_to_cartesian(s_signal))
 
 	pola[0][Pspot] += p_signal[2]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
@@ -128,33 +151,22 @@ def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[7., 15., 100.], S=[9., 15., 
 	pola[1][Sspot] += s_signal[1]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
 	pola[2][Sspot] += s_signal[0]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
 
-	# pola[0][Pspot] += common[:len(Pspot)] * P[2]
-	# pola[0][Pspot] /= np.max(np.abs(pola[0][Pspot])) 
-	# pola[0][Pspot] *= noise[0]/2.
-
-	# pola[2][Sspot] += common[:len(Sspot)] * S[2]
-	# pola[2][Sspot] /= np.max(np.abs(pola[2][Sspot])) 
-	# pola[2][Sspot] *= noise[0]/2.
-	# pola[1][Sspot] += common[:len(Sspot)] * S[2]
-	# pola[1][Sspot] /= np.max(np.abs(pola[1][Sspot])) 
-	# pola[1][Sspot] *= noise[0]/2.
-
 	# roughly change amplitudes at P and S wave amplitudes
 	ampl = np.copy(noise_signal)
 
 	ampl[0][Pspot] += ampl[0][Pspot] * P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
 	ampl[0][Pspot] /= np.max(np.abs( ampl[0][Pspot] )) 
 	ampl[0][Pspot] *= P[0]/2.
-	ampl[1][Pspot] += ampl[1][Pspot] * P[0]*1./ZHr[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[1][Pspot] += ampl[1][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
 	ampl[1][Pspot] /= np.max(np.abs( ampl[1][Pspot] )) 
-	ampl[1][Pspot] *= P[0]*1/ZHr[0]/2.
-	ampl[2][Pspot] += ampl[2][Pspot] * P[0]*1./ZHr[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[1][Pspot] *= P[0]*1/P[2]/2.
+	ampl[2][Pspot] += ampl[2][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
 	ampl[2][Pspot] /= np.max(np.abs( ampl[2][Pspot] )) 
-	ampl[2][Pspot] *= P[0]*1/ZHr[0]/2.
+	ampl[2][Pspot] *= P[0]*1/P[2]/2.
 
-	ampl[0][Sspot] += ampl[0][Sspot] * S[0]*1./ZHr[1]  * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	ampl[0][Sspot] += ampl[0][Sspot] * S[0]*1./S[2]  * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
 	ampl[0][Sspot] /= np.max(np.abs( ampl[0][Sspot]  )) 
-	ampl[0][Sspot] *= S[0]*1/ZHr[1]/2.
+	ampl[0][Sspot] *= S[0]*1/S[2]/2.
 	ampl[1][Sspot] += ampl[1][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
 	ampl[1][Sspot] /= np.max(np.abs( ampl[1][Sspot]  )) 
 	ampl[1][Sspot] *= S[0]/2.
@@ -167,30 +179,26 @@ def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[7., 15., 100.], S=[9., 15., 
 	freq = np.copy(noise_signal)
 	freq[0][Pspot] += P[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
 	freq[0][Pspot] /= np.max(np.abs( freq[0][Pspot] )) 
-	freq[0][Pspot] *= noise[0]/2.
-	freq[1][Pspot] += P[0]*1./ZHr[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[0][Pspot] *= noise/2.
+	freq[1][Pspot] += P[0]*1./P[2] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
 	freq[1][Pspot] /= np.max(np.abs( freq[1][Pspot] )) 
-	freq[1][Pspot] *= noise[0]/2.
-	freq[2][Pspot] += P[0]*1/ZHr[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[1][Pspot] *= noise/2.
+	freq[2][Pspot] += P[0]*1/P[2] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
 	freq[2][Pspot] /= np.max(np.abs( freq[2][Pspot] )) 
-	freq[2][Pspot] *= noise[0]/2.
+	freq[2][Pspot] *= noise/2.
 
-	freq[0][Sspot] += S[0]*1./ZHr[1] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
+	freq[0][Sspot] += S[0]*1./S[2] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
 	freq[0][Sspot] /= np.max(np.abs( freq[0][Sspot] )) 
-	freq[0][Sspot] *= noise[0]/2.
+	freq[0][Sspot] *= noise/2.
 	freq[1][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
 	freq[1][Sspot] /= np.max(np.abs( freq[1][Sspot] )) 
-	freq[1][Sspot] *= noise[0]/2.
+	freq[1][Sspot] *= noise/2.
 	freq[2][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
 	freq[2][Sspot] /= np.max(np.abs( freq[2][Sspot] )) 
-	freq[2][Sspot] *= noise[0]/2.
+	freq[2][Sspot] *= noise/2.
 
 	a = Stream(traces=[Trace(data=noise_signal[0], header=stats0_z), \
-						# Trace(data=noise_signal[1], header=stats0_e), \
-						# Trace(data=noise_signal[2], header=stats0_n), \
 						Trace(data=freq[0], header=stats2_z), \
-						# Trace(data=freq[1], header=stats2_e), \
-						# Trace(data=freq[2], header=stats2_n), \
 						Trace(data=ampl[0], header=stats1_z), \
 						Trace(data=ampl[1], header=stats1_e), \
 						Trace(data=ampl[2], header=stats1_n), \
@@ -198,43 +206,21 @@ def ideal_stream(npts=1000., noise=[1., 1., 2.], P=[7., 15., 100.], S=[9., 15., 
 						Trace(data=pola[1], header=stats3_e), \
 						Trace(data=pola[2], header=stats3_n)])
 
-	# plotTfr(noise_signal[0], dt=.01, fmin=0.1, fmax=25)
-	# plotTfr(ampl, dt=.01, fmin=0.1, fmax=25)
-	# plotTfr(freq, dt=.01, fmin=0.1, fmax=25)
-	# plotTfr(pola[0], dt=.01, fmin=0.1, fmax=25)
-	# # for t, tr in enumerate(a):
-	# # 	plotTfr(tr.data, dt=.01, fmin=0.1, fmax=25)
-
-	# fig = plt.figure()
-	# ax = fig.gca(projection='3d')
-	# ax.plot(a[3].data, a[4].data, a[5].data, label='noise', alpha=.2, color='g')
-	# ax.plot(a[3].data[npts/3:npts/3+npts/6],a[4].data[npts/3:npts/3+npts/6],a[5].data[npts/3:npts/3+npts/6], label='P', color='b')
-	# ax.plot(a[3].data[npts*3/6:npts*3/6+npts/6],a[4].data[npts*3/6:npts*3/6+npts/6],a[5].data[npts*3/6:npts*3/6+npts/6], label='S', color='r')
-	# ax.legend()
-	# plt.show()
-
 	return a
 
 
 def streamdatadim(a):
 	"""
-	Calculate the dimensions of all data in stream.
-
 	Given a stream (obspy.core.stream) calculate the minimum dimensions 
 	of the array that contents all data from all traces.
-
-	This method is written in pure Python and gets slow as soon as there
-	are more then ... in ...  --- normally
-	this does not happen.
+	______________________________________________________________________
 
 	:type a: ObsPy :class:`~obspy.core.stream`
 	:param a: datastream of e.g. seismogrammes.
+
 	:rtype: array
 	:return: array of int corresponding to the dimensions of stream.
 	"""
-	# 1) Does this
-	# 2) Then does 
-	#    that
 
 	nmax=0
 	for t, tr in enumerate(a):
@@ -243,29 +229,59 @@ def streamdatadim(a):
 	return (t+1, nmax)
 
 
-def trace2stream(trace_or_stream):
+def trace2stream(trace_or_stream_or_nparray):
+	"""
+	Given a stream (obspy.core.stream) calculate the minimum dimensions 
+	of the array that contents all data from all traces.
+	______________________________________________________________________
 
-	if isinstance(trace_or_stream, Stream):
-		newstream = trace_or_stream
-	elif isinstance(trace_or_stream, Trace):
+	:type trace_or_stream_or_nparray: ObsPy :class:`~obspy.core.stream` or
+		`~obspy.core.trace` or NumPy :class:`~numpy.ndarray`.
+	:param trace_or_stream_or_nparray: input data .
+
+	:rtype 0: ObsPy :class:`~obspy.core.stream`.
+	:return 0: stream containing copies of inputed data.
+	:rtype 1: input.
+	:return 1: copy of inputed data.
+	"""
+
+	if isinstance(trace_or_stream_or_nparray, Stream):
+		newstream = trace_or_stream_or_nparray
+	elif isinstance(trace_or_stream_or_nparray, Trace):
 		newstream = Stream()
-		newstream.append(trace_or_stream)
+		newstream.append(trace_or_stream_or_nparray)
 	else:
 		try:
-			dims = trace_or_stream.shape
+			dims = trace_or_stream_or_nparray.shape
 			if len(dims) == 3:
-				newstream = trace_or_stream
+				newstream = trace_or_stream_or_nparray
 			elif len(dims) == 2  :
 				newstream = np.zeros(( 1, dims[0], dims[1] )) 
-				newstream[0] = trace_or_stream
+				newstream[0] = trace_or_stream_or_nparray
 		except:
 			raise Exception('I/O dimensions: only obspy.Stream or obspy.Trace input supported.')
 
-	return newstream, trace_or_stream 
+	return newstream, trace_or_stream_or_nparray 
 
 
-def stream_indices(data, delta=None, id=None, network=None, station=None, location=None, channel=None, starttime=None, endtime=None, npts=None, maxendtime=None, minstarttime=None, reftime=None):
-	
+def stream_indexes(data, delta=None, id=None, network=None, station=None, location=None, channel=None, starttime=None, endtime=None, npts=None, maxendtime=None, minstarttime=None, reftime=None):
+	"""
+	Return the indexes of Stream object with these traces that match the given
+	stats criteria (e.g. all traces with ``channel="EHZ"``).
+	______________________________________________________________________
+
+	:type: 
+	:param: 
+
+	:rtype: 
+	:return: 
+
+	.. note::
+
+		works exactely as `~obspy.core.stream.select`.
+
+	"""
+
 	(tmax,nmax) = streamdatadim(data)
 	trace_indexes = np.asarray([])
 	data_indexes = np.asarray([]) 
@@ -357,11 +373,12 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 	bandpass_timeseries = np.zeros(( tmax, len(scales), nmax )) 
 
 	a.detrend('linear')
-	a.taper(.01, type='triang', max_length=10) 
-	a.filter("highpass", freq=1.)  
-	a.taper(.01, type='triang', max_length=10) 
-	a.filter("highpass", freq=1.)  
-	a.taper(.01, type='triang', max_length=10) 
+	a.taper(.05, type='triang', max_length=10) 
+	# a.filter("highpass", freq=1.)  
+	# a.taper(.05, type='triang', max_length=10) 
+	# a.detrend('linear')
+	# a.filter("highpass", freq=1.)  
+	# a.taper(.05, type='triang', max_length=10) 
 
 	for t, tr in enumerate(a) : # the channel-wise calculations      
 
@@ -952,7 +969,7 @@ class Component(object):
 			ZNE_di = np.asarray([])
 			for i in range(len(ZNE)):
 				#print ZNE_sta[i], ZNE[i]
-				i, di = stream_indices(self.data, delta=delta, network=net, station=ZNE_sta[i], location=loc, channel=ZNE[i], minstarttime=stime, maxendtime=etime, reftime=stime )
+				i, di = stream_indexes(self.data, delta=delta, network=net, station=ZNE_sta[i], location=loc, channel=ZNE[i], minstarttime=stime, maxendtime=etime, reftime=stime )
 				ZNE_i = np.append(ZNE_i, i )
 				ZNE_di = np.append(ZNE_di, di )
 
