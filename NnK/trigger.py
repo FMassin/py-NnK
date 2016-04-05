@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
 """
 trigger - Module to improve obspy.signal.trigger
-======================================================
-This module ...
 
-.. figure:: /_images/Event.png
-
+This module can be used fro probabilistic estimation of the parameters
+of body-waves from continuous data.
+_________
 .. note::
 
-	For ...
+	Functions and classes are ordered from general to specific.
 
-:copyright:
-	The ...
-:license:
-	...
+	For more details on the work related to this module see 
+	Massin & Malcolm, 2016: A better automatic body-wave picker with 
+	broad applicability. SEG Technical Program.
+    
 """
-
 
 
 import re
@@ -28,159 +26,6 @@ from obspy.core.trace import Stats
 from obspy.signal.filter import highpass
 from source import spherical_to_cartesian
 import scipy.signal
-
-
-def artificial_stream(npts=1000., noise=1., P=[7., 15., 3.**.5], S=[9., 15., 3.**.5]) : 
-	"""
-	Generate artificial data for testing purposes.
-	______
-	:type: 
-		- npts: int (optional).
-		- noise: float (optional).
-		- P: list (1x3 type float [optional]).
-		- S: list (1x3 type float [optional]).
-	:param: 
-		- npts: data length in samples.
-		- noise: amplitude of noise.
-		- P: P-wave properties [amplitude, frequency, H/Z ratio]
-		- S: S-wave properties [amplitude, frequency, Z/H ratio]	
-	_______
-	:rtype: ObsPy :class:`~obspy.core.stream`
-	:return: artificial noisy data with [noise only, frequency change, 
-		amplitude change, polarization change].
-	_________
-	.. note::
-
-		The noise is a random 3d motion projection on 3 cartesian 
-		components.
-
-		The amplitude decays are linear and the body-wave span a third
-		of the signal duration (npts/6 samples each).
-	___________
-	.. rubric:: Example
-
-		>>> import trigger
-		>>> a = trigger.artificial_stream(npts=1000)
-		>>> print a
-	_________
-	.. plot::
-
-		>>> import trigger
-		>>> plotTfr((a[1]).data, dt=.01, fmin=0.1, fmax=25)
-		>>> plotTfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
-		>>> fig = plt.figure()
-		>>> ax = fig.gca(projection='3d')
-		>>> ax.plot(a[5].data, a[6].data, a[7].data, label='noise', alpha=.5, color='g')
-		>>> ax.plot(a[5].data[npts/3:npts/2],a[6].data[npts/3:npts/2],a[7].data[npts/3:npts/2], label='P', color='b')
-		>>> ax.plot(a[5].data[npts/2:npts*2/3],a[6].data[npts/2:npts*2/3],a[7].data[npts/2:npts*2/3], label='S', color='r')
-		>>> ax.legend()
-		>>> plt.show()
-
-	"""
-
-	Fs = npts/10.
-	Fnl = npts/30.
-	npts_c = npts+ Fnl
-	Pspot = range(npts/3,npts/2)
-	Sspot = range(npts/2,npts*2/3)
-
-	stats3_z = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats3_e = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
-	stats3_n = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
-	stats2_z = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats2_e = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
-	stats2_n = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
-	stats1_z = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats1_e = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
-	stats1_n = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
-	stats0_z = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
-	stats0_e = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
-	stats0_n = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
-
-	noise_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
-		np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
-		np.random.random_integers(-noise*500, noise*500, npts)/1000. ] )
-
-	noise_signal = np.asarray(spherical_to_cartesian(noise_signal))
-
-	# change the noise pol polarization to isotropic to vertical (P) and horizontal (S)
-	pola = np.copy(noise_signal)
-	## onde P
-	common = np.random.random_integers(-50., 50., len(Pspot)+2)/100.
-
-	p_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Pspot))/1000. , 
-		np.random.random_integers(np.pi*1000/1.3, np.pi*1000/0.7, len(Pspot))/1000. , 
-		np.random.random_integers(-noise*500, noise*500, len(Pspot))/1000. ] ) 
-	p_signal = np.asarray(spherical_to_cartesian(p_signal))
-	s_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Sspot))/1000. , 
-		np.random.random_integers(np.pi*1000/2.3, np.pi*1000/1.7, len(Sspot))/1000. , 
-		np.random.random_integers(-noise*500, noise*500, len(Sspot))/1000. ] )
-	s_signal = np.asarray(spherical_to_cartesian(s_signal))
-
-	pola[0][Pspot] += p_signal[2]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	pola[1][Pspot] += p_signal[1]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	pola[2][Pspot] += p_signal[0]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	## onde S
-	pola[0][Sspot] += s_signal[2]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	pola[1][Sspot] += s_signal[1]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	pola[2][Sspot] += s_signal[0]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-
-	# roughly change amplitudes at P and S wave amplitudes
-	ampl = np.copy(noise_signal)
-
-	ampl[0][Pspot] += ampl[0][Pspot] * P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	ampl[0][Pspot] /= np.max(np.abs( ampl[0][Pspot] )) 
-	ampl[0][Pspot] *= P[0]/2.
-	ampl[1][Pspot] += ampl[1][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	ampl[1][Pspot] /= np.max(np.abs( ampl[1][Pspot] )) 
-	ampl[1][Pspot] *= P[0]*1/P[2]/2.
-	ampl[2][Pspot] += ampl[2][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	ampl[2][Pspot] /= np.max(np.abs( ampl[2][Pspot] )) 
-	ampl[2][Pspot] *= P[0]*1/P[2]/2.
-
-	ampl[0][Sspot] += ampl[0][Sspot] * S[0]*1./S[2]  * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	ampl[0][Sspot] /= np.max(np.abs( ampl[0][Sspot]  )) 
-	ampl[0][Sspot] *= S[0]*1/S[2]/2.
-	ampl[1][Sspot] += ampl[1][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	ampl[1][Sspot] /= np.max(np.abs( ampl[1][Sspot]  )) 
-	ampl[1][Sspot] *= S[0]/2.
-	ampl[2][Sspot] += ampl[2][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	ampl[2][Sspot] /= np.max(np.abs( ampl[2][Sspot]  )) 
-	ampl[2][Sspot] *= S[0]/2.
-
-
-	# roughly remap frequencies at P and S wave frequencies
-	freq = np.copy(noise_signal)
-	freq[0][Pspot] += P[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
-	freq[0][Pspot] /= np.max(np.abs( freq[0][Pspot] )) 
-	freq[0][Pspot] *= noise/2.
-	freq[1][Pspot] += P[0]*1./P[2] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
-	freq[1][Pspot] /= np.max(np.abs( freq[1][Pspot] )) 
-	freq[1][Pspot] *= noise/2.
-	freq[2][Pspot] += P[0]*1/P[2] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
-	freq[2][Pspot] /= np.max(np.abs( freq[2][Pspot] )) 
-	freq[2][Pspot] *= noise/2.
-
-	freq[0][Sspot] += S[0]*1./S[2] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
-	freq[0][Sspot] /= np.max(np.abs( freq[0][Sspot] )) 
-	freq[0][Sspot] *= noise/2.
-	freq[1][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
-	freq[1][Sspot] /= np.max(np.abs( freq[1][Sspot] )) 
-	freq[1][Sspot] *= noise/2.
-	freq[2][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
-	freq[2][Sspot] /= np.max(np.abs( freq[2][Sspot] )) 
-	freq[2][Sspot] *= noise/2.
-
-	a = Stream(traces=[Trace(data=noise_signal[0], header=stats0_z), \
-						Trace(data=freq[0], header=stats2_z), \
-						Trace(data=ampl[0], header=stats1_z), \
-						Trace(data=ampl[1], header=stats1_e), \
-						Trace(data=ampl[2], header=stats1_n), \
-						Trace(data=pola[0], header=stats3_z), \
-						Trace(data=pola[1], header=stats3_e), \
-						Trace(data=pola[2], header=stats3_n)])
-
-	return a
 
 
 def streamdatadim(a):
@@ -462,7 +307,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 	
 	return timeseries, scales 
 
-			
+
 def correlationcoef(a, b, scales=None, maxscale=None):
 	"""
 	Calculate moving cross-correlation coefficients by 
@@ -609,7 +454,6 @@ class Ratio(object):
 
 	def plot(self, **kwargs):
 		return stream_processor_plot( self.data, self.output(), **kwargs)
-
 
 
 class Correlate(object):
@@ -1320,6 +1164,159 @@ def stream_multiplexor_plot(stream,cf):
 	plt.tight_layout()
 
 	return ax
+
+
+def artificial_stream(npts=1000., noise=1., P=[7., 15., 3.**.5], S=[9., 15., 3.**.5]) : 
+	"""
+	Generate artificial data for testing purposes.
+	______
+	:type: 
+		- npts: int (optional).
+		- noise: float (optional).
+		- P: list (1x3 type float [optional]).
+		- S: list (1x3 type float [optional]).
+	:param: 
+		- npts: data length in samples.
+		- noise: amplitude of noise.
+		- P: P-wave properties [amplitude, frequency, H/Z ratio]
+		- S: S-wave properties [amplitude, frequency, Z/H ratio]	
+	_______
+	:rtype: ObsPy :class:`~obspy.core.stream`
+	:return: artificial noisy data with [noise only, frequency change, 
+		amplitude change, polarization change].
+	_________
+	.. note::
+
+		The noise is a random 3d motion projection on 3 cartesian 
+		components.
+
+		The amplitude decays are linear and the body-wave span a third
+		of the signal duration (npts/6 samples each).
+	___________
+	.. rubric:: Example
+
+		>>> import trigger
+		>>> a = trigger.artificial_stream(npts=1000)
+		>>> print a
+	_________
+	.. plot::
+
+		>>> import trigger
+		>>> plotTfr((a[1]).data, dt=.01, fmin=0.1, fmax=25)
+		>>> plotTfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
+		>>> fig = plt.figure()
+		>>> ax = fig.gca(projection='3d')
+		>>> ax.plot(a[5].data, a[6].data, a[7].data, label='noise', alpha=.5, color='g')
+		>>> ax.plot(a[5].data[npts/3:npts/2],a[6].data[npts/3:npts/2],a[7].data[npts/3:npts/2], label='P', color='b')
+		>>> ax.plot(a[5].data[npts/2:npts*2/3],a[6].data[npts/2:npts*2/3],a[7].data[npts/2:npts*2/3], label='S', color='r')
+		>>> ax.legend()
+		>>> plt.show()
+
+	"""
+
+	Fs = npts/10.
+	Fnl = npts/30.
+	npts_c = npts+ Fnl
+	Pspot = range(npts/3,npts/2)
+	Sspot = range(npts/2,npts*2/3)
+
+	stats3_z = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats3_e = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats3_n = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
+	stats2_z = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats2_e = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats2_n = Stats({'network':"Test", 'station':"F", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
+	stats1_z = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats1_e = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats1_n = Stats({'network':"Test", 'station':"A", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
+	stats0_z = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
+	stats0_e = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
+	stats0_n = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
+
+	noise_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
+		np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
+		np.random.random_integers(-noise*500, noise*500, npts)/1000. ] )
+
+	noise_signal = np.asarray(spherical_to_cartesian(noise_signal))
+
+	# change the noise pol polarization to isotropic to vertical (P) and horizontal (S)
+	pola = np.copy(noise_signal)
+	## onde P
+	common = np.random.random_integers(-50., 50., len(Pspot)+2)/100.
+
+	p_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Pspot))/1000. , 
+		np.random.random_integers(np.pi*1000/1.3, np.pi*1000/0.7, len(Pspot))/1000. , 
+		np.random.random_integers(-noise*500, noise*500, len(Pspot))/1000. ] ) 
+	p_signal = np.asarray(spherical_to_cartesian(p_signal))
+	s_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Sspot))/1000. , 
+		np.random.random_integers(np.pi*1000/2.3, np.pi*1000/1.7, len(Sspot))/1000. , 
+		np.random.random_integers(-noise*500, noise*500, len(Sspot))/1000. ] )
+	s_signal = np.asarray(spherical_to_cartesian(s_signal))
+
+	pola[0][Pspot] += p_signal[2]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	pola[1][Pspot] += p_signal[1]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	pola[2][Pspot] += p_signal[0]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	## onde S
+	pola[0][Sspot] += s_signal[2]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	pola[1][Sspot] += s_signal[1]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	pola[2][Sspot] += s_signal[0]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+
+	# roughly change amplitudes at P and S wave amplitudes
+	ampl = np.copy(noise_signal)
+
+	ampl[0][Pspot] += ampl[0][Pspot] * P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[0][Pspot] /= np.max(np.abs( ampl[0][Pspot] )) 
+	ampl[0][Pspot] *= P[0]/2.
+	ampl[1][Pspot] += ampl[1][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[1][Pspot] /= np.max(np.abs( ampl[1][Pspot] )) 
+	ampl[1][Pspot] *= P[0]*1/P[2]/2.
+	ampl[2][Pspot] += ampl[2][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	ampl[2][Pspot] /= np.max(np.abs( ampl[2][Pspot] )) 
+	ampl[2][Pspot] *= P[0]*1/P[2]/2.
+
+	ampl[0][Sspot] += ampl[0][Sspot] * S[0]*1./S[2]  * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	ampl[0][Sspot] /= np.max(np.abs( ampl[0][Sspot]  )) 
+	ampl[0][Sspot] *= S[0]*1/S[2]/2.
+	ampl[1][Sspot] += ampl[1][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	ampl[1][Sspot] /= np.max(np.abs( ampl[1][Sspot]  )) 
+	ampl[1][Sspot] *= S[0]/2.
+	ampl[2][Sspot] += ampl[2][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
+	ampl[2][Sspot] /= np.max(np.abs( ampl[2][Sspot]  )) 
+	ampl[2][Sspot] *= S[0]/2.
+
+
+	# roughly remap frequencies at P and S wave frequencies
+	freq = np.copy(noise_signal)
+	freq[0][Pspot] += P[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[0][Pspot] /= np.max(np.abs( freq[0][Pspot] )) 
+	freq[0][Pspot] *= noise/2.
+	freq[1][Pspot] += P[0]*1./P[2] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[1][Pspot] /= np.max(np.abs( freq[1][Pspot] )) 
+	freq[1][Pspot] *= noise/2.
+	freq[2][Pspot] += P[0]*1/P[2] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
+	freq[2][Pspot] /= np.max(np.abs( freq[2][Pspot] )) 
+	freq[2][Pspot] *= noise/2.
+
+	freq[0][Sspot] += S[0]*1./S[2] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
+	freq[0][Sspot] /= np.max(np.abs( freq[0][Sspot] )) 
+	freq[0][Sspot] *= noise/2.
+	freq[1][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
+	freq[1][Sspot] /= np.max(np.abs( freq[1][Sspot] )) 
+	freq[1][Sspot] *= noise/2.
+	freq[2][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
+	freq[2][Sspot] /= np.max(np.abs( freq[2][Sspot] )) 
+	freq[2][Sspot] *= noise/2.
+
+	a = Stream(traces=[Trace(data=noise_signal[0], header=stats0_z), \
+						Trace(data=freq[0], header=stats2_z), \
+						Trace(data=ampl[0], header=stats1_z), \
+						Trace(data=ampl[1], header=stats1_e), \
+						Trace(data=ampl[2], header=stats1_n), \
+						Trace(data=pola[0], header=stats3_z), \
+						Trace(data=pola[1], header=stats3_e), \
+						Trace(data=pola[2], header=stats3_n)])
+
+	return a
 
 
 # def ggg(...):
