@@ -1259,93 +1259,185 @@ class Correlate(object):
 	def plot(self, **kwargs):        
 		return stream_processor_plot( self.data, self.output(), **kwargs)
 
-def trigger_onset(charfct, thres1, thres2, max_len=9e99, max_len_delete=False):
-    """
-    Calculate trigger on and off times.
+def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=True, onset_refine=True):
+	"""
+	Calculate trigger on and off times.
 
-    Given thres1 and thres2 calculate trigger on and off times from
-    characteristic function.
+	Given thr_on and thr_off calculate trigger on and off times from
+	characteristic function.
 
-    This method is written in pure Python and gets slow as soon as there
-    are more then 1e6 triggerings ("on" AND "off") in charfct --- normally
-    this does not happen.
+	This method is written in pure Python and gets slow as soon as there
+	are more then 1e6 triggerings ("on" AND "off") in charfct --- normally
+	this does not happen.
 
-    :type charfct: NumPy :class:`~numpy.ndarray`
-    :param charfct: Characteristic function of e.g. STA/LTA trigger
-    :type thres1: float
-    :param thres1: Value above which trigger (of characteristic function)
-                   is activated (higher threshold)
-    :type thres2: float
-    :param thres2: Value below which trigger (of characteristic function)
-        is deactivated (lower threshold)
-    :type max_len: int
-    :param max_len: Maximum length of triggered event in samples. A new
-                    event will be triggered as soon as the signal reaches
-                    again above thres1.
-    :type max_len_delete: bool
-    :param max_len_delete: Do not write events longer than max_len into
-                           report file.
-    :rtype: List
-    :return: Nested List of trigger on and of times in samples
-    """
-    # 1) find indices of samples greater than threshold
-    # 2) calculate trigger "of" times by the gap in trigger indices
-    #    above the threshold i.e. the difference of two following indices
-    #    in ind is greater than 1
-    # 3) in principle the same as for "of" just add one to the index to get
-    #    start times, this operation is not supported on the compact
-    #    syntax
-    # 4) as long as there is a on time greater than the actual of time find
-    #    trigger on states which are greater than last of state an the
-    #    corresponding of state which is greater than current on state
-    # 5) if the signal stays above thres2 longer than max_len an event
-    #    is triggered and following a new event can be triggered as soon as
-    #    the signal is above thres1
+	:type charfct: NumPy :class:`~numpy.ndarray`
+	:param charfct: Characteristic function of e.g. STA/LTA trigger
+	:type thr_on: float
+	:param thr_on: Value above which trigger (of characteristic function)
+	               is activated (higher threshold)
+	:type thr_off: float
+	:param thr_off: Value below which trigger (of characteristic function)
+	    is deactivated (lower threshold)
+	:type max_len: int
+	:param max_len: Maximum length of triggered event in samples. A new
+	                event will be triggered as soon as the signal reaches
+	                again above thr_on.
+	:type max_len_delete: bool
+	:param max_len_delete: Do not write events longer than max_len into
+	                       report file.
+	:rtype: List
+	:return: Nested List of trigger on and of times in samples
+	"""
+	# 1) find indices of samples greater than threshold
+	# 2) calculate trigger "of" times by the gap in trigger indices
+	#    above the threshold i.e. the difference of two following indices
+	#    in ind is greater than 1
+	# 3) in principle the same as for "of" just add one to the index to get
+	#    start times, this operation is not supported on the compact
+	#    syntax
+	# 4) as long as there is a on time greater than the actual of time find
+	#    trigger on states which are greater than last of state an the
+	#    corresponding of state which is greater than current on state
+	# 5) if the signal stays above thr_off longer than max_len an event
+	#    is triggered and following a new event can be triggered as soon as
+	#    the signal is above thr_on
 
-    from collections import deque
+	from collections import deque
+	from obspy.signal.tf_misfit import cwt
+	
+	if thr_off is None:
+		thr_off = thr_on/2.
 
-    print charfct
-    ind1 = np.where(charfct > thres1)[0]
-    if len(ind1) == 0:
-        return []
-    ind2 = np.where(charfct > thres2)[0]
+	thr_d = .5
+	n=2
 
-    print ind1
-    print ind2
-    #
-    on = deque([ind1[0]])
-    of = deque([-1])
-    # determine the indices where charfct falls below off-threshold
-    ind2_ = np.empty_like(ind2, dtype=bool)
-    ind2_[:-1] = np.diff(ind2) > 1
-    # last occurence is missed by the diff, add it manually
-    ind2_[-1] = True
-    of.extend(ind2[ind2_].tolist())
-    on.extend(ind1[np.where(np.diff(ind1) > 1)[0] + 1].tolist())
-    # include last pick if trigger is on or drop it
-    if max_len_delete:
-        # drop it
-        of.extend([1e99])
-        on.extend([on[-1]])
-    else:
-        # include it
-        of.extend([ind2[-1]])
-    #
-    pick = []
-    while on[-1] > of[0]:
-        while on[0] <= of[0]:
-            on.popleft()
-        while of[0] < on[0]:
-            of.popleft()
-        if of[0] - on[0] > max_len:
-            if max_len_delete:
-                on.popleft()
-                continue
-            of.appendleft(on[0] + max_len)
-        pick.append([on[0], of[0]])
-    return np.array(pick, dtype=np.int64)
+	dtrace = np.gradient(abs(trace.data))
+	dcharfct = np.gradient(charfct)
+
+	if isinstance(trace, Trace):
+		fmin = 0.1
+		fmax=1./trace.stats.delta/2
+		tf = np.abs(cwt(trace, trace.stats.delta, w0=6, fmin=fmin, fmax=fmax, nf=32))
+		f = np.logspace(np.log10(fmin), np.log10(fmax), tf.shape[0])
+		tp = 1./f[tf.argmax(axis=0)]
+	else:
+		max_len_delete=False
+
+	ind1 = np.where( dcharfct > thr_on )[0] #(charfct > thr_on) + (smoothed_dcharfct > thr_on*thr_d) )[0]
+
+	if len(ind1) == 0:
+	    return []
+	
+	on = deque([ind1[0]])
+
+	# last occurence is missed by the diff, add it manually
+	on.extend(ind1[np.where(np.diff(ind1) > 1)[0] + 1].tolist())
+
+	# shift where each onset begins 
+	if onset_refine:
+		of = deque([])
+		for e in range(len(on)): 
+			#print on[e]
+			tmax =  on[e] + np.argmax( dcharfct[on[e]:]<0 )
+			onset_period =  on[e] + 6*np.argmax( dcharfct[on[e]:]<0 )
+			for t in range(on[e]-1,0,-1): 
+				if np.max(dcharfct[np.max([0,t-10]):t]) >= 0. : 
+					on[e] = t
+					if np.sum(dcharfct[np.max([0,t-10]):tmax]) >= np.sum(dcharfct[t:tmax])*.85 : #or np.sum(dtrace[np.max([0,t-10]):tmax]) >= np.sum(dtrace[t:tmax]):
+						break
+				# else:
+				# 	break
+			#onset_period =  tmax + np.argmax( charfct[tmax:] < charfct[on[e]] + (charfct[tmax]-charfct[on[e]])/2. )
+			#onset_period =  on[e]+ ((np.mean( tp[on[e]: np.min([onset_period, len(dcharfct)-1]) ]))/tr.stats.delta)
+			of.extend([onset_period])
+			#print '   ->',on[e],of[e],onset_period
+	else:
+		of = deque([-1])
+
+		# determine the indices where charfct falls below off-threshold
+		ind2 = np.where( (charfct > thr_off) + (smoothed_dcharfct > thr_off*thr_d) )[0]
+		ind2_ = np.empty_like(ind2, dtype=bool)
+		ind2_[:-1] = np.diff(ind2) > 1
+
+		# last occurence is missed by the diff, add it manually
+		ind2_[-1] = True
+		of.extend(ind2[ind2_].tolist())
+
+	pick = []
+
+	for e in range(len(on)): 
+		#print 'on[e], of[e]:',on[e], of[e] 
+		# while on[0] <= of[0]:
+		# 	print '   on[0] <= of[0] : poped',on[0]
+		# 	on.popleft()
+		while of[e] < on[e]:
+			print '   of[e] < on[e] : poped',of[0]
+			of.popleft()
+
+		if max_len_delete:
+			trig_d = (of[e]-on[e])*trace.stats.delta
+			trig_p = np.mean( tp[on[e]:of[e] ])
+			if trig_d < (trig_p*2/3.) : #or trig_d > (trig_p*5/3.)
+				# on.popleft()
+				# of.popleft()
+				if len(on) == 0:
+					return []
+				continue
+
+		pick.append([on[e], of[e]])
+
+	return np.array(pick, dtype=np.int64)
 
 
+def plot_trigger(show=True, charfct=None, thr_on=.1, trace=None, thr_off=None, **kwargs):
+	"""
+	Plot characteristic function of trigger along with waveform data and
+	trigger On/Off from given thresholds.
+
+	:type trace: :class:`~obspy.core.trace.Trace`
+	:param trace: waveform data
+	:type charfct: :class:`numpy.ndarray`
+	:param charfct: characteristic function as returned by a trigger in
+	    :mod:`obspy.signal.trigger`
+	:type thr_on: float
+	:param thr_on: threshold for switching trigger on
+	:type thr_off: float
+	:param thr_off: threshold for switching trigger off
+	:type show: bool
+	:param show: Do not call `plt.show()` at end of routine. That way,
+	    further modifications can be done to the figure before showing it.
+	"""
+	import matplotlib.pyplot as plt
+	if thr_off is None:
+		thr_off = thr_on/2.
+
+	df = trace.stats.sampling_rate
+	npts = trace.stats.npts
+	t = np.arange(npts, dtype=np.float32) / df
+	fig = plt.figure()
+	ax1 = fig.add_subplot(211)
+	ax1.plot(t, trace.data, 'k')
+	ax2 = fig.add_subplot(212, sharex=ax1)
+	ax2.plot(t, charfct, 'k')
+	on_off = np.array(trigger_onset(charfct, thr_on, trace, thr_off, **kwargs))
+	i, j = ax1.get_ylim()
+	try:
+		ax1.vlines(on_off[:, 0] / df, i, j, color='r', lw=2,
+					label="Trigger On")
+		ax1.vlines(on_off[:, 1] / df, i, j, color='b', lw=2,
+					label="Trigger Off")
+		ax1.legend(loc=2)
+	except IndexError:
+		pass
+	ax2.axhline(thr_on, color='red', lw=1, ls='--', label="Threshold On")
+	ax2.axhline(thr_off, color='blue', lw=1, ls='--', label="Threshold Off")
+	ax2.set_xlabel("Time after %s [s]" % trace.stats.starttime.isoformat())
+	ax2.set_ylim([0., np.max(charfct)])
+	ax2.legend(loc=2)
+	fig.suptitle(trace.id)
+	fig.canvas.draw()
+	if show:
+		plt.show()
 
 def row_derivate(cf, **kwargs):
 
