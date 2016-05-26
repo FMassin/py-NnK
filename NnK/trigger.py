@@ -183,6 +183,7 @@ def stream_indexes(data, delta=None, id=None, network=None, station=None, locati
 
 def recursive(a, scales=None, operation=None, maxscale=None):
 	"""
+	_
 	Performs multi-scale calculation by 
 	creating series of operations of different subsets of 
 	the full data set. This is also called rolling 
@@ -268,11 +269,14 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 				data *= dt < (np.median(dt)+2.*np.std(dt))
 				data = detrend(data)
 
+				if operation[0:1] in ('d-'):  
+					data = np.gradient(data) 
+
 				data[data==0] = np.nan
 				
 				# The cumulative sum can be exploited to calculate a 
 				# moving average (the cumsum function is quite efficient)
-				if operation is 'rms':                  
+				if operation in ('rms', 'sumsquare', 'd-sumsquare'):                  
 					csqr = np.nan_to_num(data**2).cumsum() #np.nancumsum( data ** 2 ) #
 				elif operation in ('averageabs', 'sumabs'):  
 					csqr = np.nan_to_num(np.abs(data)).cumsum() # np.nancumsum(np.abs( data )) 
@@ -284,22 +288,21 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 
 				if (s < (npts - s)) :    
 					# Compute the sliding window
-					if operation in ('rms', 'average', 'averageabs', 'sumabs', 'sum'):  
-						timeseries[t][n][s:npts] = csqr[s:] - csqr[:npts-s]
-						# for average and rms only 
-						if operation not in ('sum', 'sumabs'):
-							timeseries[t][n][:] /= s     
-						# Pad with modified scale definitions(vectorization ###################################### TODO)
-						timeseries[t][n][1:s] = csqr[1:s] - csqr[0]
-						# for average and rms only
-						if operation not in ('sum', 'sumabs'):
-							timeseries[t][n][1:s] = timeseries[t][n][1:s]/np.asarray(range(1, s), dtype=np.float32)
-						# detrending
-						timeseries[t][n][1:s] = timeseries[t][n][1:s]+(timeseries[t][n][1:s]-timeseries[t][n][1])*np.asarray(range(s, 1, -1), dtype=np.float32)/s
-						# filtering
-						f = np.cumsum(timeseries[t][n][:])
-						timeseries[t][n][0:s] = (f[s+1]-f[0:s])/np.asarray(range(s+1,1,-1), dtype=np.float32)
-					
+					timeseries[t][n][s:npts] = csqr[s:] - csqr[:npts-s]
+					# for average and rms only 
+					if operation not in ('sum', 'sumabs', 'sumsquare', 'd-sumsquare'):
+						timeseries[t][n][:] /= s     
+					# Pad with modified scale definitions(vectorization ###################################### TODO)
+					timeseries[t][n][1:s] = csqr[1:s] - csqr[0]
+					# for average and rms only
+					if operation not in ('sum', 'sumabs', 'sumsquare', 'd-sumsquare'):
+						timeseries[t][n][1:s] = timeseries[t][n][1:s]/np.asarray(range(1, s), dtype=np.float32)
+					# detrending
+					timeseries[t][n][1:s] = timeseries[t][n][1:s]+(timeseries[t][n][1:s]-timeseries[t][n][1])*np.asarray(range(s, 1, -1), dtype=np.float32)/s
+					# filtering
+					f = np.cumsum(timeseries[t][n][:])
+					timeseries[t][n][0:s] = (f[s+1]-f[0:s])/np.asarray(range(s+1,1,-1), dtype=np.float32)
+				
 					# Avoid division by zero by setting zero values to tiny float
 					dtiny = np.finfo(0.0).tiny
 					idx = timeseries[t][n] < dtiny
@@ -425,8 +428,9 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 	"""
 	
 	if ax is None : 
-		ax = (plt.figure( figsize=(8, 10) )).gca()
+		ax = (plt.figure( figsize=(8, 5) )).gca()
 		(ax.get_figure()).tight_layout()
+
 
 	(tmax,nmax) = streamdatadim(stream)
 	labels = ["" for x in range(shift+tmax)]
@@ -458,14 +462,19 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 		labels[shift+t] = trace.stats.station[0:3] +'.'+ channel
 		anots[t] =  ' %3.1e' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
 		#ax.text(0, t, anots[t] , verticalalignment='bottom', horizontalalignment='left', color='green')
+		cf[t][:200]=0.0
+		cf[t][-200:]=0.0 
 		if f is None : 
 			d = -1*abs(trace.data.copy())
-			ax.plot(time, shift+t-0.25+trace.data/(2*np.max(np.abs(trace.data))), color, zorder=1)
+			ax.plot(time, shift+t-0.25+trace.data/(2.*np.max(np.abs(trace.data))), color, zorder=1)
 		if rescale is None :
-			ax.plot(time, shift+t+0.+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(2*(np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])))))**1., cfcolor, label=label, zorder=2)         
+			ax.plot(time, shift+t+0.+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(2.*(np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])))))**1., cfcolor, label=label, zorder=2)         
 		else : 
 			ax.plot(time, shift+t+0.+cf[t][:npts], cfcolor, label=label, zorder=2)         
 		
+		if not label is None :
+			ax.legend()
+
 		label = None
 
 	ax.set_yticks(np.arange(0, shift+tmax, 1.0))
@@ -475,6 +484,7 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 	ax.set_ylabel('Channel')
 	ax.axis('tight')
 	# plt.ylim( 10.5, 13.5) 
+	plt.tight_layout()
 	ax.set_xlim( 0, min([120, max(time)])) 
 
 	return ax, shift+t+1
@@ -1103,7 +1113,7 @@ class Ratio(object):
 		>>> cf.plot()
 
 	"""
-	def __init__(self, data, multiplexor = 'shortlongterms', preprocessor = 'absaverage', **kwargs): #, pre_processed_data, data=None):
+	def __init__(self, data, multiplexor = 'shortlongterms', preprocessor = 'averageabs', **kwargs): #, pre_processed_data, data=None):
 
 		self.data = data
 		self.multiplexor = multiplexor
@@ -1117,8 +1127,8 @@ class Ratio(object):
 
 		if self.multiplexor in ('shortlongterms', 'stlt'):
 			pre_processed_data = self.shortlongterms.output()
-		elif self.multiplexor in ('leftrightTerms', 'ltrt'):
-			pre_processed_data = self.shortlongterms.output()
+		elif self.multiplexor in ('leftrightterms', 'ltrt'):
+			pre_processed_data = self.leftrightterms.output()
 		elif self.multiplexor in ('components', 'comp'):
 			pre_processed_data = self.components.output()
 		
@@ -1214,8 +1224,8 @@ class Correlate(object):
 
 		if self.multiplexor in ('shortlongterms', 'stlt'):
 			pre_processed_data = self.shortlongterms.output()
-		elif self.multiplexor in ('leftrightTerms', 'ltrt'):
-			pre_processed_data = self.shortlongterms.output()
+		elif self.multiplexor in ('leftrightterms', 'ltrt'):
+			pre_processed_data = self.leftrightterms.output()
 		elif self.multiplexor in ('components', 'comp'):
 			pre_processed_data = self.components.output()
 		
@@ -1258,6 +1268,92 @@ class Correlate(object):
 
 	def plot(self, **kwargs):        
 		return stream_processor_plot( self.data, self.output(), **kwargs)
+
+
+
+class predom_period(object):
+
+	"""
+	Produces an estimation/proxy of the pre-dominant period in 
+	continuous seismic records. 
+	______
+	:type: 
+		- ObsPy:class:`~obspy.core.stream`.
+		- scale: list (multi-scaling by default, optional).
+		- statistic: string (default 'averageabs', optional).
+		- maxscale: int (default 'None', optional).
+	:param: 
+		- data of e.g. seismograms.
+		- scales: or length of the window used for pre-processing with
+			`~trigger.recursive`.
+		- statistic: operation parameter in pre-processing with
+			`~trigger.recursive`.
+		- maxscale: maximum scale the window used for pre-processing 
+			with `~trigger.recursive`.
+	___________
+	.. rubric:: _`Default Attributes`
+	___________
+	.. rubric:: _`Default Methods`
+		- `~trigger.predom_period.output`: returns the results.
+		- `~trigger.predom_period.plot`: displays the output with 
+			`~trigger.stream_multiplexor_plot`.
+		- `~trigger.predom_period.correlate`: uses the 
+			`~trigger.Correlate` class to compare data-streams.
+		- `~trigger.predom_period.ratio`: uses the 
+			`~trigger.Ratio` class to compare data-streams.
+	___________
+	.. rubric:: Example
+
+		Plot the data-streams:
+		>>> import trigger
+		>>> ... .plot()
+
+	"""
+
+	def __init__(self, data, preprocessor='sumsquare', scales=[800], maxscale=1000 ): 
+
+		# stores input parameters
+		self.preprocessor = preprocessor
+		self.scales = scales
+		self.maxscale = maxscale
+
+		# get (station, scale, sample) array any way (for Trace & Stream inputs)
+		self.data, self.original_data = trace2stream(data.copy())
+
+	def output(self):
+		# Multiplex the pre-processed data
+		
+		from obspy.signal.tf_misfit import cwt
+
+		(tmax,nmax) = streamdatadim(self.data)
+		nscale = len(self.scales)
+		channels = np.zeros(( 2, tmax, nscale**2, nmax )) 
+		l_windows = np.zeros(( 2, nscale**2 ))  
+
+		timeseries, scales = recursive(self.data, operation=self.preprocessor, scales=self.scales, maxscale=self.maxscale) 
+		d_timeseries, scales = recursive(self.data, operation='d-sumsquare', scales=self.scales, maxscale=self.maxscale)  
+
+		for trace_i, trace in enumerate(self.data):
+
+			for tserie_i in range((d_timeseries.shape)[1]):
+				channels[0, trace_i, :] += 2 * np.pi * (timeseries[trace_i, tserie_i, :] / (d_timeseries[trace_i, tserie_i, :]/trace.stats.delta))**.5
+			channels[0, trace_i, :] /= (d_timeseries.shape)[1]
+
+			fmin = 0.1
+			fmax=1./trace.stats.delta/2
+
+			tf = np.abs(cwt(trace, trace.stats.delta, w0=6, fmin=fmin, fmax=fmax, nf=32))
+			f = np.logspace(np.log10(fmin), np.log10(fmax), tf.shape[0])
+			channels[1, trace_i, :] = 1./f[tf.argmax(axis=0)]
+
+		return channels, nscale+1, l_windows
+
+	def plot(self):
+		channels, n, l = self.output() 
+		return stream_multiplexor_plot( self.data, channels )
+
+
+
 
 def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=True, onset_refine=True):
 	"""
@@ -1312,7 +1408,8 @@ def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=T
 	n=2
 
 	dtrace = np.gradient(abs(trace.data))
-	dcharfct = np.gradient(charfct)
+	dcharfct = np.gradient(charfct.copy())
+	acharfct = np.gradient(dcharfct.copy())
 
 	if isinstance(trace, Trace):
 		fmin = 0.1
@@ -1323,7 +1420,7 @@ def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=T
 	else:
 		max_len_delete=False
 
-	ind1 = np.where( dcharfct > thr_on )[0] #(charfct > thr_on) + (smoothed_dcharfct > thr_on*thr_d) )[0]
+	ind1 = np.where( (dcharfct > thr_on) + (charfct > thr_on) )[0] #(charfct > thr_on) + (smoothed_dcharfct > thr_on*thr_d) )[0]
 
 	if len(ind1) == 0:
 	    return []
@@ -1339,14 +1436,15 @@ def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=T
 		for e in range(len(on)): 
 			#print on[e]
 			tmax =  on[e] + np.argmax( dcharfct[on[e]:]<0 )
-			onset_period =  on[e] + 6*np.argmax( dcharfct[on[e]:]<0 )
-			for t in range(on[e]-1,0,-1): 
-				if np.max(dcharfct[np.max([0,t-10]):t]) >= 0. : 
-					on[e] = t
-					if np.sum(dcharfct[np.max([0,t-10]):tmax]) >= np.sum(dcharfct[t:tmax])*.85 : #or np.sum(dtrace[np.max([0,t-10]):tmax]) >= np.sum(dtrace[t:tmax]):
-						break
-				# else:
-				# 	break
+			onset_period =  on[e] + 5*np.argmax( dcharfct[on[e]:]<0 )
+			on[e] = on[e] - (np.argmax( np.fliplr(np.atleast_2d(dcharfct[np.max([0,on[e]-10]):on[e]]))[0]<0 ) )
+			# for t in range(on[e]-1,0,-1): 
+			# 	if np.max(dcharfct[np.max([0,t-10]):t]) >= 0. : 
+			# 		on[e] = t
+			# 		if dcharfct[np.max([0,t-1])] < 0. or np.min(charfct[np.max([0,t-10]):t-1]) >= charfct[t+1] : #np.sum(dcharfct[np.max([0,t-10]):tmax]) >= np.sum(dcharfct[t:tmax])*.85:  #or np.sum(dtrace[np.max([0,t-10]):tmax]) >= np.sum(dtrace[t:tmax]):
+			# 			break
+			# 	# else:
+			# 	# 	break
 			#onset_period =  tmax + np.argmax( charfct[tmax:] < charfct[on[e]] + (charfct[tmax]-charfct[on[e]])/2. )
 			#onset_period =  on[e]+ ((np.mean( tp[on[e]: np.min([onset_period, len(dcharfct)-1]) ]))/tr.stats.delta)
 			of.extend([onset_period])
@@ -1355,7 +1453,7 @@ def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=T
 		of = deque([-1])
 
 		# determine the indices where charfct falls below off-threshold
-		ind2 = np.where( (charfct > thr_off) + (smoothed_dcharfct > thr_off*thr_d) )[0]
+		ind2 = np.where( (charfct > thr_off) )[0]
 		ind2_ = np.empty_like(ind2, dtype=bool)
 		ind2_[:-1] = np.diff(ind2) > 1
 
@@ -1371,7 +1469,7 @@ def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=T
 		# 	print '   on[0] <= of[0] : poped',on[0]
 		# 	on.popleft()
 		while of[e] < on[e]:
-			print '   of[e] < on[e] : poped',of[0]
+			#print '   of[e] < on[e] : poped',of[0]
 			of.popleft()
 
 		if max_len_delete:
@@ -1438,6 +1536,7 @@ def plot_trigger(show=True, charfct=None, thr_on=.1, trace=None, thr_off=None, *
 	fig.canvas.draw()
 	if show:
 		plt.show()
+	return ax1
 
 def row_derivate(cf, **kwargs):
 

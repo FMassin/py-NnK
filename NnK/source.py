@@ -12,7 +12,6 @@ ______________________________________________________________________
 
 """
 
-
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -20,7 +19,31 @@ from mpl_toolkits.mplot3d import Axes3D
 from obspy.imaging.scripts.mopad import MomentTensor
 
 
+def rotation_matrix(axis, theta):
+    """
+    Return the rotation matrix associated with counterclockwise rotation about
+    the given axis by theta radians.
+    
+    v = [3, 5, 0]
+	axis = [4, 4, 1]
+	theta = 1.2 
 
+	print(np.dot(rotation_matrix(axis,theta), v)) 
+	# [ 2.74911638  4.77180932  1.91629719]
+
+    """
+    axis = np.asarray(axis)
+    theta = np.asarray(theta)
+    axis = axis/np.sqrt(np.dot(axis, axis))
+    a = np.cos(theta/2.0)
+    b, c, d = -axis*np.sin(theta/2.0)
+    aa, bb, cc, dd = a*a, b*b, c*c, d*d
+    bc, ad, ac, ab, bd, cd = b*c, a*d, a*c, a*b, b*d, c*d
+    return np.array([[aa+bb-cc-dd, 2*(bc+ad), 2*(bd-ac)],
+                     [2*(bc-ad), aa+cc-bb-dd, 2*(cd+ab)],
+                     [2*(bd+ac), 2*(cd-ab), aa+dd-bb-cc]])
+    
+    
 def sphere(r=1.,n=100.):
     """
     Produce the polar coordinates of a sphere. 
@@ -221,7 +244,7 @@ def vector_normal(XYZ, v_or_h):
             Radial component.
 
         ``'m'``
-            The meridian component.
+            The meridian component (to be prefered to vertical).
 
     .. note::
 
@@ -360,9 +383,26 @@ def mt_angles(mt):
         raise Exception('I/O dimensions: only [1|2]x3, 1x[4|6] and 3x3 inputs supported.')
 
     return np.array([[strike, dip, rake], [DC, CLVD, iso, devi]])
+    
 
-
-def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, alpha=0.5) : 
+def disp_component(xyz, disp,comp):
+	
+	## Get direction(s)
+    if comp == None: 
+        amplitude_direction = disp      
+    else :
+        amplitude_direction = vector_normal(xyz, comp)
+    ## Project 
+    disp_projected = project_vectors(disp, amplitude_direction) 
+    ## Norms
+    amplitudes = np.sqrt(disp_projected[0]**2 + disp_projected[1]**2 + disp_projected[2]**2) 
+    ## Amplitudes (norm with sign)
+    amplitudes *= np.sign(np.sum(disp * amplitude_direction, axis=0)+0.00001)
+    
+    return amplitudes, disp_projected 
+    
+    
+def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, alpha=0.5, wave='P', cbarxlabel=None) : 
     """
     Plot the given seismic wave radiation pattern as a color-coded surface 
     or focal sphere (not exactly as a beach ball diagram).
@@ -453,17 +493,8 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
     """
 
     # Component
-    ## Get direction(s)
-    if comp == None: 
-        amplitude_direction = disp      
-    else :
-        amplitude_direction = vector_normal(xyz, comp)
-    ## Project 
-    disp_projected = project_vectors(disp, amplitude_direction) 
-    ## Norms
-    amplitudes = np.sqrt(disp_projected[0]**2 + disp_projected[1]**2 + disp_projected[2]**2) 
-    ## Amplitudes (norm with sign)
-    amplitudes *= np.sign(np.sum(disp * amplitude_direction, axis=0)+0.00001)
+    amplitudes, disp_projected = disp_component(xyz, disp, comp)
+    
     ## Easiness
     U, V, W = disp_projected
     X, Y, Z = xyz
@@ -483,12 +514,14 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
     plt.ylabel('Y')
     ## Initializing the colorbar
     if style not in ('frame', 'wireframe') : 
-        cbar = plt.colorbar(s_m,orientation="horizontal",fraction=0.07)
-        cbar.ax.set_xlabel('Raw amplitudes')
+        cbar = plt.colorbar(s_m,orientation="horizontal",fraction=0.07, ax = ax)
+        if cbarxlabel==None:
+        	cbarxlabel = 'Displacement amplitudes'
+        cbar.ax.set_xlabel(cbarxlabel)
     ## Initializing figure keys
-    if mt is not None : 
-        [strike, dip, rake], [DC, CLVD, iso, deviatoric] = mt_angles(mt) 
-        plt.title('SDR [' + str(int(strike)) + ', ' + str(int(dip)) + ', ' + str(int(rake)) + '] IDC [' + str(int(iso)) + ', ' + str(int(DC)) + ', ' + str(int(CLVD)) +']%' )
+    if mt is not None :
+        [strike, dip, rake], [DC, CLVD, iso, deviatoric] = mt_angles(mt)
+        ax.set_title(r''+wave+'-wave\n(' + str(int(strike)) + ', ' + str(int(dip)) + ', ' + str(int(rake)) + ')$^{SDR}$, (' + str(int(iso)) + ', ' + str(int(DC)) + ', ' + str(int(CLVD)) + ')$^{\%IDC}$')
     
     ## Force axis equal
     arrow_scale = (np.max(xyz)-np.min(xyz))/10
@@ -501,9 +534,6 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
     mean_x = X.mean()
     mean_y = Y.mean()
     mean_z = Z.mean()
-    ax.set_xlim(mean_x - max_range, mean_x + max_range)
-    ax.set_ylim(mean_y - max_range, mean_y + max_range)
-    ax.set_zlim(mean_z - max_range, mean_z + max_range)
 
 
     # Simple styles   
@@ -535,7 +565,11 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
         polarity_area[amplitudes < 0] = -1
         ax.plot_surface(X, Y, Z, linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(polarity_area)) 
 
+	## For focal sphere, with amplitude colorcoded on unit sphere
+    if style in ('x'):
 
+        ax.plot_surface(X, Y, Z, linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes), alpha=alpha) 
+	       
     # Complexe styles
     ## For arrow vectors on obs points
     if style in ('*', 'q', 'a', 'v', 'quiver', 'arrow', 'vect', 'vector', 'vectors') :    
@@ -557,7 +591,10 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
         ax.plot_surface(X*amplitudes_surf, Y*amplitudes_surf, Z*amplitudes_surf,linewidth=0.5, rstride=1, cstride=1, facecolors=s_m.to_rgba(amplitudes))    
 
     
-
+	
+    ax.set_xlim(mean_x - max_range, mean_x + max_range)
+    ax.set_ylim(mean_y - max_range, mean_y + max_range)
+    ax.set_zlim(mean_z - max_range, mean_z + max_range)
     plt.show() 
     return ax
 
@@ -588,13 +625,15 @@ def energy_seismicsourcemodel(G, XYZ) :
     #amplitudes_correction /= np.max(np.abs(amplitudes_correction))
     amplitudes = np.sqrt( G[0]**2 + G[1]**2 + G[2]**2 ) #* amplitudes_correction            
     
+    weigths = (np.max(abs(amplitudes))- amplitudes)**2
+    
     # Classic rms
-    rms = np.nansum(amplitudes**2)/np.prod(amplitudes.shape)  
+    rms = np.sqrt(np.nansum((weigths*amplitudes)**2)/np.sum(weigths)) # prod(amplitudes.shape))
     # Euclidian norm
-    norm = np.sqrt(np.nansum(amplitudes**2))  
+    norm = np.sqrt(np.nansum((weigths*amplitudes)**2))
     # Amplitude average
-    average = np.nanmean(np.abs(amplitudes))  
-
+    average = np.nansum(np.abs(amplitudes*weigths))/np.sum(weigths)
+    
     return [rms, norm, average]
 
 
@@ -772,7 +811,7 @@ class Aki_Richards(object):
 
         return disp, obs_cart
 
-    def plot(self, wave='P',style='*', comp=None, ax=None) :    
+    def plot(self, wave='P',style='*', comp=None, ax=None, cbarxlabel=None) :
         """
         Plot the radiation pattern.
         ______________________________________________________________________
@@ -884,7 +923,7 @@ class Aki_Richards(object):
             elif wave in ('P', 'P wave', 'P-wave'):
                 comp='r'
 
-        plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp=comp, ax=ax)
+        plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp=comp, ax=ax, wave=wave, cbarxlabel=cbarxlabel)
 
     def energy(self, wave='P') :   
         """
@@ -1122,7 +1161,7 @@ class Vavryeuk(object):
         return np.asarray(G_cart), np.asarray(obs_cart)
 
 
-    def plot(self, wave='P',style='*', ax=None) :     
+    def plot(self, wave='P',style='*', ax=None, cbarxlabel=None) :
         """
         Plot the radiation pattern.
         ______________________________________________________________________
@@ -1200,7 +1239,7 @@ class Vavryeuk(object):
 
         # Get radiation pattern and plot
         G, XYZ = self.radpat(wave)
-        plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='r',ax=ax)
+        plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='r',ax=ax, cbarxlabel=cbarxlabel)
 
     def energy(self, wave='P') :   
         """
@@ -1279,10 +1318,9 @@ class SeismicSource(object):
     notes = 'Ceci est à moi'
 
     def __init__(self, mt, poisson=0.25):
-
-        self.MomentTensor = MomentTensor(mt)
-        self.Aki_Richards = Aki_Richards(np.asarray(self.MomentTensor.get_M('XYZ')))  
-        self.Vavryeuk = Vavryeuk(np.asarray(self.MomentTensor.get_M('XYZ')),poisson = poisson)  
+		self.MomentTensor = MomentTensor(mt,debug=2)
+		self.Aki_Richards = Aki_Richards(np.asarray(self.MomentTensor.get_M('XYZ')))  
+		self.Vavryeuk     = Vavryeuk(np.asarray(self.MomentTensor.get_M('XYZ')),poisson = poisson)  
 
 
 # function skeleton

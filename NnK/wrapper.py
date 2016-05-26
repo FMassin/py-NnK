@@ -64,7 +64,7 @@ def colormap_rgba(ax = None, bits = 256., labels=['R', 'G', 'B', 'A'] ):
     half_bits = bits/2.
 
     RGBA_map_NSPE = np.ones([bits,bits,4]) 
-    c = np.matlib.repmat(np.arange(bits),bits,1)
+    c = np.tile(np.arange(bits),(bits,1))
     l = np.transpose(c)
 
     g = [ half_bits-np.cos(np.pi/6)*half_bits , half_bits+np.sin(np.pi/6)*half_bits]
