@@ -86,15 +86,23 @@ def sphere(r=1.,n=100.):
     ______________________________________________________________________
     """
     # Get the resolution (sorry this is ugly)
-    c = 0.038 ; 
-    na = n**(.5+c) 
+    c = 0.038 ;
+    na = n**(.5+c)
     nt = n**(.5-c)
+    [a, t] = np.meshgrid( np.linspace(0, 2*np.pi, na+1), np.linspace(0, 1*np.pi, nt) )
+    r = np.ones(a.shape)*r
+    
+    #golden_angle = np.pi * (3 - np.sqrt(5))
+    #theta = golden_angle * np.arange(n)
+    #z = np.linspace(1 - 1.0 / n, 1.0 / n - 1, n)
+    #radius = np.sqrt(1 - z * z)
+    
+    #points = np.zeros((n, 3))
+    #points[:,0] = radius * np.cos(theta)
+    #points[:,1] = radius * np.sin(theta)
+    #points[:,2] = z
 
-    [AZIMUTH,TAKEOFF] = np.meshgrid( np.linspace(0, 2*np.pi, na+1), np.linspace(0, 1*np.pi, nt) )
-
-    RADIUS = np.ones(AZIMUTH.shape)*r
-
-    return [ AZIMUTH, TAKEOFF, RADIUS ]
+    return [ a, t, r ] #cartesian_to_spherical(points.T) #
 
 
 def cartesian_to_spherical(vector):
@@ -178,7 +186,6 @@ def spherical_to_cartesian(vector):
     x = radius * sin_takeoff * np.cos(vector[0])
     y = radius * sin_takeoff * np.sin(vector[0])
     z = radius * np.cos(vector[1])
-
 
     return [x, y, z]
 
@@ -1321,6 +1328,316 @@ class SeismicSource(object):
 		self.MomentTensor = MomentTensor(mt,debug=2)
 		self.Aki_Richards = Aki_Richards(np.asarray(self.MomentTensor.get_M('XYZ')))  
 		self.Vavryeuk     = Vavryeuk(np.asarray(self.MomentTensor.get_M('XYZ')),poisson = poisson)  
+
+
+def degrade(wavelets, shift = [-.1, .1], snr = [.5, 5.]):
+    
+    shift = np.random.random_integers(int(shift[0]*1000), int(shift[1]*1000), wavelets.shape[0])/1000. # np.linspace(shift[0], shift[1], wavelets.shape[0])
+    snr = np.random.random_integers(int(snr[0]*1000), int(snr[1]*1000), wavelets.shape[0])/1000. # np.linspace(snr[0], snr[1], wavelets.shape[0])
+
+    for i,w in enumerate(wavelets):
+        
+        tmp = np.max(abs(wavelets[i])).copy()
+        wavelets[i] += (np.random.random_integers(-100,100,wavelets.shape[1])/100.) * np.max(wavelets[i])/snr[i]
+        wavelets[i] /= tmp #*np.max(abs(self.wavelets[i]))
+        
+        tmp = np.zeros( len(wavelets[i])*3. )
+        index = [ int(len(wavelets[i])+(shift[i]*len(wavelets[i]))), 0 ]
+        index[1] = index[0]+len(wavelets[i])
+        tmp[index[0]:index[1]] = wavelets[i, :int(np.diff(index)) ]
+        wavelets[i,-len(wavelets[i]):] = tmp[-2*len(wavelets[i]):-len(wavelets[i])]
+    
+    return wavelets
+
+def plot_wavelet(data, style = '*'):
+    
+    fig = plt.figure(figsize=plt.figaspect(.5))
+    ax1 = fig.add_subplot(1, 2, 1, projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1])
+    data.source.Aki_Richards.plot(wave='P', style='s', ax=ax1)
+    ax1.scatter(data.obs_cart[0][data.wavelets[:,1]>=0],data.obs_cart[1][data.wavelets[:,1]>=0],data.obs_cart[2][data.wavelets[:,1]>=0],c='b')
+    ax1.scatter(data.obs_cart[0][data.wavelets[:,1]<0],data.obs_cart[1][data.wavelets[:,1]<0],data.obs_cart[2][data.wavelets[:,1]<0],c='r')
+    for i in range(data.n_wavelet):
+        ax1.text(data.obs_cart[0][i],data.obs_cart[1][i],data.obs_cart[2][i],  '%s' % (str(i)))
+    ax2 = fig.add_subplot(1, 2, 2, xlim=[0,data.wavelets.shape[1]-1]) #, ylim=[-1,(self.n_wavelet)/100.+1.]
+    ax2.plot(np.transpose(data.wavelets))# + np.tile(range(self.n_wavelet), (self.wavelets.shape[1], 1))/100.);
+
+
+class ArticialWavelets(object):
+    """
+        Set an instance of class ArticialWavelets() that can be used to get
+        artificial wavelets.
+        ______________________________________________________________________
+        
+        .. note::
+        
+        This object is composed of two methods : get and plot.
+        ______________________________________________________________________
+    """
+    def __init__(self):
+        
+        self.mt = [-1,-1,-1]
+        self.n_wavelet = n_wavelet
+        self.az_max = az_max
+        
+        # Generates
+        signs = np.ones([self.n_wavelet,1])
+        signs[self.n_wavelet/2:] *=-1
+        self.wavelets = np.tile([0.,1.,0.,-1.,0.], (self.n_wavelet, 1)) * np.tile(signs, (1, 5))
+        self.obs_sph = np.asarray([np.linspace(0, az_max, self.n_wavelet),
+                        np.linspace(.1,np.pi/2, self.n_wavelet),
+                        np.linspace(1, 1, self.n_wavelet)])
+        self.obs_cart = np.asarray(spherical_to_cartesian(self.obs_sph))
+    
+    def get(self, n_wavelet= 50, az_max = 8*np.pi):
+        
+        return self.wavelets, self.obs_sph, self.obs_cart
+
+    def degrade(self, shift = [-.1, .1], snr = [.5, 5.]):
+
+        self.wavelets = degrade(self.wavelets, shift,snr)
+    
+    def plot(self, style = '*'):
+        
+        plot_wavelet(self, style)
+
+
+class SyntheticWavelets(object):
+    """
+        Set an instance of class SyntheticWavelets() that can be used to get
+        synthetic wavelets.
+        ______________________________________________________________________
+        
+        .. note::
+        
+        This object is composed of two methods : get and plot.
+        ______________________________________________________________________
+        """
+    def __init__(self, n_wavelet= 100, az_max = 15*np.pi, mt=[82,5,10]):
+        
+        self.n_wavelet = n_wavelet
+        self.az_max = az_max
+        self.mt = mt
+        
+        t = np.linspace(.0, 1., 20, endpoint=False)
+        wave = np.sin(2 * np.pi * t ) * np.sort(abs(t))[::-1]
+        
+        # Gets the seismic source model
+        self.source = SeismicSource(mt)
+        
+        # Generates
+        ## Template wavelets
+        self.wavelets = np.tile(wave, (self.n_wavelet, 1)) #[0.,.7,.95,1.,.95,.7,0.,-.25,-.3,-.25,0.]
+        ## helicoidal angles
+        self.obs_sph = np.asarray([np.linspace(0, self.az_max, self.n_wavelet),
+                        np.linspace(0.1, np.pi/2, self.n_wavelet),
+                        np.linspace(1, 1, self.n_wavelet)])
+
+        while len(self.obs_sph[0, self.obs_sph[0,:]>2*np.pi]) > 0:
+            self.obs_sph[0, self.obs_sph[0,:]>2*np.pi] -= 2*np.pi
+        
+        self.obs_cart = np.asarray(spherical_to_cartesian(self.obs_sph))
+        
+        ## radiation pattern at given angles
+        disp, xyz = self.source.Aki_Richards.radpat(wave='P',obs_sph = self.obs_sph)
+        ### Direction to project
+        amplitude_direction = vector_normal(xyz, 'v')
+        ### Project
+        disp_projected = project_vectors(disp, amplitude_direction)
+        ## Norms
+        amplitudes = np.sqrt(disp_projected[0]**2 + disp_projected[1]**2 + disp_projected[2]**2)
+        ### Amplitudes (norm with sign)
+        amplitudes *= np.sign(np.sum(disp * amplitude_direction, axis=0)+0.00001)
+        
+        ## Apply modeled amplitudes to artificial wavelets
+        self.wavelets *= np.swapaxes(np.tile(np.sign(amplitudes),(self.wavelets.shape[1],1)),0,1)
+    
+    def get(self):
+        
+        return self.wavelets, self.obs_sph, self.obs_cart
+    
+    def degrade(self, shift = [-.1, .1], snr = [.5, 5.]):
+        
+        self.__init__(self.n_wavelet, self.az_max,self.mt)
+        self.wavelets = degrade(self.wavelets, shift,snr)
+    
+    def plot(self, style = '*'):
+        
+        plot_wavelet(self, style)
+
+
+class RoughDCScan(object):
+    
+    def __init__(self):
+
+        self.scanned = 0
+        
+        # DC exploration step
+        step = 10
+        strikes = range(0,180,step)
+        dips = range(0,90,step)
+        slips = range(-180,180,step)
+        
+        self.modeled_amplitudes = {}
+        self.p = {}
+        self.t = {}
+        n=0
+        for Si,S in enumerate(strikes):
+            for Di,D in enumerate(dips):
+                for Sli,Sl in enumerate(slips):
+                    
+                    example = SeismicSource([S*1., D*1., Sl*1.])
+                    disp, xyz = example.Aki_Richards.radpat(wave='P') #
+                    
+                    if n==0:
+                        self.atr = cartesian_to_spherical(xyz)
+                        n=1
+                    
+                    self.modeled_amplitudes[Si,Di,Sli] , disp_projected = disp_component(xyz, disp, 'r')
+                    
+                    self.p[Si,Di,Sli] = cartesian_to_spherical(example.MomentTensor.get_p_axis())
+                    self.t[Si,Di,Sli] = cartesian_to_spherical(example.MomentTensor.get_t_axis())
+    
+    
+    def scan(self, data=SyntheticWavelets()):
+        
+        # DC exploration step
+        step = 10
+        strikes = range(0,180,step)
+        dips = range(0,90,step)
+        slips = range(-180,180,step)
+        
+        SDSl = np.zeros([len(strikes)*len(dips)*len(slips),4])
+        objective_function = np.zeros([len(strikes), len(dips), len(slips)])
+        moment_tensors = np.zeros([len(strikes), len(dips), len(slips), 3])
+        
+        test = np.meshgrid( np.arange(-np.pi,np.pi, np.deg2rad(step/2.)), np.arange(0,np.pi, np.deg2rad(step/2.)) ) #sphere(n=(len(strikes)*len(dips)*len(slips))/5.)
+        self.ATROpOt = [test[0], test[1], np.ones(test[1].shape) ]
+        #self.ATROpOt[0] -= np.pi
+
+        self.ATROpOt.append(np.zeros((self.ATROpOt[0]).shape))
+        self.ATROpOt.append(np.zeros((self.ATROpOt[0]).shape))
+        
+        indexes = np.zeros([ data.wavelets.shape[0], len(self.atr[0].shape) ])
+        amplitudes = np.zeros(data.wavelets[:,0].shape)
+        for i,wlt in enumerate(data.wavelets):
+            d = np.argmin( np.sqrt( (data.obs_sph[0,i]-self.atr[0])**2. + (data.obs_sph[1,i]-self.atr[1])**2. ))
+            indexes[i,:] = np.unravel_index( d, self.atr[0].shape)
+
+        sumcoef = [0,0]
+        n=-1
+        mem_rms=0
+        for Si,S in enumerate(strikes):
+            for Di,D in enumerate(dips):
+                for Sli,Sl in enumerate(slips):
+                    
+                    
+                    for i,wlt in enumerate(data.wavelets):
+                        amplitudes[i] = self.modeled_amplitudes[Si, Di, Sli][tuple(indexes[i])]
+                    
+                    corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets
+                    stack_wavelets = np.sum(corrected_wavelets, axis=0)
+                    rms = np.sum(stack_wavelets**2)*np.sign(np.sum(stack_wavelets))
+                    
+                    n+=1
+                    SDSl[n,:3] = [S*1., D*1., Sl*1.]
+                    SDSl[n,3] = rms
+                    moment_tensors[Si, Di, Sli,:3] = [S*1., D*1., Sl*1.]
+                    objective_function[Si, Di, Sli] = rms
+                    
+                    coef = [ np.sqrt((self.p[Si,Di,Sli][0]-self.ATROpOt[0])**2. + abs(self.p[Si,Di,Sli][1]-self.ATROpOt[1])**2.) ,
+                             np.sqrt((self.t[Si,Di,Sli][0]-self.ATROpOt[0])**2. + abs(self.t[Si,Di,Sli][1]-self.ATROpOt[1])**2.) ]
+                             
+                    coef[0] = 1/(.1+coef[0]) ### CAN BE IMPROVED
+                    coef[1] = 1/(.1+coef[1])
+                    
+                            
+                    self.ATROpOt[3] += rms*coef[0] # [Pi,Pj] = rms
+                    self.ATROpOt[4] += rms*coef[1] # [Ti,Tj] = rms
+
+                    sumcoef[0] += np.sum(coef[0])
+                    sumcoef[1] += np.sum(coef[1])
+
+        self.ATROpOt[3] /= sumcoef[0]
+        self.ATROpOt[4] /= sumcoef[1]
+        
+        # maximum likelyhood solution
+        self.SDSl_localmax = SDSl[np.argmax(SDSl[:,3]),:]
+
+        # 3d maximum likelyhood solution
+        SDSl_likely =  np.unravel_index(np.argmax(objective_function) , objective_function.shape )
+        self.SDSl_likely = moment_tensors[SDSl_likely[0], SDSl_likely[1], SDSl_likely[2], :]
+
+        # 3d centroid solutions
+        w = SDSl[:,3].copy()
+        test = np.sort(w[w>0])
+        test = test[ np.argmin(abs( np.cumsum(test)-np.sum(test)*.9 )) ] # centroid 90%
+        #test = test[ np.argmin(abs( np.cumsum(test)-np.sum(test)*.9 )) ]
+        #test = test[ int(len(test)*.98) ]
+        #print np.max(w), np.max(w)/1.4, test, np.median(w[w>0]), np.std(w[w>0]), np.std(w[w>0],ddof=1)
+        w[w<test] = 0. # every val below the median of positive val are cancelled
+        self.SDSl_centroid = np.sum(SDSl[:,:3]*np.transpose(np.tile(w, (3,1))),axis=0)/np.sum(w)
+        
+        self.data = data
+        self.scanned = 1
+        
+        #print "Scanner results"
+        #print "Centroid:", self.SDSl_centroid
+        #print "Max. likelyhood:", self.SDSl_localmax
+
+    def plot(self, scanned=0, data=SyntheticWavelets()):
+        
+        if self.scanned == 0 or scanned == 0 :
+            self.scan(data)
+
+        # Plots
+        fig = plt.figure(figsize=plt.figaspect(.5))
+        ax0 = plt.subplot2grid((2,3), (0, 0), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='Source model')
+        ax1 = plt.subplot2grid((2,3), (0, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='P-axis')  #fig.add_subplot(1, 4, 2)
+        ax2 = plt.subplot2grid((2,3), (1, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='T-axis')  #fig.add_subplot(1, 4, 3)
+        ax3 = plt.subplot2grid((2,3), (0, 2), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='Best model')
+        ax4 = plt.subplot2grid((2,3), (1, 0), ylim=[-1,(data.n_wavelet)/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='time', ylabel='Amplitude', title='Data')
+        ax5 = plt.subplot2grid((2,3), (1, 2), ylim=[-1,(data.n_wavelet)/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='time', ylabel='Amplitude', title='Stacked data')
+
+        ## Pressure
+        G = np.asarray(spherical_to_cartesian([self.ATROpOt[0], self.ATROpOt[1], self.ATROpOt[2]*self.ATROpOt[3]]))
+        XYZ = np.asarray(spherical_to_cartesian([np.pi/2.-self.ATROpOt[0], self.ATROpOt[1], self.ATROpOt[2]]))
+        plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax1, cbarxlabel='P-axis likelyhood', alpha=1.)
+
+        ## Tension
+        G = np.asarray(spherical_to_cartesian([self.ATROpOt[0], self.ATROpOt[1], self.ATROpOt[2]*self.ATROpOt[4]]))
+        plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1.)
+
+        ## best sol ?
+        example = SeismicSource(self.SDSl_centroid) #SDSl_localmax[:3])
+
+        ## data points
+        example.Aki_Richards.plot(wave='P', style='s', ax=ax3, cbarxlabel='Solution amplitudes')
+        disp, xyz = example.Aki_Richards.radpat(wave='P', obs_sph = data.obs_sph)
+        amplitudes, disp_projected = disp_component(xyz, disp, 'r')
+        #corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(wavelets.shape[1],1)),0,1) * wavelets
+        ax3.scatter(xyz[0][amplitudes>=0],xyz[1][amplitudes>=0],xyz[2][amplitudes>=0],c='b')
+        ax3.scatter(xyz[0][amplitudes<0],xyz[1][amplitudes<0],xyz[2][amplitudes<0],c='r')
+        
+        corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets
+        ax5.plot(np.transpose(corrected_wavelets) + np.tile(range(data.n_wavelet), (corrected_wavelets.shape[1], 1))/100.);
+        
+        ## Model
+        data.source.Aki_Richards.plot(wave='P', style='s', ax=ax0, cbarxlabel='Modeled amplitudes')
+        ## data points
+        ws = np.sum(data.wavelets[:,:int(data.wavelets.shape[1]/2.)], axis=1)
+        ax0.scatter(xyz[0][ws>=0],xyz[1][ws>=0],xyz[2][ws>=0],c='b')
+        ax0.scatter(xyz[0][ws<0],xyz[1][ws<0],xyz[2][ws<0],c='r')
+        #for i in range(n_wavelet):
+        #    ax0.text(obs_cart[0][i],obs_cart[1][i],obs_cart[2][i],  '%s' % (str(i)))
+        
+        ax4.plot(np.transpose(data.wavelets) + np.tile(range(data.n_wavelet), (data.wavelets.shape[1], 1))/100.);
+        
+        
+        ax3.view_init(60,40)
+        ax0.view_init(60,40)
+        ax2.view_init(60,40)
+        ax1.view_init(60,40)
+        #plt.draw()
 
 
 # function skeleton
