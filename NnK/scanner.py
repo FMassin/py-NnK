@@ -1705,6 +1705,7 @@ class RoughDCScan(object):
         # finish
         self.data = data
         self.scanned = 1
+        self.SDSl = SDSl
 
     def centroid(self):
         '''
@@ -1716,13 +1717,13 @@ class RoughDCScan(object):
         for t,threshold in enumerate(np.linspace(0.05,.95,50)):
             
             ### weigths with likelyhood difference
-            w = SDSl[:,-1].copy()
+            w = self.SDSl[:,-1].copy()
             ### rejects a percentile of max likelyhood
             test = np.sort(w)
             test = test[ int(len(test)*threshold) ]   #test = test[ np.argmin(abs( np.cumsum(test)-np.sum(test)*.9 )) ] # centroid 95%
             w[w<test] = 0. # every val below the median of positive val are cancelled
             ### weigths with distance to max likelyhood
-            d = np.sqrt(np.sum((SDSl[:,:3].copy() - np.tile(self.SDSl_likely ,(SDSl.shape[0],1)))**2., axis=1))
+            d = np.sqrt(np.sum((self.SDSl[:,:3].copy() - np.tile(self.SDSl_likely ,(self.SDSl.shape[0],1)))**2., axis=1))
             while len(d[d>180.])>0:
                 d[d>180.] = d[d>180.]-180.
             d[d==0.] = .000000001
@@ -1733,18 +1734,18 @@ class RoughDCScan(object):
             w -= np.min(w)
             ## centroid
             ### stacks centroid
-            SDSl_centroid = np.nansum(SDSl[:,:3]*np.transpose(np.tile(w, (3,1))),axis=0)/np.nansum(w)
+            SDSl_centroid = np.nansum(self.SDSl[:,:3]*np.transpose(np.tile(w, (3,1))),axis=0)/np.nansum(w)
             SDSl_centroid = np.append(SDSl_centroid, threshold)
             ### add power
             example = SeismicSource(SDSl_centroid)
             disp, xyz = example.Aki_Richards.radpat(wave='P')
             modeled_amplitudes , disp_projected = disp_component(xyz, disp, 'r')
-            SDSl_centroid = np.append(SDSl_centroid, self.stack(data, modeled_amplitudes))
+            SDSl_centroid = np.append(SDSl_centroid, self.stack(self.data, modeled_amplitudes))
             
             ### stores centroid
-            print SDSl_centroid
+            print int(SDSl_centroid[0]),int(SDSl_centroid[1]), int(SDSl_centroid[2])
             self.SDSl_centroid_serie.append(SDSl_centroid)
-            self.SDSl_centroid = np.append(SDSl_centroid, self.stack(data, modeled_amplitudes))
+            self.SDSl_centroid = np.append(SDSl_centroid, self.stack(self.data, modeled_amplitudes))
         
         self.SDSl_centroid_serie = np.asarray(self.SDSl_centroid_serie)
         
