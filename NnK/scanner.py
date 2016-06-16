@@ -1425,7 +1425,7 @@ class SyntheticWavelets(object):
         This object is composed of two methods : get and plot.
         ______________________________________________________________________
         """
-    def __init__(self, n_wavelet= 50, az_max = 15*np.pi, mt=[82,5,10]):
+    def __init__(self, n_wavelet= 50, az_max = 15*np.pi, mt=[np.random.uniform(0,360) ,np.random.uniform(-90,90),np.random.uniform(0,180)]):
         
         self.n_wavelet = n_wavelet
         self.az_max = az_max
@@ -1577,7 +1577,7 @@ class BodyWavelets(object):
 
 
 class RoughDCScan(object):
-    
+
     def __init__(self, step = 20):
 
         self.scanned = 0
@@ -1608,7 +1608,43 @@ class RoughDCScan(object):
                     self.p[Si,Di,Sli] = cartesian_to_spherical(example.MomentTensor.get_p_axis())
                     self.t[Si,Di,Sli] = cartesian_to_spherical(example.MomentTensor.get_t_axis())
     
+
+    def data_init(self, data):
+        
+        self.data_taperwindows =  2.*(1+np.tile( (np.sort(range(data.wavelets.shape[1]))[::-1]) , (data.wavelets.shape[0], 1)))
+        self.data_taperwindows[self.data_taperwindows>data.wavelets.shape[1]] = data.wavelets.shape[1]
+        self.data_taperwindows /= data.wavelets.shape[1]
+        
+        self.data_indexes = np.zeros([ data.wavelets.shape[0], len(self.atr[0].shape) ])
+        self.data_amplitudes = np.zeros(data.wavelets[:,0].shape)
+        for i,wlt in enumerate(data.wavelets):
+            d = np.argmin( np.sqrt( (data.obs_sph[0,i]-self.atr[0])**2. + (data.obs_sph[1,i]-self.atr[1])**2. ))
+            self.data_indexes[i,:] = np.unravel_index( d, self.atr[0].shape)
+
+        # optimal stack
+        opt_stack = np.zeros((1,data.wavelets.shape[1]))
+        for w,wavelet in enumerate(data.wavelets):
+            if np.sum((opt_stack+wavelet*self.data_taperwindows[w]*-1)**2.) > np.sum((opt_stack+wavelet*self.data_taperwindows[w])**2.):
+                opt_stack += wavelet*self.data_taperwindows[w]*-1
+            else:
+                opt_stack += wavelet*self.data_taperwindows[w]
+        self.power_optimal_stack = np.sum((opt_stack)**2.)
+
+
+    def stack(self, data, model):
+        
+        for i,wlt in enumerate(data.wavelets):
+            self.data_amplitudes[i] = model[tuple(self.data_indexes[i])]
+        
+        corrected_wavelets = np.swapaxes(np.tile(np.sign(self.data_amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets * self.data_taperwindows
+        stack_wavelets = np.sum(corrected_wavelets, axis=0)
+        stack_power = np.sum(stack_wavelets**2)*np.sign(np.sum(stack_wavelets)) / self.power_optimal_stack
+        
+        return stack_power
+
     def scan(self, data=SyntheticWavelets()):
+        
+        self.data_init(data)
         
         # DC exploration step
         strikes = range(0,180,self.step)
@@ -1626,33 +1662,18 @@ class RoughDCScan(object):
         self.ATROpOt.append(np.zeros((self.ATROpOt[0]).shape))
         self.ATROpOt.append(np.zeros((self.ATROpOt[0]).shape))
         
-        taperwindows =  2.*(1+np.tile( (np.sort(range(data.wavelets.shape[1]))[::-1]) , (data.wavelets.shape[0], 1)))
-        taperwindows[taperwindows>data.wavelets.shape[1]] = data.wavelets.shape[1]
-        taperwindows /= data.wavelets.shape[1]
-        
-        
-        indexes = np.zeros([ data.wavelets.shape[0], len(self.atr[0].shape) ])
-        amplitudes = np.zeros(data.wavelets[:,0].shape)
-        for i,wlt in enumerate(data.wavelets):
-            d = np.argmin( np.sqrt( (data.obs_sph[0,i]-self.atr[0])**2. + (data.obs_sph[1,i]-self.atr[1])**2. ))
-            indexes[i,:] = np.unravel_index( d, self.atr[0].shape)
-
-
-        sumcoef = [0,0]
+        sumcoef = [np.zeros((self.ATROpOt[0]).shape), np.zeros((self.ATROpOt[0]).shape)]
         n=-1
         mem_rms=0
         for Si,S in enumerate(strikes):
             for Di,D in enumerate(dips):
                 for Sli,Sl in enumerate(slips):
                     
+                    rms = self.stack(data, self.modeled_amplitudes[Si, Di, Sli])
                     
-                    for i,wlt in enumerate(data.wavelets):
-                        amplitudes[i] = self.modeled_amplitudes[Si, Di, Sli][tuple(indexes[i])]
-                    
-                    corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets * taperwindows
-                    stack_wavelets = np.sum(corrected_wavelets, axis=0)
-                    rms = np.sum(stack_wavelets**2)*np.sign(np.sum(stack_wavelets))
-                    
+                    # implement stack, opt_stack correlation
+                    #rms = (np.corrcoef(stack_wavelets, opt_stack))[1,1]
+                                        
                     n+=1
                     SDSl[n,:3] = [S*1., D*1., Sl*1.]
                     SDSl[n,3] = rms
@@ -1662,15 +1683,14 @@ class RoughDCScan(object):
                     coef = [ np.sqrt((self.p[Si,Di,Sli][0]-self.ATROpOt[0])**2. + abs(self.p[Si,Di,Sli][1]-self.ATROpOt[1])**2.) ,
                              np.sqrt((self.t[Si,Di,Sli][0]-self.ATROpOt[0])**2. + abs(self.t[Si,Di,Sli][1]-self.ATROpOt[1])**2.) ]
                              
-                    coef[0] = 1/(.1+coef[0]) ### CAN BE IMPROVED
-                    coef[1] = 1/(.1+coef[1])
+                    coef[0] = 1/(.000000001+coef[0]) ### CAN BE IMPROVED
+                    coef[1] = 1/(.000000001+coef[1])
                     
-                            
                     self.ATROpOt[3] += rms*coef[0] # [Pi,Pj] = rms
                     self.ATROpOt[4] += rms*coef[1] # [Ti,Tj] = rms
 
-                    sumcoef[0] += np.sum(coef[0])
-                    sumcoef[1] += np.sum(coef[1])
+                    sumcoef[0] += (coef[0])
+                    sumcoef[1] += (coef[1])
 
         self.ATROpOt[3] /= sumcoef[0]
         self.ATROpOt[4] /= sumcoef[1]
@@ -1681,28 +1701,52 @@ class RoughDCScan(object):
         # 3d maximum likelyhood solution
         SDSl_likely =  np.unravel_index(np.argmax(objective_function) , objective_function.shape )
         self.SDSl_likely = moment_tensors[SDSl_likely[0], SDSl_likely[1], SDSl_likely[2], :]
-
-        # 3d centroid solutions
         
-        ## weights
-        ### weigths with likelyhood difference
-        w = 1/(np.max(SDSl[:,3])-SDSl[:,3].copy()+.0001)
-        ### rejects a percentile of max likelyhood
-        #test = np.sort(w)
-        #test = test[ np.argmin(abs( np.cumsum(test)-np.sum(test)*.95 )) ] # centroid 95%     #test = test[ int(len(test)*.98) ]
-        #w[w<test] = 0. # every val below the median of positive val are cancelled
-        ### weigths with distance to max likelyhood
-        d = np.sqrt(np.sum((SDSl[:,:3].copy() - np.tile(SDSl_likely,(SDSl.shape[0],1)))**2., axis=1))
-        while len(d[d>180.])>0:
-            d[d>180.] = d[d>180.]-180.
-        w /= (d+.0001)
-        ### rejects antipode to max likelyhood
-        w[d>90.] = 0. # every val below the median of positive val are cancelled
-        ## centroid
-        self.SDSl_centroid = np.nansum(SDSl[:,:3]*np.transpose(np.tile(w, (3,1))),axis=0)/np.nansum(w)
-        
+        # finish
         self.data = data
         self.scanned = 1
+
+    def centroid(self):
+        '''
+            Centroid solutions
+        '''
+        
+        ## weights
+        self.SDSl_centroid_serie = []
+        for t,threshold in enumerate(np.linspace(0.05,.95,50)):
+            
+            ### weigths with likelyhood difference
+            w = SDSl[:,-1].copy()
+            ### rejects a percentile of max likelyhood
+            test = np.sort(w)
+            test = test[ int(len(test)*threshold) ]   #test = test[ np.argmin(abs( np.cumsum(test)-np.sum(test)*.9 )) ] # centroid 95%
+            w[w<test] = 0. # every val below the median of positive val are cancelled
+            ### weigths with distance to max likelyhood
+            d = np.sqrt(np.sum((SDSl[:,:3].copy() - np.tile(self.SDSl_likely ,(SDSl.shape[0],1)))**2., axis=1))
+            while len(d[d>180.])>0:
+                d[d>180.] = d[d>180.]-180.
+            d[d==0.] = .000000001
+            d /= np.max(abs(d))
+            ### rejects antipode to max likelyhood
+            d[d>(1.-threshold)] = 1. # every val below the median of positive val are cancelled
+            w /= d
+            w -= np.min(w)
+            ## centroid
+            ### stacks centroid
+            SDSl_centroid = np.nansum(SDSl[:,:3]*np.transpose(np.tile(w, (3,1))),axis=0)/np.nansum(w)
+            SDSl_centroid = np.append(SDSl_centroid, threshold)
+            ### add power
+            example = SeismicSource(SDSl_centroid)
+            disp, xyz = example.Aki_Richards.radpat(wave='P')
+            modeled_amplitudes , disp_projected = disp_component(xyz, disp, 'r')
+            SDSl_centroid = np.append(SDSl_centroid, self.stack(data, modeled_amplitudes))
+            
+            ### stores centroid
+            print SDSl_centroid
+            self.SDSl_centroid_serie.append(SDSl_centroid)
+            self.SDSl_centroid = np.append(SDSl_centroid, self.stack(data, modeled_amplitudes))
+        
+        self.SDSl_centroid_serie = np.asarray(self.SDSl_centroid_serie)
         
         #print "Scanner results"
         #print "Centroid:", self.SDSl_centroid
@@ -1735,7 +1779,7 @@ class RoughDCScan(object):
 
         ## best sol ?
         if sol == None:
-            example = SeismicSource(self.SDSl_centroid) #SDSl_localmax[:3])
+            example = SeismicSource(self.SDSl_likely[:3]) #SDSl_localmax[:3])
         else:
             example = SeismicSource(sol[:3])
 
