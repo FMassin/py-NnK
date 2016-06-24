@@ -16,8 +16,12 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from obspy import read, Trace, Stream
+from obspy.core.trace import Stats
+from obspy.core.event.source import farfield
 from obspy.imaging.scripts.mopad import MomentTensor
-
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+import copy
 
 def rotation_matrix(axis, theta):
     """
@@ -249,6 +253,8 @@ def vector_normal(XYZ, v_or_h):
         ('v|vert|vertical' or 'h|horiz|horizontal').
     
     .. rubric:: _`Supported v_or_h`
+        
+        In origin center sphere: L: Radius, T: Parallel, Q: Meridian
 
         ``'v'``
             Vertical.
@@ -277,16 +283,16 @@ def vector_normal(XYZ, v_or_h):
 
     ATR = np.asarray(cartesian_to_spherical(XYZ))
 
-    if v_or_h in ('m', 'meridian', 'n', 'nhr', 'normal horizontal radial', 'norm horiz rad'): 
+    if v_or_h in ('Q', 'm', 'meridian', 'n', 'nhr', 'normal horizontal radial', 'norm horiz rad'): 
         ATR_n = np.array([ ATR[0] , ATR[1] - ninetydeg[0], ATR[2]])
         XYZ_n = np.asarray(spherical_to_cartesian(ATR_n))
-    elif v_or_h in ('h', 'horizontal', 'horiz'): 
+    elif v_or_h in ('T', 'h', 'horizontal', 'horiz'): 
         ATR_n = np.array([ ATR[0] - ninetydeg[0], ATR[1]+(ninetydeg[0]-ATR[1]) , ATR[2]])
         XYZ_n = np.asarray(spherical_to_cartesian(ATR_n))
     elif v_or_h in ('v', 'vertical', 'vertical'): 
         ATR_n = np.array([ ATR[0], ATR[1]-ATR[1] , ATR[2]])
         XYZ_n = np.asarray(spherical_to_cartesian(ATR_n))
-    elif v_or_h in ('r', 'radial', 'self'): 
+    elif v_or_h in ('L', 'r', 'radial', 'self'): 
         XYZ_n = XYZ
 
     return XYZ_n
@@ -473,7 +479,9 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
              The magnitudes of displacements are not represented.
 
     .. rubric:: _`Supported comp`
-
+        
+        in origin center sphere: L: Radius, T: Parallel, Q: Meridian
+        
         ``'None'``
             The radiation pattern is rendered as is if no comp option is 
             given (best for S wave).
@@ -714,7 +722,9 @@ class Aki_Richards(object):
 
             ``'S' or 'S wave' or 'S-wave``
                 Bodywave S.
-
+            
+            In origin center sphere: L: Radius, T: Parallel, Q: Meridian
+            
             ``'Sv'``
                 Projection of S on the vertical.
 
@@ -750,21 +760,21 @@ class Aki_Richards(object):
 
             return disp, obs_cart
 
-        elif wave in ('Sm', 'SM', 'SN', 'Sn', 'Snrh', 'Snrh wave', 'Snrh-wave'):
+        elif wave in ('Sq', 'SQ', 'Sm', 'SM', 'SN', 'Sn', 'Snrh', 'Snrh wave', 'Snrh-wave'):
 
             ## Get S waves
             disp, obs_cart = self.radpat(wave='S', obs_cart=obs_cart, obs_sph=obs_sph)
             ## Project on Sh component
-            disp = project_vectors(disp, vector_normal(obs_cart, 'm')) 
+            disp = project_vectors(disp, vector_normal(obs_cart, 'Q')) 
 
             return disp, obs_cart
 
-        elif wave in ('SH', 'Sh', 'S_h', 'Sh wave', 'Sh-wave'):
+        elif wave in ('St', 'ST', 'SH', 'Sh', 'S_h', 'Sh wave', 'Sh-wave'):
 
             ## Get S waves
             disp, obs_cart = self.radpat(wave='S', obs_cart=obs_cart, obs_sph=obs_sph)
             ## Project on Sh component
-            disp = project_vectors(disp, vector_normal(obs_cart, 'h')) 
+            disp = project_vectors(disp, vector_normal(obs_cart, 'T')) 
 
             return disp, obs_cart
         ######################################################################
@@ -898,6 +908,8 @@ class Aki_Richards(object):
 
         .. rubric:: _`Supported comp`
 
+            In origin center sphere: L: Radius, T: Parallel, Q: Meridian
+            
             ``'None'``
                 The radiation pattern is rendered as is if no comp option is 
                 given (best for S wave).
@@ -933,13 +945,13 @@ class Aki_Richards(object):
         G, XYZ = self.radpat(wave)
         if comp == None :
             if wave in ('Sv', 'Sv wave', 'Sv-wave'):
-                comp='v'
-            elif wave in ('Sm', 'Sn', 'Snrh','Snrh wave', 'Snrh-wave'):
-                comp='m'
-            elif wave in ('Sh', 'Sh wave', 'Sh-wave'):
-                comp='h'
+                comp='Q'
+            elif wave in ('Sq', 'SQ', 'Sm', 'Sn', 'Snrh','Snrh wave', 'Snrh-wave'):
+                comp='Q'
+            elif wave in ('ST', 'St', 'Sh', 'Sh wave', 'Sh-wave'):
+                comp='T'
             elif wave in ('P', 'P wave', 'P-wave'):
-                comp='r'
+                comp='L'
 
         return plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp=comp, ax=ax, wave=wave, cbarxlabel=cbarxlabel, insert_title=insert_title, cb =cb)
 
@@ -1134,7 +1146,7 @@ class Vavryeuk(object):
         if wave in ('P', 'P-wave', 'P wave'):
             G = np.cos(TKO)*(np.cos(TKO)*(np.sin(MODE1)*(2*np.cos(dip)**2 - (2*poisson)/(2*poisson - 1)) + np.sin(2*dip)*np.cos(MODE1)*np.sin(rake)) - np.cos(AZM)*np.sin(TKO)*(np.cos(MODE1)*(np.cos(2*dip)*np.sin(rake)*np.sin(strike) + np.cos(dip)*np.cos(rake)*np.cos(strike)) - np.sin(2*dip)*np.sin(MODE1)*np.sin(strike)) + np.sin(AZM)*np.sin(TKO)*(np.cos(MODE1)*(np.cos(2*dip)*np.cos(strike)*np.sin(rake) - np.cos(dip)*np.cos(rake)*np.sin(strike)) - np.sin(2*dip)*np.cos(strike)*np.sin(MODE1))) + np.sin(AZM)*np.sin(TKO)*(np.cos(TKO)*(np.cos(MODE1)*(np.cos(2*dip)*np.cos(strike)*np.sin(rake) - np.cos(dip)*np.cos(rake)*np.sin(strike)) - np.sin(2*dip)*np.cos(strike)*np.sin(MODE1)) + np.cos(AZM)*np.sin(TKO)*(np.cos(MODE1)*(np.cos(2*strike)*np.cos(rake)*np.sin(dip) + (np.sin(2*dip)*np.sin(2*strike)*np.sin(rake))/2) - np.sin(2*strike)*np.sin(dip)**2*np.sin(MODE1)) + np.sin(AZM)*np.sin(TKO)*(np.cos(MODE1)*(np.sin(2*strike)*np.cos(rake)*np.sin(dip) - np.sin(2*dip)*np.cos(strike)**2*np.sin(rake)) - np.sin(MODE1)*((2*poisson)/(2*poisson - 1) - 2*np.cos(strike)**2*np.sin(dip)**2))) - np.cos(AZM)*np.sin(TKO)*(np.cos(TKO)*(np.cos(MODE1)*(np.cos(2*dip)*np.sin(rake)*np.sin(strike) + np.cos(dip)*np.cos(rake)*np.cos(strike)) - np.sin(2*dip)*np.sin(MODE1)*np.sin(strike)) - np.sin(AZM)*np.sin(TKO)*(np.cos(MODE1)*(np.cos(2*strike)*np.cos(rake)*np.sin(dip) + (np.sin(2*dip)*np.sin(2*strike)*np.sin(rake))/2) - np.sin(2*strike)*np.sin(dip)**2*np.sin(MODE1)) + np.cos(AZM)*np.sin(TKO)*(np.cos(MODE1)*(np.sin(2*dip)*np.sin(rake)*np.sin(strike)**2 + np.sin(2*strike)*np.cos(rake)*np.sin(dip)) + np.sin(MODE1)*((2*poisson)/(2*poisson - 1) - 2*np.sin(dip)**2*np.sin(strike)**2)))
         
-        elif wave in ('SH', 'Sh', 'Sh-wave', 'Sh wave', 'SH-wave', 'SH wave'):
+        elif wave in ('ST', 'St', 'SH', 'Sh', 'Sh-wave', 'Sh wave', 'SH-wave', 'SH wave'):
             G = np.cos(TKO)*(np.cos(AZM)*(np.cos(MODE1)*(np.cos(2*dip)*np.cos(strike)*np.sin(rake) - np.cos(dip)*np.cos(rake)*np.sin(strike)) - np.sin(2*dip)*np.cos(strike)*np.sin(MODE1)) + np.sin(AZM)*(np.cos(MODE1)*(np.cos(2*dip)*np.sin(rake)*np.sin(strike) + np.cos(dip)*np.cos(rake)*np.cos(strike)) - np.sin(2*dip)*np.sin(MODE1)*np.sin(strike))) - np.sin(AZM)*np.sin(TKO)*(np.sin(AZM)*(np.cos(MODE1)*(np.cos(2*strike)*np.cos(rake)*np.sin(dip) + (np.sin(2*dip)*np.sin(2*strike)*np.sin(rake))/2) - np.sin(2*strike)*np.sin(dip)**2*np.sin(MODE1)) - np.cos(AZM)*(np.cos(MODE1)*(np.sin(2*strike)*np.cos(rake)*np.sin(dip) - np.sin(2*dip)*np.cos(strike)**2*np.sin(rake)) - np.sin(MODE1)*((2*poisson)/(2*poisson - 1) - 2*np.cos(strike)**2*np.sin(dip)**2))) + np.cos(AZM)*np.sin(TKO)*(np.sin(AZM)*(np.cos(MODE1)*(np.sin(2*dip)*np.sin(rake)*np.sin(strike)**2 + np.sin(2*strike)*np.cos(rake)*np.sin(dip)) + np.sin(MODE1)*((2*poisson)/(2*poisson - 1) - 2*np.sin(dip)**2*np.sin(strike)**2)) + np.cos(AZM)*(np.cos(MODE1)*(np.cos(2*strike)*np.cos(rake)*np.sin(dip) + (np.sin(2*dip)*np.sin(2*strike)*np.sin(rake))/2) - np.sin(2*strike)*np.sin(dip)**2*np.sin(MODE1)))
             
         elif wave in ('SV', 'Sv', 'Sv-wave', 'Sv wave', 'SV-wave', 'SV wave'):
@@ -1257,7 +1269,7 @@ class Vavryeuk(object):
 
         # Get radiation pattern and plot
         G, XYZ = self.radpat(wave)
-        return plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='r',ax=ax, cbarxlabel=cbarxlabel)
+        return plot_seismicsourcemodel(G, XYZ, style=style, mt=self.mt, comp='L',ax=ax, cbarxlabel=cbarxlabel)
 
     def energy(self, wave='P') :   
         """
@@ -1343,39 +1355,73 @@ class SeismicSource(object):
 
 def degrade(wavelets, shift = [-.1, .1], snr = [.5, 5.]):
     
-    shift = np.random.random_integers(int(shift[0]*1000), int(shift[1]*1000), wavelets.shape[0])/1000. # np.linspace(shift[0], shift[1], wavelets.shape[0])
-    snr = np.random.random_integers(int(snr[0]*1000), int(snr[1]*1000), wavelets.shape[0])/1000. # np.linspace(snr[0], snr[1], wavelets.shape[0])
+    shift = np.random.random_integers(int(shift[0]*1000), int(shift[1]*1000), len(wavelets))/1000. # np.linspace(shift[0], shift[1], wavelets.shape[0])
+    snr = np.random.random_integers(int(snr[0]*1000), int(snr[1]*1000), len(wavelets))/1000. # np.linspace(snr[0], snr[1], wavelets.shape[0])
     
     for i,w in enumerate(wavelets):
+        w = w.data
+        tmp = np.max(abs(w)).copy()
+        wavelets[i].data += (np.random.random_integers(-100,100,len(w))/100.) * np.max(w)/snr[i]
+        wavelets[i].data /= tmp #*np.max(abs(self.wavelets[i]))
         
-        tmp = np.max(abs(wavelets[i])).copy()
-        wavelets['P', 'r'][i] += (np.random.random_integers(-100,100,wavelets.shape[1])/100.) * np.max(wavelets[i])/snr[i]
-        wavelets['P', 'r'][i] /= tmp #*np.max(abs(self.wavelets[i]))
-        
-        tmp = np.zeros( len(wavelets[i])*3. )
-        index = [ int(len(wavelets[i])+(shift[i]*len(wavelets[i]))), 0 ]
-        index[1] = index[0]+len(wavelets[i])
-        tmp[index[0]:index[1]] = wavelets[i, :int(np.diff(index)) ]
-        wavelets['P', 'r'][i,-len(wavelets[i]):] = tmp[-2*len(wavelets[i]):-len(wavelets[i])]
+        tmp = np.zeros( len(w)*3. )
+        index = [ int(len(w)+(shift[i]*len(w))), 0 ]
+        index[1] = index[0]+len(w)
+        tmp[index[0]:index[1]] = wavelets[i].data[:int(np.diff(index)) ]
+        wavelets[i].data[-len(w):] = tmp[-2*len(w):-len(w)]
     
     return wavelets
 
-def plot_wavelet(data, style = '*'):
+def plot_wavelet(bodywavelet, style = '*', ax=None):
     
-    fig = plt.figure(figsize=plt.figaspect(.5))
-    ax1 = fig.add_subplot(1, 2, 1, projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], xlabel='Lon.', ylabel='Lat.')
-    if hasattr(data, 'source'):
-        data.source.Aki_Richards.plot(wave='P', style='s', ax=ax1)
-        
-    ws = np.sum(data.wavelets[:,:int(data.wavelets.shape[1]/2.)], axis=1)
-    ax1.scatter(data.obs_cart[0][ws>=0],data.obs_cart[1][ws>=0],data.obs_cart[2][ws>=0],c='b')
-    ax1.scatter(data.obs_cart[0][ws<0],data.obs_cart[1][ws<0],data.obs_cart[2][ws<0],c='r')
-    for i in range(data.n_wavelet):
-        ax1.text(data.obs_cart[0][i],data.obs_cart[1][i],data.obs_cart[2][i],  '%s' % (str(i)))
-    ax2 = fig.add_subplot(1, 2, 2, xlim=[0,data.wavelets.shape[1]-1]) #, ylim=[-1,(self.n_wavelet)/100.+1.]
-    ax2.plot(np.transpose(data.wavelets) + np.tile(range(data.n_wavelet), (data.wavelets.shape[1], 1))/100.);
+    ## Initializing the plot
+    if ax == None:
+         ax = (plt.figure(figsize=plt.figaspect(1.))).gca(projection='3d')
+                
+    axins = inset_axes(ax,
+                   width="60%", # width = 30% of parent_bbox
+                   height="30%", 
+                   loc=3)
 
-    ax1.view_init(15,65)
+
+    if hasattr(bodywavelet, 'SeismicSource'):
+        bodywavelet.SeismicSource.Aki_Richards.plot(wave='P', style='s', ax=ax)
+    
+    wavelets = []
+    ws = [] 
+    lmax = 0
+    for i,w in enumerate(bodywavelet.Stream):
+        #print bodywavelet.Stream[i].data.shape
+        wavelets.append(w.data)
+        ws.append( np.sum( w.data[:int(len(w.data)/2.)]) )
+        lmax = np.max([ lmax , len(w.data) ])
+        axins.plot(w.data+i/100.)
+    
+    axins.set_xlim([0 , lmax])
+    axins.set_xlabel('Time')
+    axins.set_ylabel('Amplitude')
+    
+    wavelets = np.ascontiguousarray(wavelets)
+    ws = np.ascontiguousarray(ws)
+ 
+    ax.scatter(bodywavelet.observations['cart'][0][ws>=0.],
+                bodywavelet.observations['cart'][1][ws>=0.],
+                bodywavelet.observations['cart'][2][ws>=0.],
+                marker='+', c='b')
+    ax.scatter(bodywavelet.observations['cart'][0][ws<0.],
+                bodywavelet.observations['cart'][1][ws<0.],
+                bodywavelet.observations['cart'][2][ws<0.],
+                marker='o', c= 'r')
+    
+    for i in range(bodywavelet.observations['n']):
+        ax.text(bodywavelet.observations['cart'][0][i],
+                 bodywavelet.observations['cart'][1][i],
+                 bodywavelet.observations['cart'][2][i],
+                 '%s' % (str(i)))
+        
+    
+
+    ax.view_init(15,65)
 
 class ArticialWavelets(object):
     """
@@ -1397,7 +1443,7 @@ class ArticialWavelets(object):
         # Generates
         signs = np.ones([self.n_wavelet,1])
         signs[self.n_wavelet/2:] *=-1
-        self.wavelets = {('P', 'r'):np.tile([0.,1.,0.,-1.,0.], (self.n_wavelet, 1)) * np.tile(signs, (1, 5))}
+        self.wavelets = np.tile([0.,1.,0.,-1.,0.], (self.n_wavelet, 1)) * np.tile(signs, (1, 5))
         self.obs_cart = np.asarray(globe(n=n_wavelet))
         self.obs_sph = np.asarray(cartesian_to_spherical(self.obs_cart))
     
@@ -1419,6 +1465,19 @@ class SyntheticWavelets(object):
         Set an instance of class SyntheticWavelets() that can be used to get
         synthetic wavelets.
         ______________________________________________________________________
+        :type self : object: 
+        :param self : 
+        
+            self.Stream
+            self.observations {'n_wavelet'
+                               'mt'
+                               'types'
+                               'cart'
+                               'sph'
+             
+            self.MomentTensor : optional, 
+            self.SeismicSource : optional,  
+            
         
         .. note::
         
@@ -1428,44 +1487,61 @@ class SyntheticWavelets(object):
         put all of this in a obspy stream
         ______________________________________________________________________
         """
-    def __init__(self, n_wavelet= 50, az_max = 15*np.pi, mt=[np.random.uniform(0,360) ,np.random.uniform(-90,90),np.random.uniform(0,180)]):
-        
-        self.n_wavelet = n_wavelet
-        self.az_max = az_max
-        self.mt = mt
-        
-        t = np.linspace(.0, 1., 20, endpoint=False)
-        wave = np.sin(2 * np.pi * t ) #* np.sort(abs(t))[::-1]
-        
+    def __init__(self, n = 50, mt=None):
+                
+        if mt == None :
+            mt = [np.random.uniform(0,360) ,np.random.uniform(-90,90),np.random.uniform(0,180)]
+            
         # Gets the seismic source model
-        self.source = SeismicSource(mt)
+        self.SeismicSource = SeismicSource(mt)
+        self.MomentTensor = MomentTensor(mt,debug=2)
+
+        # 
+        self.observations = {'types': np.tile('P', (n, 1)),
+                             'cart' : np.asarray(globe(n=n)),
+                             'sph'  : np.asarray(cartesian_to_spherical(np.asarray(globe(n=n)))),
+                             'mt'   : mt,
+                             'n'    : n }
         
-        # Generates template wavelets
-        self.wavelets = np.tile(wave, (self.n_wavelet, 1))    #[0.,.7,.95,1.,.95,.7,0.,-.25,-.3,-.25,0.]
-        self.obs_cart = np.asarray(globe(n=n_wavelet))
-        self.obs_sph = np.asarray(cartesian_to_spherical(self.obs_cart))
-        self.wave_types = np.tile('P', (self.n_wavelet, 1))
-        self.components = np.tile('r', (self.n_wavelet, 1))
+        # Generates template wavelets #####################
+        t = np.linspace(.0, 1., 20, endpoint=False)
+        wave = np.sin(2 * np.pi * t )  
+        wavelets = np.tile(wave, (n , 1)) 
+        
+        ## radiation pattern at given angles
+        source_model = SeismicSource( mt )
+        disp, observations_xyz = source_model.Aki_Richards.radpat(wave='P', obs_sph = self.observations['sph'] )                   
+        #disp = farfield( np.ravel(self.MomentTensor.get_M())[[0,4,8,1,2,5]] , self.observations['cart'] , 'P')
+        amplitudes, disp_projected = disp_component(self.observations['cart'], disp, 'r')
 
-        # radiation pattern at given angles
-        disp, xyz = self.source.Aki_Richards.radpat(wave='P', obs_sph = self.obs_sph)
-        amplitudes, disp_projected = disp_component(xyz, disp, 'r')
-
-        # Apply modeled amplitudes to artificial wavelets
-        self.wavelets *= np.swapaxes(np.tile(np.sign(amplitudes),(self.wavelets.shape[1],1)),0,1)
-    
+        ## Apply modeled amplitudes to artificial wavelets
+        wavelets *= np.swapaxes(np.tile(np.sign(amplitudes),(wavelets.shape[1],1)),0,1)
+        
+        #
+        self.Stream = Stream()        
+        for i in range(n):
+            self.Stream.append(Trace(data=wavelets[i,:] , 
+                                     header=Stats({'network' : "SY",
+                                                   'station' : str(i),
+                                                   'location': "00",
+                                                   'channel' : "EHL",   # in origin center sphere: L: Radius, T: Parallel, Q: Meridian
+                                                   'npts'    : len(t),
+                                                   'delta'   : 1/((t[-1]-t[0])/len(t)) }) ))        
+        
     def get(self):
         
-        return self.wavelets, self.obs_sph, self.obs_cart
+        return copy.deepcopy(self)
     
     def degrade(self, shift = [-.1, .1], snr = [.5, 5.]):
         
-        self.__init__(self.n_wavelet, self.az_max,self.mt)
-        self.wavelets = degrade(self.wavelets, shift,snr)
-    
+        self.__init__(self.n_wavelet, self.mt)
+
+        self.Stream = degrade( self.Stream , shift,snr)
+                
+            
     def plot(self, style = '*'):
-        
-        plot_wavelet(self, style)
+         
+        plot_wavelet( self, style)
 
 
 class BodyWavelets(object):
@@ -1586,8 +1662,9 @@ class RoughDCScan(object):
     '''
         .. To do : 
             1 use obspy stream
-            3 separate pdf plot (richer)
-            2 linear scan
+            2 use obspy.core.event.source.farfield  | obspy.taup.taup.getTravelTimes
+            3 linear scan
+            4 separate pdf plot (richer)
     '''
     
     def __init__(self, n_model = 20):
@@ -1600,7 +1677,7 @@ class RoughDCScan(object):
         
         ## Wave types
         self.waves = ['P', 'S']
-        self.components = [['r'], ['h', 'm'] ] # m(eridian) component is prefered to v(ertical or r)
+        self.components = [['L'], ['T', 'Q'] ] # in origin center sphere: L: Radius, T: Parallel, Q: Meridian
 
         ## Precision
         radiation_pattern_angular_precision = 99 # just a factor, not actual number of points (to be improved ?)
@@ -1619,10 +1696,12 @@ class RoughDCScan(object):
 
         ## Initial grids for modeling
         ### Observations (in trigo convention)
-        self.atr = cartesian_to_spherical(globe(n=200)) # uniform coverage
-        #[AZIMUTH,TAKEOFF] = np.meshgrid( np.linspace(0,2*np.pi,60) , np.linspace(0.,np.pi,30) )
-        #self.atr = [ AZIMUTH, TAKEOFF, np.ones(AZIMUTH.shape) ] # non uniform coverage (or nor ?)
+        self.atr = cartesian_to_spherical(globe(n=500)) 
         observations_atr_nparray = np.asarray(self.atr)
+#         # test plot ##################################################
+#         ax = (plt.figure()).gca(projection='3d')                     #
+#         ax.scatter(globe(n=500)[0], globe(n=500)[1], globe(n=500)[2])#
+#         ##############################################################
         
         ### Machinery
         self.modeled_amplitudes = {}
@@ -1675,43 +1754,88 @@ class RoughDCScan(object):
         #for key, value in self.modeled_amplitudes.iteritems():
         #   print key, value
         
-    def data_init(self, data):
+    def _data_init(self, data):
         '''
-            Sets data indexes in model space
-        '''
+            Sets data indexes in model space                 
+        '''        
         
+        # Initiate ######################
+        self.data = copy.deepcopy(data) #
+        self.data_wavelets = []         #
+        self.data_taperwindows = []     #
+        #################################
         
-        #
-        self.data_taperwindows =  2.*(1+np.tile( (np.sort(range(data.wavelets.shape[1]))[::-1]) , (data.wavelets.shape[0], 1)))
-        self.data_taperwindows[self.data_taperwindows>data.wavelets.shape[1]] = data.wavelets.shape[1]
-        self.data_taperwindows /= data.wavelets.shape[1]
+        # Makes array with data with corresponding taper ########
+        for i,w in enumerate(data.Stream):                      #
+            # stores wavelet ####################################
+            self.data_wavelets.append(copy.deepcopy(w.data))    #
+            # prepare taper #####################################
+            taper = 2.*(1+(np.sort(range(len(w.data)))[::-1]))  #
+            taper[taper>len(w.data)] = len(w.data)              #
+            taper /= len(w.data)                                #
+            # stores taper ######################################
+            self.data_taperwindows.append(taper)                #
+        #########################################################
         
-        self.data_indexes = np.zeros([ data.wavelets.shape[0], len(self.atr[0].shape) ])
-        self.data_amplitudes = np.zeros(data.wavelets[:,0].shape)
+        # Machinery #####################################################
+        self.data_wavelets = np.asarray(self.data_wavelets)             #  
+        self.data_amplitudes = np.asarray(self.data_wavelets)*0.        #
+        #################################################################
 
-        for i,wlt in enumerate(data.obs_sph[1]):
-            d = np.argmin( np.sqrt( (data.obs_sph[0,i]-self.atr[0])**2. + (data.obs_sph[1,i]-self.atr[1])**2. ))
+        # get observation indexes corresponding to model space ##
+        self.data_indexes = np.zeros([ self.data_wavelets.shape[0], len(self.atr[0].shape) ], dtype=np.int32)
+        for i in range(len(data.Stream)):                       #
+            distances = np.sqrt( (data.observations['sph'][0,i]-self.atr[0])**2. + (data.observations['sph'][1,i]-self.atr[1])**2. + (data.observations['sph'][2,i]-self.atr[2])**2. )
+            d = np.argmin(distances)
             self.data_indexes[i,:] = np.unravel_index( d, self.atr[0].shape)
+            if np.rad2deg(np.min( distances )) > 10: 
+                print "Warning: unreliable amplitude modeling for station", data.Stream[i].stats.station 
+        ##########################################################
         
-        # search optimal stack #############################
-        opt_stack = np.zeros((1,data.wavelets.shape[1]))   #
-        for w,wavelet in enumerate(data.wavelets): ################
-            if np.sum((opt_stack+wavelet*self.data_taperwindows[w]*-1)**2.) > np.sum((opt_stack+wavelet*self.data_taperwindows[w])**2.):
-                opt_stack += wavelet*self.data_taperwindows[w]*-1 #
-            else:                                                 #
-                opt_stack += wavelet*self.data_taperwindows[w] ####
+        # search optimal stack #########
+        opt_stack = np.zeros((9999))   #
+        lm = 0                         #
+        ## loops over trace ##############################
+        for w,wavelet in enumerate(self.data_wavelets):  #
+            l = len(wavelet)                             #
+            lm = np.max([lm, l])                         #
+            if np.sum((opt_stack[:l]+wavelet*self.data_taperwindows[w]*-1)**2.) > np.sum((opt_stack[:l]+wavelet*self.data_taperwindows[w])**2.):
+                opt_stack[:l] += wavelet*self.data_taperwindows[w]*-1 
+            else:                                                 
+                opt_stack[:l] += wavelet*self.data_taperwindows[w]
+        ##################################################
+        
+        # stores optimal stack #############################
+        self.data_optimal_stack = opt_stack[:lm]           # Warning: optimal stack is tapered !!!!
         self.power_optimal_stack = np.sum((opt_stack)**2.) #
         ####################################################
+        
+#         # test plot ################################
+#         ax = (plt.figure()).gca()                  #
+#         ax.plot(np.transpose(self.data_wavelets))  #
+#         ax.plot(self.data_optimal_stack)           #
+#         ############################################
 
-    def scan(self, data=SyntheticWavelets()):
+    def scan(self, data=SyntheticWavelets(mt=None)):
         '''
             Explore the model space with data.
+            
+            data.Stream
+            data.observations {'n_wavelet'
+                               'mt'
+                               'types'
+                               'cart'
+                               'sph'
+             
+            data.MomentTensor : optional, 
+            data.SeismicSource : optional, 
         '''
         
+        print data.observations['mt']
         # Get : ########################
         #   - optimal data stack       #
         #   - model's indexes for data #
-        self.data_init(data)           #
+        self._data_init(data)          #
         ################################
 
         
@@ -1720,17 +1844,122 @@ class RoughDCScan(object):
         for i,Mo in enumerate(self.source_mechanisms['Mo']): #
             
             # gets pdf value #################################
-            for j,wavelet in enumerate(data.wavelets):
-                self.data_amplitudes[j] = self.modeled_amplitudes[ Mo, data.wave_types[j,0], data.components[j,0] ][tuple(self.data_indexes[j])]
+            for j,wavelet in enumerate(self.data_wavelets):
+                self.data_amplitudes[j][:] = self.modeled_amplitudes[ Mo, 
+                                                                      data.observations['types'][j,0], 
+                                                                      data.Stream[j].stats.channel[-1] ][ tuple(self.data_indexes[j]) ]
     
-            corrected_wavelets = np.swapaxes(np.tile(np.sign(self.data_amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets * self.data_taperwindows
+            corrected_wavelets = np.sign(self.data_amplitudes) * self.data_wavelets * self.data_taperwindows
             stack_wavelets = np.sum(corrected_wavelets, axis=0)
             self.source_mechanisms['rms'][i] = np.sum(stack_wavelets**2)*np.sign(np.sum(stack_wavelets)) / self.power_optimal_stack
             ##################################################
         
         # Gets brightest cell
         self.best_likelyhood = [self.source_mechanisms['Mo'][np.argmax(self.source_mechanisms['rms'])], np.max(self.source_mechanisms['rms']) ]
+
+        # Important
+        self.scanned = 1
+    
+    def corrected_data(self, mt, data):
         
+        results = copy.deepcopy(data)
+        
+        results.SeismicSource = SeismicSource(mt)
+        results.MomentTensor = MomentTensor(mt,debug=2)        
+        results.observations['mt'] = mt
+        
+        amplitudes={}
+        source_model = SeismicSource( mt )
+        
+        ### Loops over wave types ##########
+        for wi,w in enumerate(self.waves): #            
+            #disp = farfield( np.ravel(results.MomentTensor.get_M())[[0,4,8,1,2,5]] , results.observations['cart'] , w)
+            disp, observations_xyz = source_model.Aki_Richards.radpat(wave=w, obs_sph = results.observations['sph'] )        
+            #### Loops over components of waves #########
+            for ci,c in enumerate(self.components[wi]): #                  
+                amplitudes[ w, c ], disp_projected = disp_component(results.observations['cart'], disp, c)
+        
+        for i in range(len(results.Stream)):              
+            results.Stream[i].data *= np.sign(amplitudes[
+                                                         results.observations['types'][i,0], 
+                                                         results.Stream[i].stats.channel[-1] ][i])
+                
+        return results
+    
+    def plot(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = '*'):
+                
+        if self.scanned == 0 or scanned == 0 :
+            self.scan(data)
+
+        # Plots
+        fig = plt.figure(figsize=plt.figaspect(.5))
+        ax1 = plt.subplot2grid((1,2), (0, 0), projection='3d')
+        ax2 = plt.subplot2grid((1,2), (0, 1), projection='3d')
+        
+        ## plots data
+        plot_wavelet(self.data, style, ax=ax1)
+        
+        ## plots best result
+        self.best_likelyhood[0]
+        plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data) , style, ax=ax2)
+        
+        
+    def plot_pdf(self):
+        
+        # Plots
+        fig = plt.figure(figsize=plt.figaspect(.5))
+        ax1 = plt.subplot2grid((2,3), (0, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='P. axis.', xlabel='Lon.', ylabel='Lat.')
+        ax2 = plt.subplot2grid((2,3), (1, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='T. axis.', xlabel='Lon.', ylabel='Lat.')
+        ax0 = plt.subplot2grid((2,3), (0, 0), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='Data.', xlabel='Lon.', ylabel='Lat.')
+        ax3 = plt.subplot2grid((2,3), (0, 2), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='solution.', xlabel='Lon.', ylabel='Lat.')
+        ax4 = plt.subplot2grid((2,3), (1, 0), ylim=[-1,(data.n_wavelet)/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='Time (sample).', ylabel='Amplitude.', title='Data.')
+        ax5 = plt.subplot2grid((2,3), (1, 2), ylim=[-1,(data.n_wavelet)/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='Time (sample).', ylabel='Amplitude.', title='Data with correction.')
+
+        ## Pressure
+        XYZ = np.asarray(spherical_to_cartesian([np.pi/2. - self.pdf[0] - np.pi, self.pdf[1], self.pdf[2]]))
+        G = np.asarray(spherical_to_cartesian([self.pdf[0], self.pdf[1], self.pdf[2]*self.pdf[3]]))
+        plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax1, cbarxlabel='P-axis likelyhood', alpha=1.)
+
+        ## Tension
+        G = np.asarray(spherical_to_cartesian([self.pdf[0], self.pdf[1], self.pdf[2]*self.pdf[4]]))
+        plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1., cb=0)
+
+        ## best sol ?
+        if sol == None:
+            example = SeismicSource(self.best_likelyhood[0]) #SDSl_localmax[:3])
+        else:
+            example = SeismicSource(sol[:3])
+ 
+        ## data points
+        example.Aki_Richards.plot(wave='P', style='s', ax=ax3, cbarxlabel='Solution amplitudes', insert_title=ax3.get_title())
+        disp, xyz = example.Aki_Richards.radpat(wave='P', obs_sph = data.obs_sph)
+        amplitudes, disp_projected = disp_component(xyz, disp, 'r')
+        #corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(wavelets.shape[1],1)),0,1) * wavelets
+        ax3.scatter(data.obs_cart[0][amplitudes>=0],data.obs_cart[1][amplitudes>=0],data.obs_cart[2][amplitudes>=0],c='b')
+        ax3.scatter(data.obs_cart[0][amplitudes<0],data.obs_cart[1][amplitudes<0],data.obs_cart[2][amplitudes<0],c='r')
+         
+        corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets
+        ax5.plot(np.transpose(corrected_wavelets) + np.tile(range(data.n_wavelet), (corrected_wavelets.shape[1], 1))/100.);
+         
+        ## Model
+        if hasattr(data, 'source'):
+            data.source.Aki_Richards.plot(wave='P', style='s', ax=ax0, cbarxlabel='Modeled amplitudes', insert_title=ax0.get_title())
+        ## data points
+        ws = np.sum(data.wavelets[:,:int(data.wavelets.shape[1]/2.)], axis=1)
+        ax0.scatter(data.obs_cart[0][ws>=0],data.obs_cart[1][ws>=0],data.obs_cart[2][ws>=0],c='b')
+        ax0.scatter(data.obs_cart[0][ws<0],data.obs_cart[1][ws<0],data.obs_cart[2][ws<0],c='r')
+        #for i in range(n_wavelet):
+        #    ax0.text(obs_cart[0][i],obs_cart[1][i],obs_cart[2][i],  '%s' % (str(i)))
+         
+        ax4.plot(np.transpose(data.wavelets) + np.tile(range(data.n_wavelet), (data.wavelets.shape[1], 1))/100.);
+        
+        
+        ax3.view_init(view[0],view[1])
+        ax0.view_init(view[0],view[1])
+        ax2.view_init(view[0],view[1])
+        ax1.view_init(view[0],view[1])
+        #plt.draw()
+    
     def forms_pdf(self):
         '''
             Produces pdfs
@@ -1812,69 +2041,9 @@ class RoughDCScan(object):
         #print "Centroid:", self.SDSl_centroid
         #print "Max. likelyhood:", self.SDSl_localmax
 
-    def plot(self, scanned=1, data=SyntheticWavelets(), sol = None):
-        
-        view = (15,65)
-        
-        if self.scanned == 0 or scanned == 0 :
-            self.scan(data)
-            self.forms_pdf()
-
-        # Plots
-        fig = plt.figure(figsize=plt.figaspect(.5))
-        ax1 = plt.subplot2grid((2,3), (0, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='P. axis.', xlabel='Lon.', ylabel='Lat.')
-        ax2 = plt.subplot2grid((2,3), (1, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='T. axis.', xlabel='Lon.', ylabel='Lat.')
-        ax0 = plt.subplot2grid((2,3), (0, 0), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='Data.', xlabel='Lon.', ylabel='Lat.')
-        ax3 = plt.subplot2grid((2,3), (0, 2), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='solution.', xlabel='Lon.', ylabel='Lat.')
-        ax4 = plt.subplot2grid((2,3), (1, 0), ylim=[-1,(data.n_wavelet)/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='Time (sample).', ylabel='Amplitude.', title='Data.')
-        ax5 = plt.subplot2grid((2,3), (1, 2), ylim=[-1,(data.n_wavelet)/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='Time (sample).', ylabel='Amplitude.', title='Data with correction.')
-
-        ## Pressure
-        XYZ = np.asarray(spherical_to_cartesian([np.pi/2. - self.pdf[0] - np.pi, self.pdf[1], self.pdf[2]]))
-        G = np.asarray(spherical_to_cartesian([self.pdf[0], self.pdf[1], self.pdf[2]*self.pdf[3]]))
-        plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax1, cbarxlabel='P-axis likelyhood', alpha=1.)
-
-        ## Tension
-        G = np.asarray(spherical_to_cartesian([self.pdf[0], self.pdf[1], self.pdf[2]*self.pdf[4]]))
-        plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1., cb=0)
-
-        ## best sol ?
-        if sol == None:
-            example = SeismicSource(self.best_likelyhood[0]) #SDSl_localmax[:3])
-        else:
-            example = SeismicSource(sol[:3])
- 
-        ## data points
-        example.Aki_Richards.plot(wave='P', style='s', ax=ax3, cbarxlabel='Solution amplitudes', insert_title=ax3.get_title())
-        disp, xyz = example.Aki_Richards.radpat(wave='P', obs_sph = data.obs_sph)
-        amplitudes, disp_projected = disp_component(xyz, disp, 'r')
-        #corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(wavelets.shape[1],1)),0,1) * wavelets
-        ax3.scatter(data.obs_cart[0][amplitudes>=0],data.obs_cart[1][amplitudes>=0],data.obs_cart[2][amplitudes>=0],c='b')
-        ax3.scatter(data.obs_cart[0][amplitudes<0],data.obs_cart[1][amplitudes<0],data.obs_cart[2][amplitudes<0],c='r')
-         
-        corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets
-        ax5.plot(np.transpose(corrected_wavelets) + np.tile(range(data.n_wavelet), (corrected_wavelets.shape[1], 1))/100.);
-         
-        ## Model
-        if hasattr(data, 'source'):
-            data.source.Aki_Richards.plot(wave='P', style='s', ax=ax0, cbarxlabel='Modeled amplitudes', insert_title=ax0.get_title())
-        ## data points
-        ws = np.sum(data.wavelets[:,:int(data.wavelets.shape[1]/2.)], axis=1)
-        ax0.scatter(data.obs_cart[0][ws>=0],data.obs_cart[1][ws>=0],data.obs_cart[2][ws>=0],c='b')
-        ax0.scatter(data.obs_cart[0][ws<0],data.obs_cart[1][ws<0],data.obs_cart[2][ws<0],c='r')
-        #for i in range(n_wavelet):
-        #    ax0.text(obs_cart[0][i],obs_cart[1][i],obs_cart[2][i],  '%s' % (str(i)))
-         
-        ax4.plot(np.transpose(data.wavelets) + np.tile(range(data.n_wavelet), (data.wavelets.shape[1], 1))/100.);
-        
-        
-        ax3.view_init(view[0],view[1])
-        ax0.view_init(view[0],view[1])
-        ax2.view_init(view[0],view[1])
-        ax1.view_init(view[0],view[1])
-        #plt.draw()
-
-    def demo(self, scanned=1, data=SyntheticWavelets(n_wavelet=10), sol = None):
+    
+    
+    def demo(self, scanned=1, data=SyntheticWavelets(n=10), sol = None):
 
         view = (15,65)
         n = 5
