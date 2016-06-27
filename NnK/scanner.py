@@ -22,6 +22,7 @@ from obspy.core.event.source import farfield
 from obspy.imaging.scripts.mopad import MomentTensor
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import copy
+from mpl_toolkits.basemap import Basemap
 
 def rotation_matrix(axis, theta):
     """
@@ -1530,7 +1531,7 @@ class SyntheticWavelets(object):
         
     def get(self):
         
-        return copy.deepcopy(self)
+        return self
     
     def degrade(self, shift = [-.1, .1], snr = [.5, 5.]):
         
@@ -1661,10 +1662,10 @@ class RoughDCScan(object):
 
     '''
         .. To do : 
-            1 use obspy stream
-            2 use obspy.core.event.source.farfield  | obspy.taup.taup.getTravelTimes
-            3 linear scan
-            4 separate pdf plot (richer)
+            [x] use obspy stream
+            [ ] use obspy.core.event.source.farfield  | obspy.taup.taup.getTravelTimes
+            [ ] linear scan
+            [ ] separate pdf plot (richer)
     '''
     
     def __init__(self, n_model = 20):
@@ -1760,7 +1761,7 @@ class RoughDCScan(object):
         '''        
         
         # Initiate ######################
-        self.data = copy.deepcopy(data) #
+        self.data = data #
         self.data_wavelets = []         #
         self.data_taperwindows = []     #
         #################################
@@ -1768,7 +1769,7 @@ class RoughDCScan(object):
         # Makes array with data with corresponding taper ########
         for i,w in enumerate(data.Stream):                      #
             # stores wavelet ####################################
-            self.data_wavelets.append(copy.deepcopy(w.data))    #
+            self.data_wavelets.append(w.data)    #
             # prepare taper #####################################
             taper = 2.*(1+(np.sort(range(len(w.data)))[::-1]))  #
             taper[taper>len(w.data)] = len(w.data)              #
@@ -1831,7 +1832,7 @@ class RoughDCScan(object):
             data.SeismicSource : optional, 
         '''
         
-        print data.observations['mt']
+        #print data.observations['mt']
         # Get : ########################
         #   - optimal data stack       #
         #   - model's indexes for data #
@@ -1903,98 +1904,102 @@ class RoughDCScan(object):
         self.best_likelyhood[0]
         plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data) , style, ax=ax2)
         
-        
-    def plot_pdf(self):
-        
-        # Plots
-        fig = plt.figure(figsize=plt.figaspect(.5))
-        ax1 = plt.subplot2grid((2,3), (0, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='P. axis.', xlabel='Lon.', ylabel='Lat.')
-        ax2 = plt.subplot2grid((2,3), (1, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='T. axis.', xlabel='Lon.', ylabel='Lat.')
-        ax0 = plt.subplot2grid((2,3), (0, 0), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='Data.', xlabel='Lon.', ylabel='Lat.')
-        ax3 = plt.subplot2grid((2,3), (0, 2), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='solution.', xlabel='Lon.', ylabel='Lat.')
-        ax4 = plt.subplot2grid((2,3), (1, 0), ylim=[-1,(data.n_wavelet)/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='Time (sample).', ylabel='Amplitude.', title='Data.')
-        ax5 = plt.subplot2grid((2,3), (1, 2), ylim=[-1,(data.n_wavelet)/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='Time (sample).', ylabel='Amplitude.', title='Data with correction.')
-
-        ## Pressure
-        XYZ = np.asarray(spherical_to_cartesian([np.pi/2. - self.pdf[0] - np.pi, self.pdf[1], self.pdf[2]]))
-        G = np.asarray(spherical_to_cartesian([self.pdf[0], self.pdf[1], self.pdf[2]*self.pdf[3]]))
-        plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax1, cbarxlabel='P-axis likelyhood', alpha=1.)
-
-        ## Tension
-        G = np.asarray(spherical_to_cartesian([self.pdf[0], self.pdf[1], self.pdf[2]*self.pdf[4]]))
-        plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1., cb=0)
-
-        ## best sol ?
-        if sol == None:
-            example = SeismicSource(self.best_likelyhood[0]) #SDSl_localmax[:3])
-        else:
-            example = SeismicSource(sol[:3])
- 
-        ## data points
-        example.Aki_Richards.plot(wave='P', style='s', ax=ax3, cbarxlabel='Solution amplitudes', insert_title=ax3.get_title())
-        disp, xyz = example.Aki_Richards.radpat(wave='P', obs_sph = data.obs_sph)
-        amplitudes, disp_projected = disp_component(xyz, disp, 'r')
-        #corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(wavelets.shape[1],1)),0,1) * wavelets
-        ax3.scatter(data.obs_cart[0][amplitudes>=0],data.obs_cart[1][amplitudes>=0],data.obs_cart[2][amplitudes>=0],c='b')
-        ax3.scatter(data.obs_cart[0][amplitudes<0],data.obs_cart[1][amplitudes<0],data.obs_cart[2][amplitudes<0],c='r')
-         
-        corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets
-        ax5.plot(np.transpose(corrected_wavelets) + np.tile(range(data.n_wavelet), (corrected_wavelets.shape[1], 1))/100.);
-         
-        ## Model
-        if hasattr(data, 'source'):
-            data.source.Aki_Richards.plot(wave='P', style='s', ax=ax0, cbarxlabel='Modeled amplitudes', insert_title=ax0.get_title())
-        ## data points
-        ws = np.sum(data.wavelets[:,:int(data.wavelets.shape[1]/2.)], axis=1)
-        ax0.scatter(data.obs_cart[0][ws>=0],data.obs_cart[1][ws>=0],data.obs_cart[2][ws>=0],c='b')
-        ax0.scatter(data.obs_cart[0][ws<0],data.obs_cart[1][ws<0],data.obs_cart[2][ws<0],c='r')
-        #for i in range(n_wavelet):
-        #    ax0.text(obs_cart[0][i],obs_cart[1][i],obs_cart[2][i],  '%s' % (str(i)))
-         
-        ax4.plot(np.transpose(data.wavelets) + np.tile(range(data.n_wavelet), (data.wavelets.shape[1], 1))/100.);
-        
-        
-        ax3.view_init(view[0],view[1])
-        ax0.view_init(view[0],view[1])
-        ax2.view_init(view[0],view[1])
-        ax1.view_init(view[0],view[1])
-        #plt.draw()
     
-    def forms_pdf(self):
+    def PT_pdf(self):
         '''
             Produces pdfs
         '''
         
         # pdf grid for P-T axis 
         test = np.meshgrid( np.linspace(-np.pi,np.pi,50) , np.linspace(0.,np.pi,20) ) 
-        self.pdf = np.asarray([test[0], test[1], np.ones(test[1].shape), np.zeros(test[1].shape), np.zeros(test[1].shape)] )
+        self.pdf = {'azim':test[0], 
+                    'incl':test[1], 
+                    'rad': np.ones(test[1].shape), 
+                    'P/T axis': np.zeros([test[1].shape[0], test[1].shape[1], 2])}
+        i_to_field = ['azim','incl','rad']
         
         ## Machinery                                         
-        coef_mem = np.zeros([2, 
-                             self.pdf[0].shape[0],
-                             self.pdf[0].shape[1]  ])
+        coef_mem = np.zeros(self.pdf['P/T axis'].shape)
         
         # Scans source ### how to make it linear ? ###########
         for i,Mo in enumerate(self.source_mechanisms['Mo']): #
             # makes smooth pdf along P-T space ################################
-            coef = np.zeros([2, self.pdf[0].shape[0], self.pdf[0].shape[1] ]) #
+            coef = np.zeros(self.pdf['P/T axis'].shape)
             for n in range(len(self.source_mechanisms['P-axis'][i])): ###################
-                coef[0] += ( self.source_mechanisms['P-axis'][i][n] - self.pdf[n] )**2. #
-                coef[1] += ( self.source_mechanisms['T-axis'][i][n] - self.pdf[n] )**2. #
-            coef = np.sqrt(coef)
-            while len(coef[abs(coef)>np.pi]):
-                coef[coef>np.pi] -= np.pi
-                coef[coef<-1*np.pi] += np.pi
-            coef = abs(coef)    
-            coef = np.max(coef)-coef
-            self.pdf[3:,:,:] += self.source_mechanisms['rms'][i] * coef                                    #    
+                coef[:,:, 0] += ( self.source_mechanisms['P-axis'][i][n] - self.pdf[i_to_field[n]] )**2. #
+                coef[:,:, 1] += ( self.source_mechanisms['T-axis'][i][n] - self.pdf[i_to_field[n]] )**2. #
+#             coef = np.sqrt(coef)
+#             while len(coef[abs(coef)>np.pi**2]):
+#                 coef[coef>np.pi**2] -= np.pi**2
+#                 coef[coef<-1*np.pi**2] += np.pi**2
+#             coef = abs(coef)   
+            coef[coef<.00001] = .00001 
+            coef = 1./coef
+            self.pdf['P/T axis'] += self.source_mechanisms['rms'][i] * coef                                    #    
             coef_mem += coef                                                  #
         #######################################################################
         
         # Smoothes ###################
-        self.pdf[3:,:,:] /= coef_mem #
+        self.pdf['P/T axis'] /= coef_mem #
         ##############################
 
+
+         
+        # create figure, add axes
+        ax = (plt.figure(figsize=plt.figaspect(1.))).gca()
+     
+        # make orthographic basemap.
+        m = Basemap(resolution='c',projection='ortho',lat_0=90.,lon_0=0.)
+        
+        # define parallels and meridians to draw.
+        parallels = np.arange(0.,90.,10.)
+        meridians = np.arange(0.,360.,20.)
+      
+        ## draw coastlines, parallels, meridians.
+        m.drawparallels(parallels)
+        m.drawmeridians(meridians)#  
+        
+#         # transform to nx x ny regularly spaced 5km native projection grid
+#         nx = int((m.xmax-m.xmin)/5000.)+1; ny = int((m.ymax-m.ymin)/5000.)+1
+#         topodat = m.transform_scalar(self.pdf['P/T axis'][:,:,0],np.rad2deg(self.pdf['azim'][0,:]),np.rad2deg(self.pdf['incl'][:,0]),100,50)
+#         # plot image over map with imshow.
+#         im = m.imshow(topodat,plt.cm.RdBu_r)
+   
+   
+        ## compute native x,y coordinates of grid.
+        x, y = m(np.rad2deg(self.pdf['azim']),np.rad2deg(self.pdf['incl']))
+        
+        colormaps = [plt.cm.OrRd, plt.cm.Blues ]
+        colorlines = ['r', 'b']
+        for i in range(self.pdf['P/T axis'].shape[2]):                
+            ## set desired contour levels.
+            clevs = np.linspace(-1.,1.,10) #
+            
+            ## plot SLP contours.
+            CS1 = m.contour(x,y,self.pdf['P/T axis'][:,:,i],clevs,linewidths=0.5,colors=colorlines[i],animated=True)
+            CS2 = m.contourf(x,y,self.pdf['P/T axis'][:,:,i],clevs,cmap=colormaps[i],animated=True, alpha=.5)
+        
+
+ 
+        
+#         # 3d Plots
+#         fig = plt.figure(figsize=plt.figaspect(.5))
+#         ax1 = plt.subplot2grid((1,2), (0, 0), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='P. axis.', xlabel='Lon.', ylabel='Lat.')
+#         ax2 = plt.subplot2grid((1,2), (0, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='T. axis.', xlabel='Lon.', ylabel='Lat.')
+#          
+#         ## Pressure
+#         XYZ = np.asarray(spherical_to_cartesian([np.pi/2. - self.pdf['azim'] - np.pi, self.pdf['incl'], self.pdf['rad']]))
+#         G = np.asarray(spherical_to_cartesian([self.pdf['azim'], self.pdf['incl'], self.pdf['rad']*self.pdf['P/T axis'][:,:,0] ]))
+#         plot_seismicsourcemodel(G, XYZ, comp='r', style='s', ax=ax1, cbarxlabel='P-axis likelyhood', alpha=1.)
+#   
+#         ## Tension
+#         G = np.asarray(spherical_to_cartesian([self.pdf['azim'], self.pdf['incl'], self.pdf['rad']*self.pdf['P/T axis'][:,:,1] ]))
+#         plot_seismicsourcemodel(G, XYZ, comp='r', style='s', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1.)
+#           
+#         view = (15,65)
+#         ax2.view_init(view[0],view[1])
+#         ax1.view_init(view[0],view[1])
+        
     def centroid(self):
         '''
             Centroid solutions
