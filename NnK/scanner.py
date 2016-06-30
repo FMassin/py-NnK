@@ -11,7 +11,7 @@ ______________________________________________________________________
     Functions and classes are ordered from general to specific.
 
 """
-
+import os
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -23,6 +23,7 @@ from obspy.imaging.scripts.mopad import MomentTensor
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import copy
 from mpl_toolkits.basemap import Basemap
+from scipy.interpolate import griddata
 
 def rotation_matrix(axis, theta):
     """
@@ -1658,100 +1659,146 @@ class BodyWavelets(object):
 
 
 
-class RoughDCScan(object):
+class SourceScan(object):
 
     '''
         .. To do : 
             [x] use obspy stream
+            [x] use predefined grids
+            [X] separate pdf plot (richer)
+            [ ] spherical interpolation scipy.interpolate.SmoothSphereBivariateSpline
             [ ] use obspy.core.event.source.farfield  | obspy.taup.taup.getTravelTimes
             [ ] linear scan
-            [ ] separate pdf plot (richer)
     '''
     
-    def __init__(self, n_model = 20):
+    def __init__(self, n_model = 500, 
+                 n_obs=500, 
+                 n_dims=3, 
+                 waves = ['P', 'S'], 
+                 components = [['L'], ['T', 'Q'] ], 
+                 grids_rootdir='~/.config/seismic_source_grids'):
         '''
             Sets model space
         '''
         
-        # Prepares
-        self.scanned = 0
-        
-        ## Wave types
-        self.waves = ['P', 'S']
-        self.components = [['L'], ['T', 'Q'] ] # in origin center sphere: L: Radius, T: Parallel, Q: Meridian
-
-        ## Precision
-        radiation_pattern_angular_precision = 99 # just a factor, not actual number of points (to be improved ?)
-
-        ## DC exploration step
+        ## Attributes info 
+        s = '_'
+        self.file = grids_rootdir+'/Wtypes_'+s.join(waves)+'.Ch_'+s.join(sum(components, []))+'.Nd_'+str(n_dims)+'.Nm_'+str(n_model)+'.No_'+str(n_obs)+'.npz'
+        self.grids_rootdir = grids_rootdir
         self.n_model = n_model
-        strikes = np.linspace(0,180,self.n_model**(1/3.)+1)
-        dips = np.linspace(0,90,self.n_model**(1/3.))
-        slips = np.linspace(-180,180,self.n_model**(1/3.)+1)
+        self.n_obs = n_obs
+        self.n_dims = n_dims
+        ## Wave types
+        self.waves = waves
+        self.components = components # in origin center sphere: L: Radius, T: Parallel, Q: Meridian
         
-        ## Sources (any convention of MoPad can be used)
-        source_mechanisms = np.asarray(  np.meshgrid(strikes, dips, slips)  )*1.  #, sparse=True
-        source_mechanisms = source_mechanisms.transpose( np.roll(range(len(source_mechanisms.shape)),-1) )
-        N = np.prod(source_mechanisms.shape[:-1])
-        flat2coordinate = np.asarray( np.unravel_index( range(N), source_mechanisms.shape[:-1] ) )
-
         ## Initial grids for modeling
         ### Observations (in trigo convention)
-        self.atr = cartesian_to_spherical(globe(n=500)) 
+        self.atr = cartesian_to_spherical(globe(n=n_obs)) 
         observations_atr_nparray = np.asarray(self.atr)
 #         # test plot ##################################################
 #         ax = (plt.figure()).gca(projection='3d')                     #
 #         ax.scatter(globe(n=500)[0], globe(n=500)[1], globe(n=500)[2])#
 #         ##############################################################
+
+        if n_dims == 3 :
+            # Scans : strike, dip, slip
+            
+            ## DC exploration step
+            strikes = np.linspace(0,180,self.n_model**(1/3.)+1)
+            dips = np.linspace(0,90,self.n_model**(1/3.))
+            slips = np.linspace(-180,180,self.n_model**(1/3.)+1)
+            
+            ## Sources (any convention of MoPad can be used)
+            source_mechanisms = np.asarray(  np.meshgrid(strikes, dips, slips)  )*1.  #, sparse=True
+            source_mechanisms = source_mechanisms.transpose( np.roll(range(len(source_mechanisms.shape)),-1) )
+            
+        elif n_dims == 4 :
+            # Scans: strike, dip, slip, DC%
+            print "S, D, Sl, DC% scan not yet impl"
+            
+        elif n_dims == 5 :            
+            # Scans: strike, dip, slip, DC%, ISO%
+            print "strike, dip, slip, DC%, ISO%  scan not yet impl"
+            
+        elif n_dims == 6 :            
+            # Scans: Sxx, Syy, Szz, Sxy, Sxz, Syz
+            print "full mt scan not yet impl"
+            
+        N = np.prod(source_mechanisms.shape[:-1])
+        flat2coordinate = np.asarray( np.unravel_index( range(N), source_mechanisms.shape[:-1] ) )        
         
-        ### Machinery
-        self.modeled_amplitudes = {}
-        self.source_mechanisms = {'Mo':[], 'P-axis':[], 'T-axis':[], 'rms':[], 'xcorr':[]}
-
-        ## Loops over models #
-        for i in range(N):   #            
-            source_model = SeismicSource( source_mechanisms[ tuple(flat2coordinate[:,i]) ])
+        # Machinery
+        self.scanned = 0        
+        if not os.path.exists(os.path.expanduser(grids_rootdir)):
+            os.makedirs(os.path.expanduser(grids_rootdir))
+        file = os.path.expanduser(self.file)
+        
+        # Test if grids exists 
+        if not os.path.exists(file):
+                        
+            # Initiates
+            self.modeled_amplitudes = {}
+            self.source_mechanisms = {'Mo'    : np.zeros([N,len(source_mechanisms.shape)-1]) , 
+                                      'P-axis': np.zeros([N,3]), 
+                                      'T-axis': np.zeros([N,3]), 
+                                      'rms'   : np.zeros(N), 
+                                      'xcorr' : np.zeros(N) }
             
-            sm = tuple(source_mechanisms[ tuple(flat2coordinate[:,i]) ])
-            self.source_mechanisms[    'Mo'].append(sm)
-            self.source_mechanisms['P-axis'].append( cartesian_to_spherical(source_model.MomentTensor.get_p_axis()))
-            self.source_mechanisms['T-axis'].append( cartesian_to_spherical(source_model.MomentTensor.get_t_axis()))
-            self.source_mechanisms[   'rms'].append(0.0)
-            self.source_mechanisms[ 'xcorr'].append(0.0)
+            ## Loops over models #
+            for i in range(N):   #            
+                source_model = SeismicSource( source_mechanisms[ tuple(flat2coordinate[:,i]) ])
+                
+                sm = tuple(source_mechanisms[ tuple(flat2coordinate[:,i]) ])
+    
+                self.source_mechanisms[    'Mo'][i,:] = np.asarray(sm)
+                self.source_mechanisms['P-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_p_axis())
+                self.source_mechanisms['T-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_t_axis())
+                self.source_mechanisms[   'rms'][i] = 0.0
+                self.source_mechanisms[ 'xcorr'][i] = 0.0
+                           
+                ### Loops over wave types ##########
+                for wi,w in enumerate(self.waves): #
+                    displacement_xyz, observations_xyz = source_model.Aki_Richards.radpat(wave=w, obs_sph = self.atr)
+                
+                    #### Loops over components of waves #########
+                    for ci,c in enumerate(self.components[wi]): #         
+                        self.modeled_amplitudes[ sm, w, c ], disp_projected = disp_component(observations_xyz, displacement_xyz, c) 
+                        
+#                         # tests amplitudes values #####################################################
+#                         ax, cbar = source_model.Aki_Richards.plot(style='*', insert_title='('+c+' compo)', wave=w) 
+#                         plus = self.modeled_amplitudes[ sm, w, c ]>0
+#                         minus = self.modeled_amplitudes[ sm, w, c ]<=0
+#                         ax.plot(displacement_xyz[0][plus], 
+#                                 displacement_xyz[1][plus], 
+#                                 displacement_xyz[2][plus], '+b')   #
+#                         ax.plot(displacement_xyz[0][minus], 
+#                                 displacement_xyz[1][minus], 
+#                                 displacement_xyz[2][minus], 'or')   #
+#                         if w=='S' and c=='m':
+#                             return #######################################################################
+                
+#                         # re-indexes each obs point by sph. coordinate in rad ###############
+#                          for line in range(observations_atr_nparray.shape[1]):              #
+#                              #for col in range(observations_atr_nparray.shape[2]):          #
+#                              obs_atr = tuple(observations_atr_nparray[:,line])              #
+#                              self.modeled_amplitudes[ obs_atr, sm, w, c ] = amplitudes[line]#
+#                              #print '[',obs_atr, sm, w, c,']=',amplitudes[line]##############
             
-            ### Loops over wave types ##########
-            for wi,w in enumerate(self.waves): #
-                displacement_xyz, observations_xyz = source_model.Aki_Richards.radpat(wave=w, obs_sph = self.atr)
-            
-                #### Loops over components of waves #########
-                for ci,c in enumerate(self.components[wi]): #                  
-                    self.modeled_amplitudes[ sm, w, c ], disp_projected = disp_component(observations_xyz, displacement_xyz, c) 
-                    
-#                     # tests amplitudes values #####################################################
-#                     ax, cbar = source_model.Aki_Richards.plot(style='*', insert_title='('+c+' compo)', wave=w) 
-#                     plus = self.modeled_amplitudes[ sm, w, c ]>0
-#                     minus = self.modeled_amplitudes[ sm, w, c ]<=0
-#                     ax.plot(displacement_xyz[0][plus], 
-#                             displacement_xyz[1][plus], 
-#                             displacement_xyz[2][plus], '+b')   #
-#                     ax.plot(displacement_xyz[0][minus], 
-#                             displacement_xyz[1][minus], 
-#                             displacement_xyz[2][minus], 'or')   #
-#                     if w=='S' and c=='m':
-#                         return #######################################################################
-            
-#                    # re-indexes each obs point by sph. coordinate in rad ###############
-#                     for line in range(observations_atr_nparray.shape[1]):              #
-#                         #for col in range(observations_atr_nparray.shape[2]):          #
-#                         obs_atr = tuple(observations_atr_nparray[:,line])              #
-#                         self.modeled_amplitudes[ obs_atr, sm, w, c ] = amplitudes[line]#
-#                         #print '[',obs_atr, sm, w, c,']=',amplitudes[line]##############
- 
-        print i+1,"models generated for:",
-        print np.prod(np.asarray(self.atr[0]).shape), "observation points",
-        print wi+1,"waves",
-        print ci+1,"components."
-
+            ### Saves for next time
+            print 'Saving',file
+            np.savez(file, source_mechanisms = self.source_mechanisms, modeled_amplitudes=self.modeled_amplitudes)
+        else:
+            print 'Loading',file
+            npzfile = np.load(file)
+            self.modeled_amplitudes = npzfile['modeled_amplitudes'].item()
+            self.source_mechanisms  = npzfile['source_mechanisms'].item()
+        
+        print 'Loaded in object:',  
+        print N,'models for',
+        print np.prod(np.asarray(self.atr[0]).shape), 'observation points',
+        print len(waves),'waves',
+        print len(sum(components, [])),'components.'
         #for key, value in self.modeled_amplitudes.iteritems():
         #   print key, value
         
@@ -1840,13 +1887,14 @@ class RoughDCScan(object):
         ################################
 
         
-        
         # Scans source ### how to make it linear ? ###########
-        for i,Mo in enumerate(self.source_mechanisms['Mo']): #
+        for i in range(self.source_mechanisms['Mo'].shape[0]): #
             
+            Mo = self.source_mechanisms['Mo'][i,:]
+
             # gets pdf value #################################
             for j,wavelet in enumerate(self.data_wavelets):
-                self.data_amplitudes[j][:] = self.modeled_amplitudes[ Mo, 
+                self.data_amplitudes[j][:] = self.modeled_amplitudes[ tuple(Mo), 
                                                                       data.observations['types'][j,0], 
                                                                       data.Stream[j].stats.channel[-1] ][ tuple(self.data_indexes[j]) ]
     
@@ -1857,6 +1905,41 @@ class RoughDCScan(object):
         
         # Gets brightest cell
         self.best_likelyhood = [self.source_mechanisms['Mo'][np.argmax(self.source_mechanisms['rms'])], np.max(self.source_mechanisms['rms']) ]
+        
+        # pdf grid for P-T axis 
+        test = np.meshgrid( np.linspace(-np.pi,np.pi,360) , np.linspace(0.,np.pi,180) ) 
+        self.pdf = {'sphere grid': (test[0], test[1], np.ones(test[1].shape)), 
+                    'P/T': np.zeros([test[1].shape[0], test[1].shape[1], 2])}
+
+        # Machinery   
+        spaces = ['T-axis', 'P-axis']
+        vals = np.concatenate((self.source_mechanisms['rms'], 
+                               self.source_mechanisms['rms'], 
+                               self.source_mechanisms['rms'], 
+                               self.source_mechanisms['rms'], 
+                               self.source_mechanisms['rms'],
+                               self.source_mechanisms['rms'], 
+                               self.source_mechanisms['rms'], 
+                               self.source_mechanisms['rms'], 
+                               self.source_mechanisms['rms']), axis=0)
+         
+        # makes smooth pdf along P-T space # change for sphere distance averaging
+        for i,s in enumerate(spaces):        
+            pts = np.concatenate(([       0,      0]+self.source_mechanisms[s][:,:2], 
+                                  [       0,  np.pi]+self.source_mechanisms[s][:,:2], 
+                                  [       0, -np.pi]+self.source_mechanisms[s][:,:2],
+                                  [ np.pi*2,      0]+self.source_mechanisms[s][:,:2], 
+                                  [ np.pi*2,  np.pi]+self.source_mechanisms[s][:,:2], 
+                                  [ np.pi*2, -np.pi]+self.source_mechanisms[s][:,:2], 
+                                  [-np.pi*2,      0]+self.source_mechanisms[s][:,:2], 
+                                  [-np.pi*2,  np.pi]+self.source_mechanisms[s][:,:2], 
+                                  [-np.pi*2, -np.pi]+self.source_mechanisms[s][:,:2]), axis=0)    
+                    
+            self.pdf['P/T'][:,:,i] = griddata(pts, 
+                                                   vals, 
+                                                   (self.pdf['sphere grid'][0], self.pdf['sphere grid'][1]),
+                                                   method='nearest')
+            
 
         # Important
         self.scanned = 1
@@ -1905,101 +1988,75 @@ class RoughDCScan(object):
         plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data) , style, ax=ax2)
         
     
-    def PT_pdf(self):
+    def plot_PT(self):
         '''
-            Produces pdfs
+            Plot pdfs
         '''
-        
-        # pdf grid for P-T axis 
-        test = np.meshgrid( np.linspace(-np.pi,np.pi,50) , np.linspace(0.,np.pi,20) ) 
-        self.pdf = {'azim':test[0], 
-                    'incl':test[1], 
-                    'rad': np.ones(test[1].shape), 
-                    'P/T axis': np.zeros([test[1].shape[0], test[1].shape[1], 2])}
-        i_to_field = ['azim','incl','rad']
-        
-        ## Machinery                                         
-        coef_mem = np.zeros(self.pdf['P/T axis'].shape)
-        
-        # Scans source ### how to make it linear ? ###########
-        for i,Mo in enumerate(self.source_mechanisms['Mo']): #
-            # makes smooth pdf along P-T space ################################
-            coef = np.zeros(self.pdf['P/T axis'].shape)
-            for n in range(len(self.source_mechanisms['P-axis'][i])): ###################
-                coef[:,:, 0] += ( self.source_mechanisms['P-axis'][i][n] - self.pdf[i_to_field[n]] )**2. #
-                coef[:,:, 1] += ( self.source_mechanisms['T-axis'][i][n] - self.pdf[i_to_field[n]] )**2. #
-#             coef = np.sqrt(coef)
-#             while len(coef[abs(coef)>np.pi**2]):
-#                 coef[coef>np.pi**2] -= np.pi**2
-#                 coef[coef<-1*np.pi**2] += np.pi**2
-#             coef = abs(coef)   
-            coef[coef<.00001] = .00001 
-            coef = 1./coef
-            self.pdf['P/T axis'] += self.source_mechanisms['rms'][i] * coef                                    #    
-            coef_mem += coef                                                  #
-        #######################################################################
-        
-        # Smoothes ###################
-        self.pdf['P/T axis'] /= coef_mem #
-        ##############################
-
-
-         
         # create figure, add axes
         ax = (plt.figure(figsize=plt.figaspect(1.))).gca()
      
         # make orthographic basemap.
-        m = Basemap(resolution='c',projection='ortho',lat_0=90.,lon_0=0.)
+        m = Basemap(ax=ax, resolution='c',projection='ortho',lat_0=90,lon_0=0) 
         
         # define parallels and meridians to draw.
-        parallels = np.arange(0.,90.,10.)
-        meridians = np.arange(0.,360.,20.)
-      
-        ## draw coastlines, parallels, meridians.
-        m.drawparallels(parallels)
-        m.drawmeridians(meridians)#  
-        
-#         # transform to nx x ny regularly spaced 5km native projection grid
-#         nx = int((m.xmax-m.xmin)/5000.)+1; ny = int((m.ymax-m.ymin)/5000.)+1
-#         topodat = m.transform_scalar(self.pdf['P/T axis'][:,:,0],np.rad2deg(self.pdf['azim'][0,:]),np.rad2deg(self.pdf['incl'][:,0]),100,50)
-#         # plot image over map with imshow.
-#         im = m.imshow(topodat,plt.cm.RdBu_r)
-   
+        m.drawparallels(np.arange(-80.,81.,20.))
+        m.drawmeridians(np.arange(-180.,179.,20.))
    
         ## compute native x,y coordinates of grid.
-        x, y = m(np.rad2deg(self.pdf['azim']),np.rad2deg(self.pdf['incl']))
+        x, y = m(np.rad2deg(self.pdf['sphere grid'][0])*-1, -1*(90-np.rad2deg(self.pdf['sphere grid'][1])))
         
-        colormaps = [plt.cm.OrRd, plt.cm.Blues ]
-        colorlines = ['r', 'b']
+        # Machinery
+        colormaps = [ plt.cm.Blues , plt.cm.OrRd ]
+        colorlines = ['b', 'r']
+        legends_title = ['P-axis [% prob.]', 'T-axis [%prob.]']
+        inset_locations = [3, 4] 
+        locations = ['right', 'left']
         for i in range(self.pdf['P/T axis'].shape[2]):                
             ## set desired contour levels.
-            clevs = np.linspace(-1.,1.,10) #
+            clevs = np.linspace(np.median(self.pdf['P/T'][:,:,i])+np.std(self.pdf['P/T'][:,:,i]),
+                                np.max(self.pdf['P/T'][:,:,i]),
+                                10) #
             
             ## plot SLP contours.
-            CS1 = m.contour(x,y,self.pdf['P/T axis'][:,:,i],clevs,linewidths=0.5,colors=colorlines[i],animated=True)
-            CS2 = m.contourf(x,y,self.pdf['P/T axis'][:,:,i],clevs,cmap=colormaps[i],animated=True, alpha=.5)
+            CS1 =  m.contour(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100., 
+                             animated=True, colors=colorlines[i], linewidths=0.5)
+            CS2 = m.contourf(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100., 
+                             animated=True, cmap=colormaps[i], alpha=.5)
+            
+            axins = inset_axes(ax,
+                   width="1%", # width = 30% of parent_bbox
+                   height="1%", 
+                   loc=inset_locations[i])
+            axins.axis('off')
+            
+            cbar = m.colorbar(CS2, ax= axins, location=locations[i], format="%.0f")
+            cbar.set_label(legends_title[i])
+            cbar.ax.yaxis.set_ticks_position(locations[i])
+            cbar.ax.yaxis.set_label_position(locations[i])
         
+        pos1 = ax.get_position() # get the original position 
+        pos2 = [pos1.x0+pos1.width*.051 , pos1.y0 ,  pos1.width * .9, pos1.height] 
+        ax.set_position(pos2) # set a new position
 
- 
-        
+
 #         # 3d Plots
 #         fig = plt.figure(figsize=plt.figaspect(.5))
 #         ax1 = plt.subplot2grid((1,2), (0, 0), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='P. axis.', xlabel='Lon.', ylabel='Lat.')
 #         ax2 = plt.subplot2grid((1,2), (0, 1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1], title='T. axis.', xlabel='Lon.', ylabel='Lat.')
-#          
+#            
 #         ## Pressure
-#         XYZ = np.asarray(spherical_to_cartesian([np.pi/2. - self.pdf['azim'] - np.pi, self.pdf['incl'], self.pdf['rad']]))
-#         G = np.asarray(spherical_to_cartesian([self.pdf['azim'], self.pdf['incl'], self.pdf['rad']*self.pdf['P/T axis'][:,:,0] ]))
-#         plot_seismicsourcemodel(G, XYZ, comp='r', style='s', ax=ax1, cbarxlabel='P-axis likelyhood', alpha=1.)
-#   
+#         XYZ = np.asarray(spherical_to_cartesian([np.pi/2. - self.pdf['grid AIR'][0] - np.pi, self.pdf['grid AIR'][1], self.pdf['grid AIR'][2]]))
+#         G = np.asarray(spherical_to_cartesian([self.pdf['grid AIR'][0], self.pdf['grid AIR'][1], self.pdf['P/T axis'][:,:,0] ]))
+#         plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax1, cbarxlabel='P-axis likelyhood', alpha=1.)
+#     
 #         ## Tension
-#         G = np.asarray(spherical_to_cartesian([self.pdf['azim'], self.pdf['incl'], self.pdf['rad']*self.pdf['P/T axis'][:,:,1] ]))
-#         plot_seismicsourcemodel(G, XYZ, comp='r', style='s', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1.)
-#           
+#         G = np.asarray(spherical_to_cartesian([self.pdf['grid AIR'][0], self.pdf['grid AIR'][1], self.pdf['P/T axis'][:,:,1] ]))
+#         plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1.)
+#             
 #         view = (15,65)
 #         ax2.view_init(view[0],view[1])
 #         ax1.view_init(view[0],view[1])
-        
+         
     def centroid(self):
         '''
             Centroid solutions
