@@ -16,11 +16,11 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from obspy import read, Trace, Stream
 from obspy.core.trace import Stats
 from obspy.core.event.source import farfield
 from obspy.imaging.scripts.mopad import MomentTensor
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import copy
 from mpl_toolkits.basemap import Basemap
 from scipy.interpolate import griddata
@@ -1442,7 +1442,8 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
                    width="60%", # width = 30% of parent_bbox
                    height="30%", 
                    loc=3)
-
+    
+    axins.patch.set_alpha(0.5)
 
     if hasattr(bodywavelet, 'SeismicSource'):
         ax, cbar = bodywavelet.SeismicSource.Aki_Richards.plot(wave='P', style='s', ax=ax)
@@ -1459,7 +1460,7 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
     
     axins.set_xlim([0 , lmax])
     axins.set_xlabel('Time')
-    axins.set_ylabel('Amplitude')
+    axins.set_ylabel('Amplitudes')
     
     wavelets = np.ascontiguousarray(wavelets)
     ws = np.ascontiguousarray(ws)
@@ -1501,7 +1502,7 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
                          labelbottom='off',
                          labelleft='off')
 
-    return ax, axins
+    return ax, axins, cbar
 
 class ArticialWavelets(object):
     """
@@ -1621,7 +1622,7 @@ class SyntheticWavelets(object):
             
     def plot(self, style = '*'):
          
-        plot_wavelet( self, style)
+        return plot_wavelet( self, style)
 
 
 class BodyWavelets(object):
@@ -2185,16 +2186,24 @@ class SourceScan(object):
             sol = self.best_likelyhood[0]
         
         
-        fig = plt.figure(figsize=plt.figaspect(1.))
+        fig = plt.figure(figsize=plt.figaspect(.8))
         
         # plots the model
         ax = plt.subplot2grid((2,2), (0,0), projection='3d') 
-        ax, axins = plot_wavelet(  self.data , style='s', ax=ax, detail_level = 0)
+        ax, axins, cbar = plot_wavelet(  self.data , style='s', ax=ax, detail_level = 0)
+        fig.delaxes(cbar.ax)
+        ax.set_title(r'Synthetic model')
+        tmp = ax.get_position().bounds
+        ax.set_position([tmp[0] , tmp[1], tmp[2] , tmp[3]*1.2 ])
         
-
         # plots the best of scan 
         ax = plt.subplot2grid((2,2), (0,1), projection='3d') 
-        ax, axins = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data) , style='s', ax=ax, detail_level = 0)           
+        ax, axins, cbar = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data) , style='s', ax=ax, detail_level = 0)           
+        fig.delaxes(cbar.ax)
+        ax.set_title(r'Best solution')
+        axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')  
+        tmp = ax.get_position().bounds
+        ax.set_position([tmp[0] , tmp[1], tmp[2] , tmp[3]*1.2 ])
         
         # plots some random trials
         changes = np.asarray([90., 180., 270.])
@@ -2208,76 +2217,15 @@ class SourceScan(object):
             
             ## plots each trials
             ax = plt.subplot2grid((2,len(changes)), (1,i), projection='3d')   
-            ax, axins = plot_wavelet( self.corrected_data(tmp, self.data) , style='s', ax=ax, detail_level = 0)
-        
-        
-#         , ylim=[-1,(data.observations['n'])/100.+1.], xlim=[0,data.wavelets.shape[1]-1], xlabel='Time (sample).', ylabel='Amplitude.', title='Data.')
-#         ax_data.plot(np.transpose(data.wavelets) * np.tile(range(data.observations['n'],data.observations['n']*2), (data.wavelets.shape[1], 1))/20.);
-#         
-#         ax_model = plt.subplot2grid((2,4), (0,0), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1])
-#         ax_model.set_title('Data coverage and polarities')
-#         ws = np.sum(data.wavelets[:,:int(data.wavelets.shape[1]/2.)], axis=1)
-#         ax_model.scatter(data.obs_cart[0][ws>=0],data.obs_cart[1][ws>=0],data.obs_cart[2][ws>=0],c='b')
-#         ax_model.scatter(data.obs_cart[0][ws<0],data.obs_cart[1][ws<0],data.obs_cart[2][ws<0],c='r')
-#         
-#         ax_model.tick_params(
-#                              axis='both',          # changes apply to the x-axis
-#                              which='both',      # both major and minor ticks are affected
-#                              right='off',      # ticks along the bottom edge are off
-#                              left='off',         # ticks along the top edge are off
-#                              top='off',      # ticks along the bottom edge are off
-#                              bottom='off',         # ticks along the top edge are off
-#                              labelbottom='off',
-#                              labelleft='off')
-#         ax_model.view_init(view[0],view[1])
-# 
-#         for i,change in enumerate(changes):
-#             
-#             ax_model = plt.subplot2grid((2,4), (0, i+1), projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1])
-#             ax_data = plt.subplot2grid((2,4), (1, i+1), ylim=[-1,(data.observations['n'])/100.+1.], xlim=[0,data.wavelets.shape[1]-1])
-#             sol[0] += change
-#             if sol[0]<0:
-#                 sol[0] +=360
-#             elif sol[0]>360:
-#                 sol[0] -= 360
-#             if i == 2 :
-#                 example = data.source
-#             else:
-#                 example = SeismicSource(sol[:3])
-#             
-#             ax_model, cbar = example.Aki_Richards.plot(wave='P', style='s', ax=ax_model, cbarxlabel='Solution amplitudes', cb=0)
-#             disp, xyz = example.Aki_Richards.radpat(wave='P', obs_sph = data.obs_sph)
-#             amplitudes, disp_projected = disp_component(xyz, disp, 'r')
-#             ax_model.scatter(data.obs_cart[0][amplitudes>=0],data.obs_cart[1][amplitudes>=0],data.obs_cart[2][amplitudes>=0],c='b')
-#             ax_model.scatter(data.obs_cart[0][amplitudes<0],data.obs_cart[1][amplitudes<0],data.obs_cart[2][amplitudes<0],c='r')
-#             
-#             ax_model.view_init(view[0],view[1])
-#             ax_model.set_title('Trial '+str(i+1))
-#             
-#             if i==1:
-#                 ax_data.set_xlabel('Time (sample).')
-#                 ax_data.set_title('Data with correction.')
-#             
-#             ax_data.tick_params(
-#                             axis='y',          # changes apply to the x-axis
-#                             which='both',      # both major and minor ticks are affected
-#                             right='off',      # ticks along the bottom edge are off
-#                             left='off',         # ticks along the top edge are off
-#                             labelleft='off')
-#             ax_model.tick_params(
-#                                 axis='both',          # changes apply to the x-axis
-#                                 which='both',      # both major and minor ticks are affected
-#                                 right='off',      # ticks along the bottom edge are off
-#                                 left='off',         # ticks along the top edge are off
-#                                 top='off',      # ticks along the bottom edge are off
-#                                 bottom='off',         # ticks along the top edge are off
-#                                 labelbottom='off',
-#                                 labelleft='off')
-#             
-#             corrected_wavelets = np.swapaxes(np.tile(np.sign(amplitudes),(data.wavelets.shape[1],1)),0,1) * data.wavelets
-#             ax_data.plot(np.transpose(corrected_wavelets) * np.tile(range(data.observations['n'],data.observations['n']*2), (corrected_wavelets.shape[1], 1))/20.);
-
-
+            ax, axins, cbar = plot_wavelet( self.corrected_data(tmp, self.data) , style='s', ax=ax, detail_level = 0)        
+            fig.delaxes(cbar.ax)            
+            ax.set_title(r'Trial '+str(i+1))            
+            if i==0:
+                axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')    
+            else:
+                axins.set_ylabel('')          
+            tmp = ax.get_position().bounds
+            ax.set_position([tmp[0] , tmp[1], tmp[2]*1.3 , tmp[3] ])
 
 # function skeleton
 # def ggg(...):
