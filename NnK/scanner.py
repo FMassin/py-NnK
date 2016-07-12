@@ -30,6 +30,7 @@ def haversine(lon1=0., lat1=0., lon2=0., lat2=np.pi/2., radius=6371, phi1=None, 
     """
     Calculate the great circle distance between two points 
     on the earth (specified in radian)
+    
     """
     if phi1 is None:
         pass
@@ -401,7 +402,13 @@ def mt_angles(mt):
     
     ## if given [[strike, dip, rake], [strike, dip, rake]] (e.g. by MoPad)
     elif mt.shape == (2,3) :
-        strike, dip, rake = mt[0]
+        
+        if abs(mt[0][0]) < abs(mt[1][0]) :
+            strike, dip, rake = mt[0]
+        else:
+            strike, dip, rake = mt[1]
+            
+        #strike, dip, rake = mt[0]
         DC = 100
         CLVD = 0
         iso = 0
@@ -557,7 +564,8 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
     U, V, W = disp_projected
     X, Y, Z = xyz
     amplitudes_surf = np.abs(amplitudes)/np.max(np.abs(amplitudes))
-
+    
+    
     # Initializing 
     ## Initializing the colormap machinery
     norm = matplotlib.colors.Normalize(vmin=np.min(amplitudes),vmax=np.max(amplitudes))
@@ -571,14 +579,22 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
     ## Initializing the colorbar
     cbar=[]
     if style not in ('frame', 'wireframe') and cb == 1:
-        cbar = plt.colorbar(s_m,orientation="vertical",fraction=0.07, shrink=.7, aspect=10, ax = ax)
+        
+        axins = inset_axes(ax,
+               width="5%", # width = 30% of parent_bbox
+               height="60%", 
+               loc=2)
+            
+        cbar = plt.colorbar(s_m,orientation="vertical",cax = axins)#fraction=0.07, shrink=.7, aspect=10, ax = ax)
         if cbarxlabel==None:
         	cbarxlabel = 'Displacement amplitudes'
         cbar.ax.set_ylabel(cbarxlabel)
+        cbar.ax.yaxis.set_ticks_position('left')
+        cbar.ax.yaxis.set_label_position('left')
     ## Initializing figure keys
     if mt is not None :
         [strike, dip, rake], [DC, CLVD, iso, deviatoric] = mt_angles(mt)
-        ax.set_title(r''+wave+'-wave '+insert_title.lower()+'\n(' + str(int(strike)) + ', ' + str(int(dip)) + ', ' + str(int(rake)) + ')$^{SDR}$, (' + str(int(iso)) + ', ' + str(int(DC)) + ', ' + str(int(CLVD)) + ')$^{\%IDC}$')
+        ax.set_title(r''+wave+'-wave'+insert_title+'\n $\stackrel{' + str(int(strike)) + ', ' + str(int(dip)) + ', ' + str(int(rake)) + ' (^\circ Strike, Dip, Rake)}{' + str(int(iso)) + ', ' + str(int(DC)) + ', ' + str(int(CLVD)) + ' (\% Iso, Dc, Clvd)}$')
     
     ## Force axis equal
     arrow_scale = (np.max(xyz)-np.min(xyz))/10
@@ -653,7 +669,6 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
     ax.set_ylim(mean_y - max_range, mean_y + max_range)
     ax.set_zlim(mean_z - max_range, mean_z + max_range)
 
-    ax.view_init(15,65)
 
     plt.show() 
     return ax, cbar
@@ -1446,7 +1461,7 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
     axins.patch.set_alpha(0.5)
 
     if hasattr(bodywavelet, 'SeismicSource'):
-        ax, cbar = bodywavelet.SeismicSource.Aki_Richards.plot(wave='P', style='s', ax=ax)
+        ax, cbar = bodywavelet.SeismicSource.Aki_Richards.plot(wave='P', style='s', ax=ax, insert_title=" and "+bodywavelet.title)
     
     wavelets = []
     ws = [] 
@@ -1458,9 +1473,12 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
         lmax = np.max([ lmax , len(w.data) ])
         axins.plot(w.data+i/100.)
     
-    axins.set_xlim([0 , lmax])
-    axins.set_xlabel('Time')
+    axins.set_xlim([0 , lmax-1])
+    axins.yaxis.set_ticks_position('left')
+    axins.yaxis.set_label_position('left')
+    axins.set_xlabel('Time samples')
     axins.set_ylabel('Amplitudes')
+
     
     wavelets = np.ascontiguousarray(wavelets)
     ws = np.ascontiguousarray(ws)
@@ -1474,25 +1492,41 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
                 bodywavelet.observations['cart'][2][ws<0.],
                 marker='o', c= 'r')
     
-    for i in range(bodywavelet.observations['n']):
-        ax.text(bodywavelet.observations['cart'][0][i],
-                 bodywavelet.observations['cart'][1][i],
-                 bodywavelet.observations['cart'][2][i],
-                 '%s' % (str(i)))
-        
     
+            
+    if detail_level == 2:        
+        for i in range(bodywavelet.observations['n']):
+            ax.text(bodywavelet.observations['cart'][0][i],
+                     bodywavelet.observations['cart'][1][i],
+                     bodywavelet.observations['cart'][2][i],
+                     '%s' % (str(i)))     
+            
     
-    ax.view_init(15,65)
+    #ax.set_xlabel('Lon.')
+    ax.set_ylabel('Lat.')
+    ax.set_zlabel('Alt.')
+    
+    ax.set_xticks(ax.get_xticks()[[1]])
+    ax.set_yticks(ax.get_yticks()[[1,-2]])
+    ax.set_zticks(ax.get_zticks()[[1,-2]])
+
+#     ticks = [ax.xaxis.get_major_ticks(), ax.yaxis.get_major_ticks(), ax.zaxis.get_major_ticks()]
+#     for j, axticks in enumerate(ticks):
+#         for i,tick in enumerate(axticks):
+#             if i != 0 and i != len(axticks)-1:
+#                 tick.label.set_visible(False)
+
+#     ax.tick_params(axis='both',          # changes apply to the x-axis
+#                      which='both',      # both major and minor ticks are affected
+#                      right='off',      # ticks along the bottom edge are off
+#                      left='off',         # ticks along the top edge are off
+#                      top='off',      # ticks along the bottom edge are off
+#                      bottom='off',         # ticks along the top edge are off
+#                      labelbottom='off',
+#                      labelleft='off',
+#                      labelright='off')
     
     if detail_level==0:
-        ax.tick_params(axis='both',          # changes apply to the x-axis
-                         which='both',      # both major and minor ticks are affected
-                         right='off',      # ticks along the bottom edge are off
-                         left='off',         # ticks along the top edge are off
-                         top='off',      # ticks along the bottom edge are off
-                         bottom='off',         # ticks along the top edge are off
-                         labelbottom='off',
-                         labelleft='off')
         axins.tick_params(axis='both',          # changes apply to the x-axis
                          which='both',      # both major and minor ticks are affected
                          right='off',      # ticks along the bottom edge are off
@@ -1500,7 +1534,8 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
                          top='off',      # ticks along the bottom edge are off
                          bottom='off',         # ticks along the top edge are off
                          labelbottom='off',
-                         labelleft='off')
+                         labelleft='off',
+                         labelright='off' )
 
     return ax, axins, cbar
 
@@ -1578,6 +1613,7 @@ class SyntheticWavelets(object):
         self.MomentTensor = MomentTensor(mt,debug=2)
 
         # 
+        self.title = 'observations'
         self.observations = {'types': np.tile('P', (n, 1)),
                              'cart' : np.asarray(globe(n=n)),
                              'sph'  : np.asarray(cartesian_to_spherical(np.asarray(globe(n=n)))),
@@ -1750,7 +1786,7 @@ class SourceScan(object):
             [ ] linear scan
     '''
     
-    def __init__(self, n_model = 500, 
+    def __init__(self, n_model = 1500, 
                  n_obs=500, 
                  n_dims=3, 
                  waves = ['P', 'S'], 
@@ -1818,7 +1854,8 @@ class SourceScan(object):
                         
             # Initiates
             self.modeled_amplitudes = {}
-            self.source_mechanisms = {'Mo'    : np.zeros([N,len(source_mechanisms.shape)-1]) , 
+            self.source_mechanisms = {'Mt'    : np.zeros([N,len(source_mechanisms.shape)-1]) , 
+                                      'fullMt': np.zeros([N,6]), 
                                       'P-axis': np.zeros([N,3]), 
                                       'T-axis': np.zeros([N,3]), 
                                       'rms'   : np.zeros(N), 
@@ -1830,7 +1867,8 @@ class SourceScan(object):
                 
                 sm = tuple(source_mechanisms[ tuple(flat2coordinate[:,i]) ])
     
-                self.source_mechanisms[    'Mo'][i,:] = np.asarray(sm)
+                self.source_mechanisms[    'Mt'][i,:] = np.asarray(sm)
+                self.source_mechanisms['fullMt'][i,:] = np.ravel(np.asarray(source_model.MomentTensor.get_M()))[[0,4,8,3,6,7]]
                 self.source_mechanisms['P-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_p_axis())
                 self.source_mechanisms['T-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_t_axis())
                 self.source_mechanisms[   'rms'][i] = 0.0
@@ -1966,13 +2004,13 @@ class SourceScan(object):
         ################################
 
         
-        # Scans source ### how to make it linear ? ###########
-        for i in range(self.source_mechanisms['Mo'].shape[0]): #
+        # Scans source ### how to make it linear ? #############
+        for i in range(self.source_mechanisms['Mt'].shape[0]): #
             
-            Mo = self.source_mechanisms['Mo'][i,:]
+            Mo = self.source_mechanisms['Mt'][i,:]
 
             # gets pdf value #################################
-            for j,wavelet in enumerate(self.data_wavelets):
+            for j,wavelet in enumerate(self.data_wavelets):  #
                 self.data_amplitudes[j][:] = self.modeled_amplitudes[ tuple(Mo), 
                                                                       data.observations['types'][j,0], 
                                                                       data.Stream[j].stats.channel[-1] ][ tuple(self.data_indexes[j]) ]
@@ -1983,7 +2021,19 @@ class SourceScan(object):
             ##################################################
         
         # Gets brightest cell
-        self.best_likelyhood = [self.source_mechanisms['Mo'][np.argmax(self.source_mechanisms['rms'])], np.max(self.source_mechanisms['rms']) ]
+        self.best_likelyhood = [self.source_mechanisms['Mt'][np.argmax(self.source_mechanisms['rms'])], 
+                                np.max(self.source_mechanisms['rms']) ]
+        
+        # Gets full Mt centroid
+        
+        repeat_rms = np.repeat(np.expand_dims(self.source_mechanisms['rms'], 
+                                         axis=len(self.source_mechanisms['rms'].shape)), 
+                         self.source_mechanisms['fullMt'].shape[1] , 
+                         axis=len(self.source_mechanisms['rms'].shape)) 
+        
+        self.centroid = [(np.sum(repeat_rms * self.source_mechanisms['fullMt'], axis=0))/np.sum(self.source_mechanisms['rms'])/10.]
+                         
+        
         
         # pdf grid for P-T axis 
         test = np.meshgrid( np.linspace(-np.pi,np.pi,100) , np.linspace(0.,np.pi,50) ) 
@@ -2001,7 +2051,7 @@ class SourceScan(object):
                                        lon1 = self.source_mechanisms[s][:,0],
                                        phi2 = self.pdf['sphere grid'][1],
                                        lon2 = self.pdf['sphere grid'][0],
-                                       radius = 1.) / np.pi )
+                                       radius = 1.) / np.pi )**.5
             
             rms =  np.reshape(self.source_mechanisms['rms'],
                               ( 1, 1, len(self.source_mechanisms['rms'] )))
@@ -2017,7 +2067,7 @@ class SourceScan(object):
         # Important
         self.scanned = 1
     
-    def corrected_data(self, mt, data):
+    def corrected_data(self, mt, data, title):
         
         results = copy.deepcopy(data)
         
@@ -2036,11 +2086,16 @@ class SourceScan(object):
             for ci,c in enumerate(self.components[wi]): #                  
                 amplitudes[ w, c ], disp_projected = disp_component(results.observations['cart'], disp, c)
         
+        forrms = np.zeros((9999))           
         for i in range(len(results.Stream)):              
             results.Stream[i].data *= np.sign(amplitudes[
                                                          results.observations['types'][i,0], 
                                                          results.Stream[i].stats.channel[-1] ][i])
-                
+            
+            forrms[:len(results.Stream[i].data)] += results.Stream[i].data * self.data_taperwindows[i]
+                    
+        results.title = title+' (P'+ str(int( 100*np.sum(forrms**2)*np.sign(np.sum(forrms))/self.power_optimal_stack )) +'%)'
+        
         return results
     
     def plot(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = '*'):
@@ -2049,23 +2104,42 @@ class SourceScan(object):
             self.scan(data)
 
         # Plots
-        fig = plt.figure(figsize=plt.figaspect(.5))
-        ax1 = plt.subplot2grid((1,2), (0, 0), projection='3d')
-        ax2 = plt.subplot2grid((1,2), (0, 1), projection='3d')
+        fig = plt.figure(figsize=(13,4))
+        ax1 = plt.subplot2grid((1,3), (0, 0), projection='3d')
+        ax2 = plt.subplot2grid((1,3), (0, 1), projection='3d')
+        ax3 = plt.subplot2grid((1,3), (0, 2), projection='3d')
         
         ## plots data
-        plot_wavelet(self.data, style, ax=ax1)
+        ax, axins, cbar = plot_wavelet(self.data, style, ax=ax1, detail_level = 0)        
+        tmp = ax.get_position().bounds
+        ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
         
         ## plots best result
-        plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data) , style, ax=ax2)
+        ax, axins, cbar = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data, title='best corr.') , style, ax=ax2, detail_level = 0)
+        axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
+        tmp = ax.get_position().bounds
+        ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
         
+        ## plots best result
+        ax, axins, cbar = plot_wavelet( self.corrected_data(self.centroid, self.data, title='centr. corr.') , style, ax=ax3, detail_level = 0)
+        axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
+        tmp = ax.get_position().bounds
+        ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
+        
+#         ## plots PT result
+#         self.plot_PT(ax=ax3)
     
-    def plot_PT(self):
+    def plot_PT(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = '*', ax=None):
         '''
             Plot pdfs
         '''
-        # create figure, add axes
-        ax = (plt.figure(figsize=plt.figaspect(1.))).gca()
+                
+        if self.scanned == 0 or scanned == 0 :
+            self.scan(data)
+        
+        if ax == None:
+            # create figure, add axes
+            ax = (plt.figure(figsize=plt.figaspect(1.))).gca()
      
         # make orthographic basemap.
         m = Basemap(ax=ax, resolution='c',projection='ortho',lat_0=90,lon_0=0) 
@@ -2085,9 +2159,9 @@ class SourceScan(object):
         locations = ['right', 'left']
         for i in range(self.pdf['P/T'].shape[2]):                
             ## set desired contour levels.
-            clevs = np.linspace(np.median(self.pdf['P/T'][:,:,i])+np.std(self.pdf['P/T'][:,:,i]),
+            clevs = np.linspace(np.mean(self.pdf['P/T'][:,:,i]),
                                 np.max(self.pdf['P/T'][:,:,i]),
-                                10) #
+                                10) 
             
             ## plot SLP contours.
             CS1 =  m.contour(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100., 
@@ -2096,12 +2170,12 @@ class SourceScan(object):
                              animated=True, cmap=colormaps[i], alpha=.5)
             
             axins = inset_axes(ax,
-                   width="1%", # width = 30% of parent_bbox
-                   height="1%", 
+                   width="10%", # width = 30% of parent_bbox
+                   height="10%", 
                    loc=inset_locations[i])
             axins.axis('off')
             
-            cbar = m.colorbar(CS2, ax= axins, location=locations[i], format="%.0f")
+            cbar = m.colorbar(CS2, ax = axins, format="%.0f", location=locations[i])
             cbar.set_label(legends_title[i])
             cbar.ax.yaxis.set_ticks_position(locations[i])
             cbar.ax.yaxis.set_label_position(locations[i])
@@ -2124,10 +2198,7 @@ class SourceScan(object):
 #         G = np.asarray(spherical_to_cartesian([self.pdf['grid AIR'][0], self.pdf['grid AIR'][1], self.pdf['P/T axis'][:,:,1] ]))
 #         plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1.)
 #             
-#         view = (15,65)
-#         ax2.view_init(view[0],view[1])
-#         ax1.view_init(view[0],view[1])
-         
+
     def centroid(self):
         '''
             Centroid solutions
@@ -2186,7 +2257,7 @@ class SourceScan(object):
             sol = self.best_likelyhood[0]
         
         
-        fig = plt.figure(figsize=plt.figaspect(.8))
+        fig = plt.figure(figsize=plt.figaspect(.85))
         
         # plots the model
         ax = plt.subplot2grid((2,2), (0,0), projection='3d') 
@@ -2220,13 +2291,13 @@ class SourceScan(object):
             ax, axins, cbar = plot_wavelet( self.corrected_data(tmp, self.data) , style='s', ax=ax, detail_level = 0)        
             fig.delaxes(cbar.ax)            
             ax.set_title(r'Trial '+str(i+1))            
-            if i==0:
-                axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')    
-            else:
-                axins.set_ylabel('')          
+            axins.set_ylabel('')          
             tmp = ax.get_position().bounds
-            ax.set_position([tmp[0] , tmp[1], tmp[2]*1.3 , tmp[3] ])
-
+            ax.set_position([tmp[0] , tmp[1], tmp[2]*1.2 , tmp[3] ])
+            
+            if i==0:
+                axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')   
+         
 # function skeleton
 # def ggg(...):
 #         """
