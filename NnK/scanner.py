@@ -2385,10 +2385,10 @@ def test_scan( nstep = 30 , N_tests = [ 10, 30, 60, 150 ] ):
             #scanner.plot(data=data, scanned=1)
             sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_p_axis())
             tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_p_axis())
-            test[1,i,j] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
+            test[2,i,j] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
             sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_t_axis()) #self.best_likelyhood[0] , self.centroid[0] 
             tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_t_axis())
-            test[1,i,j] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
+            test[2,i,j] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
             #ang_diff = (np.asarray(tru) - np.asarray(sol))**2.
             #test[2,i,j] = np.rad2deg(np.sqrt(np.sum( ang_diff[:1]**2.)))
     
@@ -2397,10 +2397,10 @@ def test_scan( nstep = 30 , N_tests = [ 10, 30, 60, 150 ] ):
         dcscanner.scan(data=data)
         sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_p_axis())
         tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_p_axis())
-        test[1,i,:] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
+        test[0,i,:] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
         sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_t_axis()) #self.best_likelyhood[0] , self.centroid[0] 
         tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_t_axis())
-        test[1,i,:] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
+        test[0,i,:] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
         #ang_diff = (np.asarray(tru) - np.asarray(sol))**2.
         #test[0,i] = np.rad2deg(np.sqrt(np.sum( ang_diff[:1]**2.)))
         
