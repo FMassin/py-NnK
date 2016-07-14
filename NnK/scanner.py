@@ -26,10 +26,33 @@ from mpl_toolkits.basemap import Basemap
 from scipy.interpolate import griddata
 
 
+   
+    
 def haversine(lon1=0., lat1=0., lon2=0., lat2=np.pi/2., radius=6371, phi1=None, phi2=None):
     """
-    Calculate the great circle distance between two points 
-    on the earth (specified in radian)
+    Calculates the great circle distance between two points on a sphere.
+    ______________________________________________________________________
+    :type radius : int | float
+    :param radius :  The radius of sphere.
+    
+    :type lon1, lat1 : radian, float | nD np.array
+    :param lon1, lat1 :  If float, the longitude and latitude of first 
+        point(s, if nD np.array). 
+    
+    :type lon1, lat1 : radian, float 
+    :param lon1, lat1 :  The longitude and latitude of end point.
+
+    :type phi1, phi2 : radian, float | nD np.array
+    :param phi1, phi2 :  Replace lat1 and lat2, which are angles from 
+        equator, by specified polar angles.
+    
+    :rtype : idem to lon1, lat1 
+    :return : great circle distance(s). Given in same unit than radius.
+
+    .. seealso::
+    
+        https://en.wikipedia.org/wiki/Haversine_formula
+    ______________________________________________________________________
     
     """
     if phi1 is None:
@@ -54,8 +77,8 @@ def haversine(lon1=0., lat1=0., lon2=0., lat2=np.pi/2., radius=6371, phi1=None, 
     dlat = lat2 - lat1 
     a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
     c = 2 * np.arcsin(np.sqrt(a)) 
-    arc_length = radius * c
-    return arc_length
+
+    return radius * c
 
 
 def rotation_matrix(axis, theta):
@@ -424,7 +447,7 @@ def mt_angles(mt):
     ## if given [Mxx, Myy, Mzz, Mxy, Mxz, Myz]
     elif mt.shape == (6,) :
         
-        mt = MomentTensor(mt,'XYZ') 
+        mt = MomentTensor(mt,system='XYZ') 
         
         DC = mt.get_DC_percentage()
         CLVD = mt.get_CLVD_percentage()
@@ -1397,9 +1420,9 @@ class SeismicSource(object):
     notes = 'Ceci est à moi'
 
     def __init__(self, mt=[10,5,82], poisson=0.25):        
-        self.MomentTensor = MomentTensor(mt,debug=2)
-        self.Aki_Richards = Aki_Richards(np.asarray(self.MomentTensor.get_M('XYZ')))  
-        self.Vavryeuk     = Vavryeuk(np.asarray(self.MomentTensor.get_M('XYZ')),poisson = poisson)
+        self.MomentTensor = MomentTensor(mt, system='XYZ',debug=2)
+        self.Aki_Richards = Aki_Richards(np.asarray(self.MomentTensor.get_M(system='XYZ')))  
+        self.Vavryeuk     = Vavryeuk(np.asarray(self.MomentTensor.get_M(system='XYZ')),poisson = poisson)
         
         c=2
         lv = np.array([0,c/2,0,0.,0.,0.])  
@@ -1426,6 +1449,32 @@ class SeismicSource(object):
             ax.set_title(self.simple_models[v]['name']) 
             
         plt.tight_layout()
+        
+        
+
+def sphere2basemap(map, azimuthangle_polarangle_radialdistance):
+    
+    azimuth =  450. - np.rad2deg(azimuthangle_polarangle_radialdistance[0])
+    takeoff =   90. - np.rad2deg(azimuthangle_polarangle_radialdistance[1])
+    #radius = azimuthangle_polarangle_radialdistance[2]
+    
+    while len(takeoff[takeoff>90.])>0 or len(takeoff[takeoff<-90.])>0 :
+        
+        azimuth[takeoff <-90.] += 180.
+        takeoff[takeoff <-90.] += 180.
+        
+        azimuth[takeoff  >90.] += 180.
+        takeoff[takeoff  >90.] -= 180.
+    
+    
+    while len(azimuth[azimuth>360.])>0 or len(azimuth[azimuth<0.])>0 :
+        
+        azimuth[azimuth   <0.] += 360.
+        azimuth[azimuth >360.] -= 360.
+        
+       
+    return map( azimuth, takeoff )
+
 
 
 def degrade(wavelets, shift = [-.1, .1], snr = [.5, 5.]):
@@ -1610,7 +1659,7 @@ class SyntheticWavelets(object):
             
         # Gets the seismic source model
         self.SeismicSource = SeismicSource(mt)
-        self.MomentTensor = MomentTensor(mt,debug=2)
+        self.MomentTensor = MomentTensor(mt,system='XYZ',debug=2)
 
         # 
         self.title = 'observations'
@@ -1868,9 +1917,9 @@ class SourceScan(object):
                 sm = tuple(source_mechanisms[ tuple(flat2coordinate[:,i]) ])
     
                 self.source_mechanisms[    'Mt'][i,:] = np.asarray(sm)
-                self.source_mechanisms['fullMt'][i,:] = np.ravel(np.asarray(source_model.MomentTensor.get_M()))[[0,4,8,3,6,7]]
-                self.source_mechanisms['P-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_p_axis())
-                self.source_mechanisms['T-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_t_axis())
+                self.source_mechanisms['fullMt'][i,:] = np.ravel(np.asarray(source_model.MomentTensor.get_M(system='XYZ')))[[0,4,8,3,6,7]]
+                self.source_mechanisms['P-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_p_axis(system='XYZ'))
+                self.source_mechanisms['T-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_t_axis(system='XYZ'))
                 self.source_mechanisms[   'rms'][i] = 0.0
                 self.source_mechanisms[ 'xcorr'][i] = 0.0
                            
@@ -2030,8 +2079,10 @@ class SourceScan(object):
                                          axis=len(self.source_mechanisms['rms'].shape)), 
                          self.source_mechanisms['fullMt'].shape[1] , 
                          axis=len(self.source_mechanisms['rms'].shape)) 
+        repeat_rms[repeat_rms<0.] = 0.
+        repeat_rms[repeat_rms<np.mean(repeat_rms)+np.std(repeat_rms)] = 0.
         
-        self.centroid = [(np.sum(repeat_rms * self.source_mechanisms['fullMt'], axis=0))/np.sum(self.source_mechanisms['rms'])/10.]
+        self.centroid = [(np.sum(repeat_rms * self.source_mechanisms['fullMt'], axis=0)) / (np.sum(repeat_rms, axis=0)) / 1. , 0 ]
                          
         
         
@@ -2042,7 +2093,7 @@ class SourceScan(object):
 
         # Machinery  
         mem_clust_coef =  np.zeros([test[1].shape[0], test[1].shape[1], 2])
-        spaces = ['T-axis', 'P-axis']
+        spaces = ['P-axis', 'T-axis']
         
         # makes smooth pdf along P-T space # change for sphere distance averaging
         for i,s in enumerate(spaces):     
@@ -2067,52 +2118,25 @@ class SourceScan(object):
         # Important
         self.scanned = 1
     
-    def corrected_data(self, mt, data, title):
-        
-        results = copy.deepcopy(data)
-        
-        results.SeismicSource = SeismicSource(mt)
-        results.MomentTensor = MomentTensor(mt,debug=2)        
-        results.observations['mt'] = mt
-        
-        amplitudes={}
-        source_model = SeismicSource( mt )
-        
-        ### Loops over wave types ##########
-        for wi,w in enumerate(self.waves): #            
-            #disp = farfield( np.ravel(results.MomentTensor.get_M())[[0,4,8,1,2,5]] , results.observations['cart'] , w)
-            disp, observations_xyz = source_model.Aki_Richards.radpat(wave=w, obs_sph = results.observations['sph'] )        
-            #### Loops over components of waves #########
-            for ci,c in enumerate(self.components[wi]): #                  
-                amplitudes[ w, c ], disp_projected = disp_component(results.observations['cart'], disp, c)
-        
-        forrms = np.zeros((9999))           
-        for i in range(len(results.Stream)):              
-            results.Stream[i].data *= np.sign(amplitudes[
-                                                         results.observations['types'][i,0], 
-                                                         results.Stream[i].stats.channel[-1] ][i])
-            
-            forrms[:len(results.Stream[i].data)] += results.Stream[i].data * self.data_taperwindows[i]
-                    
-        results.title = title+' (P'+ str(int( 100*np.sum(forrms**2)*np.sign(np.sum(forrms))/self.power_optimal_stack )) +'%)'
-        
-        return results
-    
     def plot(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = '*'):
                 
         if self.scanned == 0 or scanned == 0 :
             self.scan(data)
 
         # Plots
-        fig = plt.figure(figsize=(13,4))
-        ax1 = plt.subplot2grid((1,3), (0, 0), projection='3d')
-        ax2 = plt.subplot2grid((1,3), (0, 1), projection='3d')
-        ax3 = plt.subplot2grid((1,3), (0, 2), projection='3d')
+        fig = plt.figure(figsize=(9,9))
+        ax1 = plt.subplot2grid((2,2), (0, 0), projection='3d')
+        ax2 = plt.subplot2grid((2,2), (1, 0), projection='3d')
+        ax3 = plt.subplot2grid((2,2), (1, 1), projection='3d')
+        ax4 = plt.subplot2grid((2,2), (0, 1))
         
         ## plots data
         ax, axins, cbar = plot_wavelet(self.data, style, ax=ax1, detail_level = 0)        
         tmp = ax.get_position().bounds
         ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
+        
+        ## P-T pdf
+        self.plot_PT(scanned=1, ax=ax4)
         
         ## plots best result
         ax, axins, cbar = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data, title='best corr.') , style, ax=ax2, detail_level = 0)
@@ -2121,7 +2145,7 @@ class SourceScan(object):
         ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
         
         ## plots best result
-        ax, axins, cbar = plot_wavelet( self.corrected_data(self.centroid, self.data, title='centr. corr.') , style, ax=ax3, detail_level = 0)
+        ax, axins, cbar = plot_wavelet( self.corrected_data(self.centroid[0], self.data, title='centr. corr.') , style, ax=ax3, detail_level = 0)
         axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
         tmp = ax.get_position().bounds
         ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
@@ -2142,31 +2166,75 @@ class SourceScan(object):
             ax = (plt.figure(figsize=plt.figaspect(1.))).gca()
      
         # make orthographic basemap.
-        m = Basemap(ax=ax, resolution='c',projection='ortho',lat_0=90,lon_0=0) 
+        map = Basemap(ax=ax, 
+                      resolution='c',
+                      projection='ortho',
+                      lat_0=-90,
+                      lon_0=0) 
         
         # define parallels and meridians to draw.
-        m.drawparallels(np.arange(-80.,81.,20.))
-        m.drawmeridians(np.arange(-180.,179.,20.))
+        map.drawparallels(np.arange( -80., 81.,20.), color= '0.75')
+        map.drawmeridians(np.arange(-180.,179.,20.), color= '0.75')
    
-        ## compute native x,y coordinates of grid.
-        x, y = m(np.rad2deg(self.pdf['sphere grid'][0])*-1, -1*(90-np.rad2deg(self.pdf['sphere grid'][1])))
         
-        # Machinery
+        # Solutions
+        sols = [ self.best_likelyhood[0] , self.centroid[0] ]
+        markers = ['o' , 'x']
+        markeredgewidths = [0, 2]
+        
+        for i in range(len(sols)):   
+                     
+            test = MomentTensor(sols[i],system='XYZ',debug=2)
+            T = np.asarray(cartesian_to_spherical(test.get_p_axis(system='XYZ')))
+            P = np.asarray(cartesian_to_spherical(test.get_t_axis(system='XYZ')))
+            
+            symetrics = [ 0 , np.pi , -1*np.pi ]
+            
+            for j,sym in enumerate(symetrics):                
+                
+                x, y = sphere2basemap(map, P+sym) # map( 180-np.rad2deg(P[0]+sym), -1*(90-np.rad2deg(P[1]+sym)))
+                map.plot(x,y,
+                         marker=markers[i],
+                         color='k', 
+                         markeredgewidth=markeredgewidths[i]+2)
+                x, y = sphere2basemap(map, T+sym) # map( 180-np.rad2deg(T[0]+sym), -1*(90-np.rad2deg(T[1]+sym)))
+                map.plot(x,y,
+                         marker=markers[i],
+                         color='k', 
+                         markeredgewidth=markeredgewidths[i]+2)
+                
+                x, y = sphere2basemap(map, P+sym) # map( 180-np.rad2deg(P[0]+sym), -1*(90-np.rad2deg(P[1]+sym)))
+                map.plot(x,y,
+                         marker=markers[i],
+                         color='r', 
+                         markeredgewidth=markeredgewidths[i])
+                x, y = sphere2basemap(map, T+sym) # map( 180-np.rad2deg(T[0]+sym), -1*(90-np.rad2deg(T[1]+sym)))
+                map.plot(x,y,
+                         marker=markers[i],
+                         color='b', 
+                         markeredgewidth=markeredgewidths[i])
+        
+        # Contour maps 
+        ## compute native x,y coordinates of grid.
+        x, y = sphere2basemap(map, self.pdf['sphere grid']) 
+        # x, y = map( 180-np.rad2deg(self.pdf['sphere grid'][0]), -1*(90-np.rad2deg(self.pdf['sphere grid'][1])))
+        ## Machinery
         colormaps = [ plt.cm.Blues , plt.cm.OrRd ]
-        colorlines = ['b', 'r']
-        legends_title = ['P-axis [% prob.]', 'T-axis [%prob.]']
+        colorlines = [ 'b' , 'r']
+        legends_title = ['T-axis [% prob.]', 'P-axis [%prob.]']
         inset_locations = [3, 4] 
         locations = ['right', 'left']
+        ## 
         for i in range(self.pdf['P/T'].shape[2]):                
-            ## set desired contour levels.
+            ### set desired contour levels.
             clevs = np.linspace(np.mean(self.pdf['P/T'][:,:,i]),
                                 np.max(self.pdf['P/T'][:,:,i]),
                                 10) 
             
-            ## plot SLP contours.
-            CS1 =  m.contour(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100., 
+            ### plot SLP contours.
+            CS1 =  map.contour(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100., 
                              animated=True, colors=colorlines[i], linewidths=0.5)
-            CS2 = m.contourf(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100., 
+            CS2 = map.contourf(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100., 
                              animated=True, cmap=colormaps[i], alpha=.5)
             
             axins = inset_axes(ax,
@@ -2175,14 +2243,16 @@ class SourceScan(object):
                    loc=inset_locations[i])
             axins.axis('off')
             
-            cbar = m.colorbar(CS2, ax = axins, format="%.0f", location=locations[i])
+            cbar = map.colorbar(CS2, ax = axins, format="%.0f", location=locations[i])
             cbar.set_label(legends_title[i])
             cbar.ax.yaxis.set_ticks_position(locations[i])
             cbar.ax.yaxis.set_label_position(locations[i])
+            tmp = cbar.ax.get_position().bounds
+            cbar.ax.set_position([tmp[0] , tmp[1], tmp[2] , tmp[3]*.5 ])
         
-        pos1 = ax.get_position() # get the original position 
-        pos2 = [pos1.x0+pos1.width*.051 , pos1.y0 ,  pos1.width * .9, pos1.height] 
-        ax.set_position(pos2) # set a new position
+        ax.set_title(r'P and T axis (red & blue)'+'\n'+'$^{best \/ and \/ centroid \/( \circ \/&\/ x )}$')
+        pos1 = ax.get_position().bounds # get the original position 
+        ax.set_position([pos1[0]+pos1[2]*.051 , pos1[1] ,  pos1[2] * .9, pos1[3]]) # set a new position
 
 #         # 3d Plots
 #         fig = plt.figure(figsize=plt.figaspect(.5))
@@ -2199,54 +2269,6 @@ class SourceScan(object):
 #         plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1.)
 #             
 
-    def centroid(self):
-        '''
-            Centroid solutions
-        '''
-        
-        ## weights
-        self.SDSl_centroid_serie = []
-        for t,threshold in enumerate(np.linspace(0.05,.95,50)):
-            
-            ### weigths with likelyhood difference
-            w = self.SDSl[:,-1].copy()
-            ### rejects a percentile of max likelyhood
-            test = np.sort(w)
-            test = test[ int(len(test)*threshold) ]   #test = test[ np.argmin(abs( np.cumsum(test)-np.sum(test)*.9 )) ] # centroid 95%
-            w[w<test] = 0. # every val below the median of positive val are cancelled
-            ### weigths with distance to max likelyhood
-            d = np.sqrt(np.sum((self.SDSl[:,:3].copy() - np.tile(self.SDSl_likely ,(self.SDSl.shape[0],1)))**2., axis=1))
-            while len(d[d>180.])>0:
-                d[d>180.] = d[d>180.]-180.
-            d[d==0.] = .000000001
-            d /= np.max(abs(d))
-            ### rejects antipode to max likelyhood
-            d[d>(1.-threshold)] = 1. # every val below the median of positive val are cancelled
-            w /= d
-            w -= np.min(w)
-            ## centroid
-            ### stacks centroid
-            SDSl_centroid = np.nansum(self.SDSl[:,:3]*np.transpose(np.tile(w, (3,1))),axis=0)/np.nansum(w)
-            SDSl_centroid = np.append(SDSl_centroid, threshold)
-            ### add power
-            example = SeismicSource(SDSl_centroid)
-            disp, xyz = example.Aki_Richards.radpat(wave='P')
-            modeled_amplitudes , disp_projected = disp_component(xyz, disp, 'r')
-            SDSl_centroid = np.append(SDSl_centroid, self.stack(self.data, modeled_amplitudes))
-            
-            ### stores centroid
-            print int(SDSl_centroid[0]),int(SDSl_centroid[1]), int(SDSl_centroid[2])
-            self.SDSl_centroid_serie.append(SDSl_centroid)
-            self.SDSl_centroid = np.append(SDSl_centroid, self.stack(self.data, modeled_amplitudes))
-        
-        self.SDSl_centroid_serie = np.asarray(self.SDSl_centroid_serie)
-        
-        #print "Scanner results"
-        #print "Centroid:", self.SDSl_centroid
-        #print "Max. likelyhood:", self.SDSl_localmax
-
-    
-    
     def demo(self, scanned=0, data=SyntheticWavelets(n=10, mt=None), sol = None):
 
         data.degrade(snr=[5.,10.], shift = [0.,0.])
@@ -2297,6 +2319,115 @@ class SourceScan(object):
             
             if i==0:
                 axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')   
+    
+    def corrected_data(self, mt, data, title=''):
+        
+        results = copy.deepcopy(data)
+        
+        results.SeismicSource = SeismicSource(mt)
+        results.MomentTensor = MomentTensor(mt, system='XYZ', debug=2)        
+        results.observations['mt'] = mt
+        
+        amplitudes={}
+        source_model = SeismicSource( mt )
+        
+        ### Loops over wave types ##########
+        for wi,w in enumerate(self.waves): #            
+            #disp = farfield( np.ravel(results.MomentTensor.get_M())[[0,4,8,1,2,5]] , results.observations['cart'] , w)
+            disp, observations_xyz = source_model.Aki_Richards.radpat(wave=w, obs_sph = results.observations['sph'] )        
+            #### Loops over components of waves #########
+            for ci,c in enumerate(self.components[wi]): #                  
+                amplitudes[ w, c ], disp_projected = disp_component(results.observations['cart'], disp, c)
+        
+        forrms = np.zeros((9999))           
+        for i in range(len(results.Stream)):              
+            results.Stream[i].data *= np.sign(amplitudes[
+                                                         results.observations['types'][i,0], 
+                                                         results.Stream[i].stats.channel[-1] ][i])
+            
+            forrms[:len(results.Stream[i].data)] += results.Stream[i].data * self.data_taperwindows[i]
+                    
+        results.title = title+' (P'+ str(int( 100*np.sum(forrms**2)*np.sign(np.sum(forrms))/self.power_optimal_stack )) +'%)'
+        
+        return results
+    
+
+def test_scan( nstep = 30 , N_tests = [ 10, 30, 60, 150 ] ):
+    
+    N_tests = np.asarray(N_tests)
+    N_range = np.linspace(3,200,nstep)
+    snr_range = np.linspace(.1,3.,nstep)
+    shift_range = np.linspace(.0,.5,nstep)
+    test = np.zeros([3, nstep, len(N_tests)])*np.nan
+    x = np.asarray([N_range, snr_range, shift_range])
+    
+    dcscanner = SourceScan()
+    
+    for j,N in enumerate(N_tests):
+        for i,snr in enumerate(snr_range):
+            data = SyntheticWavelets(n=int(N), mt=None)  # scanner.SyntheticWavelets(int(N))
+            data.degrade(snr=[snr,snr], shift=[0.,0.])
+            dcscanner.scan(data=data)
+            #scanner.plot(data=data, scanned=1)
+            sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_p_axis()) #self.best_likelyhood[0] , self.centroid[0] 
+            tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_p_axis())
+            test[1,i,j] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
+            sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_t_axis()) #self.best_likelyhood[0] , self.centroid[0] 
+            tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_t_axis())
+            test[1,i,j] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
+            #ang_diff = (np.asarray(tru) - np.asarray(sol))**2.
+            #test[1,i,j] = np.rad2deg(np.sqrt(np.sum( ang_diff[:1]**2.)))
+    
+        for i,shift in enumerate(shift_range):
+            data = SyntheticWavelets(int(N))
+            data.degrade(snr=[10.,10.], shift=[-shift,shift])
+            dcscanner.scan(data=data)
+            #scanner.plot(data=data, scanned=1)
+            sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_p_axis())
+            tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_p_axis())
+            test[1,i,j] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
+            sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_t_axis()) #self.best_likelyhood[0] , self.centroid[0] 
+            tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_t_axis())
+            test[1,i,j] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
+            #ang_diff = (np.asarray(tru) - np.asarray(sol))**2.
+            #test[2,i,j] = np.rad2deg(np.sqrt(np.sum( ang_diff[:1]**2.)))
+    
+    for i,N in enumerate(N_range):
+        data = SyntheticWavelets(n=int(N), mt=None) 
+        dcscanner.scan(data=data)
+        sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_p_axis())
+        tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_p_axis())
+        test[1,i,:] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
+        sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_t_axis()) #self.best_likelyhood[0] , self.centroid[0] 
+        tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_t_axis())
+        test[1,i,:] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
+        #ang_diff = (np.asarray(tru) - np.asarray(sol))**2.
+        #test[0,i] = np.rad2deg(np.sqrt(np.sum( ang_diff[:1]**2.)))
+        
+#     while len(test[test>90.])>0:
+#         test[test>90.] = test[test>90.]-180.
+    
+    # Plots
+    fig = plt.figure(figsize=(9,9))
+    
+    ax = [plt.subplot2grid((2,2), (0, 0)),
+          plt.subplot2grid((2,2), (0, 1)),
+          plt.subplot2grid((2,2), (1, 0)),
+          plt.subplot2grid((2,2), (1, 1)) ]
+    
+    for i,name in enumerate(['Data coverage','Signal to noise ratio','Time arrival error']):    
+        for j,N in enumerate(N_tests):
+            ax[i].plot(x[i,:], test[i,:,j], label='N '+str(int(N)))
+        
+        ax[i].set_xlabel(name)
+        ax[i].set_ylabel('Angular error (P-axis)')
+        ax[i].set_title('Stability test '+str(i+1) )
+        ax[i].grid(True)
+        if i>0:
+            ax[i].legend()
+        
+
+    
          
 # function skeleton
 # def ggg(...):
