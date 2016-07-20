@@ -1652,7 +1652,7 @@ class SyntheticWavelets(object):
         put all of this in a obspy stream
         ______________________________________________________________________
         """
-    def __init__(self, n = 50, mt=None):
+    def __init__(self, n = 50, mt=None, full_sphere=0, gap = 0):
                 
         if mt == None :
             mt = [np.random.uniform(0,360) ,np.random.uniform(-90,90),np.random.uniform(0,180)]
@@ -1662,10 +1662,35 @@ class SyntheticWavelets(object):
         self.MomentTensor = MomentTensor(mt,system='XYZ',debug=2)
 
         # 
+        if full_sphere == 1 :
+            n_sph = n
+        else:
+            n_sph = n*2
+            
+        obs = (np.asarray(globe(n=n_sph)))[:, :n]
+        
+        if gap > 0:
+            if gap > np.pi:
+                gap = np.deg2rad(gap)
+            current_n = n
+            N_cum = n_sph-1
+            n_cum = n
+            current_gap = 0 #haversine(lon1=obs[0,0], lon2=obs[0,1], radius=1, phi1=obs[1,0], phi2=obs[1,1])
+            while ((current_gap < gap) or (current_n < n)):
+                N_cum += 1
+                obs = (np.asarray(globe(n=N_cum)))
+                if full_sphere != 1 :
+                    obs = obs[:, :int(N_cum/2.)]
+                    
+                obs = obs[:, cartesian_to_spherical(obs)[1][:]>gap/2. ]
+                if obs.size > 0:
+                    current_gap = np.mean([np.min(cartesian_to_spherical(obs)[1][:]), np.max(cartesian_to_spherical(obs)[1][:])])*2
+                    current_n = obs.shape[1]
+                
         self.title = 'observations'
         self.observations = {'types': np.tile('P', (n, 1)),
-                             'cart' : np.asarray(globe(n=n)),
-                             'sph'  : np.asarray(cartesian_to_spherical(np.asarray(globe(n=n)))),
+                             'cart' : obs,
+                             'sph'  : np.asarray(cartesian_to_spherical( obs )),
                              'mt'   : mt,
                              'n'    : n }
         
@@ -1700,7 +1725,7 @@ class SyntheticWavelets(object):
     
     def degrade(self, shift = [-.1, .1], snr = [.5, 5.]):
         
-        self.__init__(self.observations['n'], self.observations['mt'])
+        #self.__init__(self.observations['n'], self.observations['mt'])
 
         self.Stream = degrade( self.Stream , shift, snr)
                 
@@ -1903,12 +1928,16 @@ class SourceScan(object):
                         
             # Initiates
             self.modeled_amplitudes = {}
-            self.source_mechanisms = {'Mt'    : np.zeros([N,len(source_mechanisms.shape)-1]) , 
-                                      'fullMt': np.zeros([N,6]), 
-                                      'P-axis': np.zeros([N,3]), 
-                                      'T-axis': np.zeros([N,3]), 
-                                      'rms'   : np.zeros(N), 
-                                      'xcorr' : np.zeros(N) }
+            self.source_mechanisms = {'Mt'      : np.zeros([N,len(source_mechanisms.shape)-1]) , 
+                                      'fullMt'  : np.zeros([N,6]), 
+                                      'P-axis'  : np.zeros([N,3]), 
+                                      'T-axis'  : np.zeros([N,3]), 
+                                      'rms'     : np.zeros(N), 
+                                      'xcorr'   : np.zeros(N),
+                                      'P(d|Mt)' : np.zeros(N),
+                                      'P(Mt|d)' : np.zeros(N), 
+                                      'P(d)'    : np.zeros(N), 
+                                      'P(Mt)'   : np.ones(N)/N }
             
             ## Loops over models #
             for i in range(N):   #            
@@ -1920,8 +1949,6 @@ class SourceScan(object):
                 self.source_mechanisms['fullMt'][i,:] = np.ravel(np.asarray(source_model.MomentTensor.get_M(system='XYZ')))[[0,4,8,3,6,7]]
                 self.source_mechanisms['P-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_p_axis(system='XYZ'))
                 self.source_mechanisms['T-axis'][i,:] = cartesian_to_spherical(source_model.MomentTensor.get_t_axis(system='XYZ'))
-                self.source_mechanisms[   'rms'][i] = 0.0
-                self.source_mechanisms[ 'xcorr'][i] = 0.0
                            
                 ### Loops over wave types ##########
                 for wi,w in enumerate(self.waves): #
@@ -1967,6 +1994,7 @@ class SourceScan(object):
         print len(sum(components, [])),'components.'
         #for key, value in self.modeled_amplitudes.iteritems():
         #   print key, value
+
         
     def _data_init(self, data):
         '''
@@ -1980,15 +2008,21 @@ class SourceScan(object):
         #################################
         
         # Makes array with data with corresponding taper ########
+        lm = 0                                                  #
         for i,w in enumerate(data.Stream):                      #
+            l = len(w.data)                                     #
             # stores wavelet ####################################
-            self.data_wavelets.append(w.data)    #
+            self.data_wavelets.append(w.data/np.max(abs(w.data)))
             # prepare taper #####################################
-            taper = 2.*(1+(np.sort(range(len(w.data)))[::-1]))  #
-            taper[taper>len(w.data)] = len(w.data)              #
-            taper /= len(w.data)                                #
+            taper = 2.*(1+(np.sort(range(l))[::-1]))            #
+            taper[taper>l] = l                                  #
+            taper /= l                                          #
             # stores taper ######################################
             self.data_taperwindows.append(taper)                #
+            # stores max len ####################################
+            lm = np.max([lm, l])                                #                             
+            if lm>l :                                           #
+                im = i                                          #
         #########################################################
         
         # Machinery #####################################################
@@ -2002,35 +2036,43 @@ class SourceScan(object):
             distances = np.sqrt( (data.observations['sph'][0,i]-self.atr[0])**2. + (data.observations['sph'][1,i]-self.atr[1])**2. + (data.observations['sph'][2,i]-self.atr[2])**2. )
             d = np.argmin(distances)
             self.data_indexes[i,:] = np.unravel_index( d, self.atr[0].shape)
-            if np.rad2deg(np.min( distances )) > 10: 
-                print "Warning: unreliable amplitude modeling for station", data.Stream[i].stats.station 
+#             if np.rad2deg(np.min( distances )) > 10: 
+#                 print "Warning: unreliable amplitude modeling for station", data.Stream[i].stats.station 
         ##########################################################
         
-        # search optimal stack #########
-        opt_stack = np.zeros((9999))   #
-        lm = 0                         #
+        # search brute optimal stack #########
+        brute_opt_stack = np.zeros((9999))   #
         ## loops over trace ##############################
         for w,wavelet in enumerate(self.data_wavelets):  #
             l = len(wavelet)                             #
-            lm = np.max([lm, l])                         #
-            if np.sum((opt_stack[:l]+wavelet*self.data_taperwindows[w]*-1)**2.) > np.sum((opt_stack[:l]+wavelet*self.data_taperwindows[w])**2.):
-                opt_stack[:l] += wavelet*self.data_taperwindows[w]*-1 
+            if np.sum((brute_opt_stack[:l]+wavelet*self.data_taperwindows[w]*-1)**2.) > np.sum((brute_opt_stack[:l]+wavelet*self.data_taperwindows[w])**2.):
+                brute_opt_stack[:l] += wavelet*self.data_taperwindows[w]*-1 
             else:                                                 
-                opt_stack[:l] += wavelet*self.data_taperwindows[w]
+                brute_opt_stack[:l] += wavelet*self.data_taperwindows[w]
         ##################################################
         
-        # stores optimal stack #############################
-        self.data_optimal_stack = opt_stack[:lm]           # Warning: optimal stack is tapered !!!!
-        self.power_optimal_stack = np.sum((opt_stack)**2.) #
-        ####################################################
+        # make theoretical optimal stack ##########################
+        t = np.linspace(.0, 1., lm, endpoint=False)               #
+        opt_stack = np.sin(2 * np.pi * t ) * len(self.data_wavelets) * self.data_taperwindows[i]    #       Warning: optimal stack is tapered !!!!        
+        ###########################################################
+        
+        # stores optimal stacks ################################
+        self.data_optimal_stack = opt_stack[:lm]              # Warning: optimal stack is tapered !!!!        
+        self.power_optimal_stack = np.nansum((opt_stack)**2.) #
+        self.brute_opt_stack = brute_opt_stack[:lm]              # Warning: optimal stack is tapered !!!!        
+        self.power_brute_opt_stack = np.nansum((brute_opt_stack)**2.) #
+        #######################################################
         
 #         # test plot ################################
 #         ax = (plt.figure()).gca()                  #
 #         ax.plot(np.transpose(self.data_wavelets))  #
 #         ax.plot(self.data_optimal_stack)           #
 #         ############################################
-
-    def scan(self, data=SyntheticWavelets(mt=None)):
+    
+    def reset(self):
+        print "Delete all files in", os.path.expanduser(self.grids_rootdir)
+        
+    def scan(self, data=SyntheticWavelets(mt=None), info=0):
         '''
             Explore the model space with data.
             
@@ -2052,8 +2094,8 @@ class SourceScan(object):
         self._data_init(data)          #
         ################################
 
-        
         # Scans source ### how to make it linear ? #############
+        self.source_mechanisms['P(d)']=0.
         for i in range(self.source_mechanisms['Mt'].shape[0]): #
             
             Mo = self.source_mechanisms['Mt'][i,:]
@@ -2063,58 +2105,58 @@ class SourceScan(object):
                 self.data_amplitudes[j][:] = self.modeled_amplitudes[ tuple(Mo), 
                                                                       data.observations['types'][j,0], 
                                                                       data.Stream[j].stats.channel[-1] ][ tuple(self.data_indexes[j]) ]
-    
-            corrected_wavelets = np.sign(self.data_amplitudes) * self.data_wavelets * self.data_taperwindows
-            stack_wavelets = np.sum(corrected_wavelets, axis=0)
-            self.source_mechanisms['rms'][i] = np.sum(stack_wavelets**2)*np.sign(np.sum(stack_wavelets)) / self.power_optimal_stack
+                            
+            corrected_wavelets = np.sign(self.data_amplitudes) * self.data_wavelets * self.data_taperwindows 
+            stack_wavelets = np.nansum(corrected_wavelets, axis=0)
+            self.source_mechanisms['rms'][i] = np.nansum(stack_wavelets**2)*np.sign(np.nansum(stack_wavelets))
+                
+            self.source_mechanisms['P(d)'] += np.nansum((self.brute_opt_stack - stack_wavelets)**2)
             ##################################################
         
+        # get probabilities 
+        ## P to get the current data for a given Mt
+        self.source_mechanisms['P(d|Mt)'] = self.source_mechanisms['rms'] / self.power_optimal_stack #power_optimal_stack power_brute_opt_stack
+                
+        ## P to get the current data overall
+        # must be np.nanmin(self.source_mechanisms['P(Mt)'])  < < np.nanmax(self.source_mechanisms['P(d|Mt)']) ????
+        self.source_mechanisms['P(d)']  = (len(self.source_mechanisms['rms'])*len(self.brute_opt_stack) / self.source_mechanisms['P(d)']) 
+        
+        # limits impossibles values
+        self.source_mechanisms['P(d)'] = np.max([self.source_mechanisms['P(d)'], np.nanmin(self.source_mechanisms['P(Mt)']) ])
+        self.source_mechanisms['P(d)'] = np.min([self.source_mechanisms['P(d)'], np.nanmax(self.source_mechanisms['P(d|Mt)']) ])
+        #self.source_mechanisms['P(d)'] = self.source_mechanisms['P(d)']*(np.nanmax(self.source_mechanisms['P(d|Mt)'])-np.nanmin(self.source_mechanisms['P(Mt)']))
+        #self.source_mechanisms['P(d)'] += np.nanmin(self.source_mechanisms['P(Mt)']) 
+        
+        ## P to get the Mt for the given data
+        self.source_mechanisms['P(Mt|d)'] = self.source_mechanisms['P(d|Mt)'] * self.source_mechanisms['P(Mt)'] / self.source_mechanisms['P(d)']
+        
+        if info ==1:
+            print 'P(d)', self.source_mechanisms['P(d)']
+            print 'P(Mt)', np.nanmin(self.source_mechanisms['P(Mt)']), np.nanmax(self.source_mechanisms['P(Mt)'])
+            print 'P(d|Mt)', np.nanmin(self.source_mechanisms['P(d|Mt)']), np.nanmax(self.source_mechanisms['P(d|Mt)'])
+            print 'P(Mt|d)', np.nanmin(self.source_mechanisms['P(Mt|d)']), np.nanmax(self.source_mechanisms['P(Mt|d)']) 
+        
         # Gets brightest cell
-        self.best_likelyhood = [self.source_mechanisms['Mt'][np.argmax(self.source_mechanisms['rms'])], 
-                                np.max(self.source_mechanisms['rms']) ]
+        self.best_likelyhood = [self.source_mechanisms['Mt'][np.argmax(self.source_mechanisms['P(Mt|d)'])], 
+                                np.nanmax(self.source_mechanisms['P(Mt|d)']) ]
         
-        # Gets full Mt centroid
-        
-        repeat_rms = np.repeat(np.expand_dims(self.source_mechanisms['rms'], 
+        # Gets full Mt centroid   
+        ## reshape & repeat for fullMt's dimensions    
+        repeat_rms = np.repeat(np.expand_dims(self.source_mechanisms['P(Mt|d)'], 
                                          axis=len(self.source_mechanisms['rms'].shape)), 
                          self.source_mechanisms['fullMt'].shape[1] , 
                          axis=len(self.source_mechanisms['rms'].shape)) 
+        ## voids negative part
         repeat_rms[repeat_rms<0.] = 0.
-        repeat_rms[repeat_rms<np.mean(repeat_rms)+np.std(repeat_rms)] = 0.
+        ## voids flat part
+        repeat_rms[repeat_rms<np.nanmean(repeat_rms)+np.std(repeat_rms)] = 0.
+        ## weighted average 
+        self.centroid = [(np.nansum(repeat_rms * self.source_mechanisms['fullMt'], axis=0)) / (np.nansum(repeat_rms, axis=0)) / 1. , 0 ]
+        ## no nan
+        self.centroid[0][np.isnan(self.centroid[0])] = 0.0000001
+        ## gets corresponding  probability
+        self.centroid[1] = (self.corrected_data(self.centroid[0], self.data, title='')).observations['P(Mt|d)']
         
-        self.centroid = [(np.sum(repeat_rms * self.source_mechanisms['fullMt'], axis=0)) / (np.sum(repeat_rms, axis=0)) / 1. , 0 ]
-                         
-        
-        
-        # pdf grid for P-T axis 
-        test = np.meshgrid( np.linspace(-np.pi,np.pi,100) , np.linspace(0.,np.pi,50) ) 
-        self.pdf = {'sphere grid': (test[0], test[1], np.ones(test[1].shape)), 
-                    'P/T': np.zeros([test[1].shape[0], test[1].shape[1], 2])}
-
-        # Machinery  
-        mem_clust_coef =  np.zeros([test[1].shape[0], test[1].shape[1], 2])
-        spaces = ['P-axis', 'T-axis']
-        
-        # makes smooth pdf along P-T space # change for sphere distance averaging
-        for i,s in enumerate(spaces):     
-            
-            clust_coef = 1/(haversine( phi1 = self.source_mechanisms[s][:,1],
-                                       lon1 = self.source_mechanisms[s][:,0],
-                                       phi2 = self.pdf['sphere grid'][1],
-                                       lon2 = self.pdf['sphere grid'][0],
-                                       radius = 1.) / np.pi )**.5
-            
-            rms =  np.reshape(self.source_mechanisms['rms'],
-                              ( 1, 1, len(self.source_mechanisms['rms'] )))
-            
-            self.pdf['P/T'][:,:,i] += np.sum( rms * clust_coef , axis=2) 
-            mem_clust_coef[:,:,i]  += np.sum( clust_coef , axis=2) 
-        
-        self.pdf['P/T'] /= mem_clust_coef
-        
-        self.pdf['P/T'] /= np.max(self.pdf['P/T'])
-        self.pdf['P/T'] *= np.max(self.source_mechanisms['rms'])
-                 
         # Important
         self.scanned = 1
     
@@ -2139,13 +2181,13 @@ class SourceScan(object):
         self.plot_PT(scanned=1, ax=ax4)
         
         ## plots best result
-        ax, axins, cbar = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data, title='best corr.') , style, ax=ax2, detail_level = 0)
+        ax, axins, cbar = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data, title='best') , style, ax=ax2, detail_level = 0)
         axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
         tmp = ax.get_position().bounds
         ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
         
         ## plots best result
-        ax, axins, cbar = plot_wavelet( self.corrected_data(self.centroid[0], self.data, title='centr. corr.') , style, ax=ax3, detail_level = 0)
+        ax, axins, cbar = plot_wavelet( self.corrected_data(self.centroid[0], self.data, title='cent.') , style, ax=ax3, detail_level = 0)
         axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
         tmp = ax.get_position().bounds
         ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
@@ -2161,6 +2203,9 @@ class SourceScan(object):
         if self.scanned == 0 or scanned == 0 :
             self.scan(data)
         
+        # get pdf #####
+        self.PT_pdf() #
+        ###############
         if ax == None:
             # create figure, add axes
             ax = (plt.figure(figsize=plt.figaspect(1.))).gca()
@@ -2185,8 +2230,8 @@ class SourceScan(object):
         for i in range(len(sols)):   
                      
             test = MomentTensor(sols[i],system='XYZ',debug=2)
-            T = np.asarray(cartesian_to_spherical(test.get_p_axis(system='XYZ')))
             P = np.asarray(cartesian_to_spherical(test.get_t_axis(system='XYZ')))
+            T = np.asarray(cartesian_to_spherical(test.get_p_axis(system='XYZ')))
             
             symetrics = [ 0 , np.pi , -1*np.pi ]
             
@@ -2219,9 +2264,9 @@ class SourceScan(object):
         x, y = sphere2basemap(map, self.pdf['sphere grid']) 
         # x, y = map( 180-np.rad2deg(self.pdf['sphere grid'][0]), -1*(90-np.rad2deg(self.pdf['sphere grid'][1])))
         ## Machinery
-        colormaps = [ plt.cm.Blues , plt.cm.OrRd ]
-        colorlines = [ 'b' , 'r']
-        legends_title = ['T-axis [% prob.]', 'P-axis [%prob.]']
+        colormaps = [ plt.cm.OrRd , plt.cm.Blues ]
+        colorlines = [ 'r' , 'b']
+        legends_title = ['P(p-axis|d) [%]', 'P(t-axis|d) [%]']
         inset_locations = [3, 4] 
         locations = ['right', 'left']
         ## 
@@ -2346,85 +2391,173 @@ class SourceScan(object):
                                                          results.Stream[i].stats.channel[-1] ][i])
             
             forrms[:len(results.Stream[i].data)] += results.Stream[i].data * self.data_taperwindows[i]
-                    
-        results.title = title+' (P'+ str(int( 100*np.sum(forrms**2)*np.sign(np.sum(forrms))/self.power_optimal_stack )) +'%)'
+        
+        results.observations['rms'] = np.sum(forrms**2)*np.sign(np.sum(forrms)) 
+        
+        # get probabilities
+        results.observations['P(d|Mt)'] = results.observations['rms']/ self.power_optimal_stack
+        
+        # P to get this Mt overall
+        results.observations['P(Mt)'] = np.nanmean(self.source_mechanisms['P(Mt)'])
+        
+        ## P to get the Mt for the given data
+        results.observations['P(Mt|d)'] = results.observations['P(d|Mt)'] * results.observations['P(Mt)'] / self.source_mechanisms['P(d)']
+        
+        results.title = title+' (P(Mt|d): '+ str(int( 100*results.observations['P(Mt|d)'] )) +'%)'
         
         return results
     
+    def PT_pdf(self):
+        
+        # pdf grid for P-T axis 
+        test = np.meshgrid( np.linspace(-np.pi,np.pi,100) , np.linspace(0.,np.pi,50) ) 
+        self.pdf = {'sphere grid': (test[0], test[1], np.ones(test[1].shape)), 
+                    'P/T': np.zeros([test[1].shape[0], test[1].shape[1], 2])}
 
-def test_scan( nstep = 30 , N_tests = [ 10, 30, 60, 150 ] ):
+        # Machinery  
+        mem_clust_coef =  np.zeros([test[1].shape[0], test[1].shape[1], 2])
+        spaces = ['P-axis', 'T-axis']
+        
+        # makes smooth pdf along P-T space # change for sphere distance averaging
+        for i,s in enumerate(spaces):     
+            
+            clust_coef = 1/(haversine( phi1 = self.source_mechanisms[s][:,1],
+                                       lon1 = self.source_mechanisms[s][:,0],
+                                       phi2 = self.pdf['sphere grid'][1],
+                                       lon2 = self.pdf['sphere grid'][0],
+                                       radius = 1.) / np.pi )**.5
+            
+            rms =  np.reshape(self.source_mechanisms['P(Mt|d)']*-1,
+                              ( 1, 1, len(self.source_mechanisms['P(Mt|d)'] )))
+            
+            self.pdf['P/T'][:,:,i] += np.sum( rms * clust_coef , axis=2) 
+            mem_clust_coef[:,:,i]  += np.sum( clust_coef , axis=2) 
+        
+        self.pdf['P/T'] /= mem_clust_coef
+        
+        self.pdf['P/T'] /= np.max(self.pdf['P/T'])
+        self.pdf['P/T'] *= np.max(self.source_mechanisms['P(Mt|d)'])
+        
+        
+    
+def mt_diff( mt1, mt2):
+    
+    fps = np.deg2rad([mt1.get_fps(), mt2.get_fps()])
+    diff = [999999999, 999999999]
+    for i in range(2):
+        for j in range(2):
+            
+            test = haversine(lon1=fps[0][i][0], phi1=fps[0][i][1], lon2=fps[1][j][0], phi2=fps[1][j][1], radius=1.) 
+            
+            while test>np.pi/2:
+                test -= np.pi/2
+                        
+            if test < diff[i]:
+                diff[i] = test
+                    
+    return np.rad2deg(np.mean(diff))
+        
+def test_scan( nstep = 20 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 10 ):
+    
+    print 'This may take a long time...'
     
     N_tests = np.asarray(N_tests)
-    N_range = np.linspace(3,200,nstep)
-    snr_range = np.linspace(.1,3.,nstep)
+    
+    N_range = np.linspace(2,175,nstep)
+    gap_range = N_range
+    snr_range = np.linspace(.1,2.,nstep)
     shift_range = np.linspace(.0,.5,nstep)
-    test = np.zeros([3, nstep, len(N_tests)])*np.nan
-    x = np.asarray([N_range, snr_range, shift_range])
+    ndc_range = np.linspace(.01,.99,nstep)
+    
+    rms = np.zeros([4, nstep, len(N_tests)+1])
+    error = np.zeros([4, nstep, len(N_tests)+1])
+    labels = []   #np.zeros([4, len(N_tests)])
+    labels.append([])
+    labels[0].append( 'N obs.' )
+    
+    c=2  
+    simple_models={'LV'   : np.array([0,c/2,0,0.,0.,0.])  ,
+                   'Iso.' : np.array([c/2.0001,c/2.000001,c/2.0000000001,0.,0.,0.]) * 1./np.sqrt(3.), 
+                   'CLVD' : np.array([-c,c/2,c/2,0.,0.,0.]) * 1./np.sqrt(6.),
+                   'DC'   : np.array([0.,0.,0.,np.sqrt(c),0.,0.]) * 1./np.sqrt(2.)  }    
     
     dcscanner = SourceScan()
-    
-    for j,N in enumerate(N_tests):
-        for i,snr in enumerate(snr_range):
-            data = SyntheticWavelets(n=int(N), mt=None)  # scanner.SyntheticWavelets(int(N))
-            data.degrade(snr=[snr,snr], shift=[0.,0.])
-            dcscanner.scan(data=data)
-            #scanner.plot(data=data, scanned=1)
-            sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_p_axis()) #self.best_likelyhood[0] , self.centroid[0] 
-            tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_p_axis())
-            test[1,i,j] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
-            sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_t_axis()) #self.best_likelyhood[0] , self.centroid[0] 
-            tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_t_axis())
-            test[1,i,j] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
-            #ang_diff = (np.asarray(tru) - np.asarray(sol))**2.
-            #test[1,i,j] = np.rad2deg(np.sqrt(np.sum( ang_diff[:1]**2.)))
-    
-        for i,shift in enumerate(shift_range):
-            data = SyntheticWavelets(int(N))
-            data.degrade(snr=[10.,10.], shift=[-shift,shift])
-            dcscanner.scan(data=data)
-            #scanner.plot(data=data, scanned=1)
-            sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_p_axis())
-            tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_p_axis())
-            test[2,i,j] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
-            sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_t_axis()) #self.best_likelyhood[0] , self.centroid[0] 
-            tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_t_axis())
-            test[2,i,j] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
-            #ang_diff = (np.asarray(tru) - np.asarray(sol))**2.
-            #test[2,i,j] = np.rad2deg(np.sqrt(np.sum( ang_diff[:1]**2.)))
-    
+
     for i,N in enumerate(N_range):
-        data = SyntheticWavelets(n=int(N), mt=None) 
-        dcscanner.scan(data=data)
-        sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_p_axis())
-        tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_p_axis())
-        test[0,i,:] = np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2
-        sol = cartesian_to_spherical(MomentTensor(dcscanner.best_likelyhood[0]).get_t_axis()) #self.best_likelyhood[0] , self.centroid[0] 
-        tru = cartesian_to_spherical(dcscanner.data.MomentTensor.get_t_axis())
-        test[0,i,:] += np.rad2deg(haversine(lon1=tru[0], phi1=tru[1], lon2=sol[0], phi2=sol[1], radius=1.)) /2 
-        #ang_diff = (np.asarray(tru) - np.asarray(sol))**2.
-        #test[0,i] = np.rad2deg(np.sqrt(np.sum( ang_diff[:1]**2.)))
+        for k in range(N_bootstrap):
+            data = SyntheticWavelets(n=int(N), mt=None) 
+            dcscanner.scan(data=data)
+            rms[0,i,0] += dcscanner.best_likelyhood[1] /N_bootstrap #centroid best_likelyhood
+            error[0,i,0] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) /N_bootstrap
+      
+    for j,N in enumerate(N_tests):
+        labels.append([])
+        labels.append([])
+        labels[1].append( 'N '+str(int(N)) )
+        labels[2].append( 'N '+str(int(N)) )
+        labels[0].append( 'Gap (N' + str(int(N)) +')' )
         
-#     while len(test[test>90.])>0:
-#         test[test>90.] = test[test>90.]-180.
+        for i,gap in enumerate(gap_range):                
+            for k in range(N_bootstrap):
+                data = SyntheticWavelets(n=int(N), mt=None, gap=gap) 
+                dcscanner.scan(data=data) 
+                rms[0,i,j+1] += dcscanner.best_likelyhood[1] /N_bootstrap
+                error[0,i,j+1] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) /N_bootstrap
+        
+        for i,snr in enumerate(snr_range):                
+            for k in range(N_bootstrap):
+                data = SyntheticWavelets(n=int(N), mt=None) 
+                data.degrade(snr=[snr,snr], shift=[0.,0.])
+                dcscanner.scan(data=data) 
+                rms[1,i,j] += dcscanner.best_likelyhood[1] /N_bootstrap
+                error[1,i,j] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) /N_bootstrap
+        
+        for i,shift in enumerate(shift_range):       
+            for k in range(N_bootstrap):
+                data = SyntheticWavelets(n=int(N), mt=None) 
+                data.degrade(snr=[10.,10.], shift=[-shift,shift])
+                dcscanner.scan(data=data)
+                rms[2,i,j] += dcscanner.best_likelyhood[1] /N_bootstrap
+                error[2,i,j] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) /N_bootstrap 
+
+    for j,N in enumerate(['LV', 'Iso.', 'CLVD']):  
+        labels.append([])
+        labels[3].append( N )
+        for i,shift in enumerate(ndc_range):           
+            for k in range(N_bootstrap):
+                data = SyntheticWavelets(n=100, 
+                                         mt= simple_models[N]*shift + simple_models['DC']*(1-shift)) 
+                dcscanner.scan(data=data)
+                rms[3,i,j] += dcscanner.best_likelyhood[1] /N_bootstrap
+                error[3,i,j] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) /N_bootstrap 
+    
+    rms[np.isnan(rms)] = 0.
+    error[np.isnan(error)] = 0.
     
     # Plots
-    fig = plt.figure(figsize=(9,9))
-    
+    fig = plt.figure(figsize=(9,9))    
     ax = [plt.subplot2grid((2,2), (0, 0)),
           plt.subplot2grid((2,2), (0, 1)),
           plt.subplot2grid((2,2), (1, 0)),
           plt.subplot2grid((2,2), (1, 1)) ]
     
-    for i,name in enumerate(['Data coverage','Signal to noise ratio','Time arrival error']):    
-        for j,N in enumerate(N_tests):
-            ax[i].plot(x[i,:], test[i,:,j], label='N '+str(int(N)))
+    colors = ['b', 'g' , 'r', 'c', 'm', 'y', 'k']
+    
+    x = np.asarray([N_range, snr_range, shift_range, ndc_range])
+    for i,name in enumerate(['Test 1: data coverage (N & gap)','Test 2: signal to noise ratio','Test 3: arrival time error', 'Test 4: non-DC component']):    
+        for j,N in enumerate(labels[i]):
+            ax[i].plot(x[i], rms[i,:,j], label=labels[i][j], color=colors[j])
+            ax[i].plot(x[i], error[i,:,j]/90, '--', color=colors[j])
+        
+        leg = ax[i].legend(fancybox=True)
+        leg.get_frame().set_alpha(0.5)
         
         ax[i].set_xlabel(name)
-        ax[i].set_ylabel('Angular error (P-axis)')
-        ax[i].set_title('Stability test '+str(i+1) )
+        if i == 0 or i == 2:
+            ax[i].set_ylabel('Prob. and error/90. (- & --)')
+        #ax[i].set_title('Test '+str(i+1) )
         ax[i].grid(True)
-        if i>0:
-            ax[i].legend()
+            
         
 
     
