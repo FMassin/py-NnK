@@ -28,82 +28,7 @@ from scipy.interpolate import griddata
 
    
     
-def haversine(lon1=0., lat1=0., lon2=0., lat2=np.pi/2., radius=6371, phi1=None, phi2=None):
-    """
-    Calculates the great circle distance between two points on a sphere.
-    ______________________________________________________________________
-    :type radius : int | float
-    :param radius :  The radius of sphere.
-    
-    :type lon1, lat1 : radian, float | nD np.array
-    :param lon1, lat1 :  If float, the longitude and latitude of first 
-        point(s, if nD np.array). 
-    
-    :type lon1, lat1 : radian, float 
-    :param lon1, lat1 :  The longitude and latitude of end point.
 
-    :type phi1, phi2 : radian, float | nD np.array
-    :param phi1, phi2 :  Replace lat1 and lat2, which are angles from 
-        equator, by specified polar angles.
-    
-    :rtype : idem to lon1, lat1 
-    :return : great circle distance(s). Given in same unit than radius.
-
-    .. seealso::
-    
-        https://en.wikipedia.org/wiki/Haversine_formula
-    ______________________________________________________________________
-    
-    """
-    if phi1 is None:
-        pass
-    else:
-        lat1, lat2 = ( np.pi/2-phi1, np.pi/2-phi2 )
-        
-    lat1, lon1, lat2, lon2 = (np.asarray(lat1), np.asarray(lon1), np.asarray(lat2), np.asarray(lon2))
-    if len(lon1.shape)>0:
-        if lon1.shape[0]>1 and sum(lon1.shape[1:])<=1 and len(lon2.shape) == 2 :
-            d3 =  tuple(np.concatenate( (np.asarray(lon2.shape)*0+1, np.asarray([len(lon1)]) )  , axis=0 ))
-            d1 =  tuple(np.concatenate( (np.asarray(lon2.shape), np.asarray([1]) )  , axis=0 ))
-            
-            lon2 = np.repeat( np.expand_dims(lon2, axis=len(lon2.shape)), len(lon1) , axis=len(lon2.shape)) 
-            lat2 = np.repeat( np.expand_dims(lat2, axis=len(lat2.shape)), len(lon1) , axis=len(lat2.shape)) 
-            
-            lon1 = np.tile( np.reshape(lon1, d3 ), d1 )    
-            lat1 = np.tile( np.reshape(lat1, d3 ), d1 )
-    
-    # haversine formula 
-    dlon = lon2 - lon1 
-    dlat = lat2 - lat1 
-    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
-    c = 2 * np.arcsin(np.sqrt(a)) 
-
-    return radius * c
-
-
-def rotation_matrix(axis, theta):
-    """
-    Return the rotation matrix associated with counterclockwise rotation about
-    the given axis by theta radians.
-    
-    v = [3, 5, 0]
-	axis = [4, 4, 1]
-	theta = 1.2 
-
-	print(np.dot(rotation_matrix(axis,theta), v)) 
-	# [ 2.74911638  4.77180932  1.91629719]
-
-    """
-    axis = np.asarray(axis)
-    theta = np.asarray(theta)
-    axis = axis/np.sqrt(np.dot(axis, axis))
-    a = np.cos(theta/2.0)
-    b, c, d = -axis*np.sin(theta/2.0)
-    aa, bb, cc, dd = a*a, b*b, c*c, d*d
-    bc, ad, ac, ab, bd, cd = b*c, a*d, a*c, a*b, b*d, c*d
-    return np.array([[aa+bb-cc-dd, 2*(bc+ad), 2*(bd-ac)],
-                     [2*(bc-ad), aa+cc-bb-dd, 2*(cd+ab)],
-                     [2*(bd+ac), 2*(cd-ab), aa+dd-bb-cc]])
     
 
 def globe(r=1., n=100.):
@@ -174,6 +99,59 @@ def sphere(r=1.,n=100.):
     #points[:,2] = z
 
     return [ a, t, r ] #cartesian_to_spherical(points.T) #
+
+def haversine(lon1=0., lat1=0., lon2=0., lat2=np.pi/2., radius=6371, phi1=None, phi2=None):
+    """
+    Calculates the great circle distance between two points on a sphere.
+    ______________________________________________________________________
+    :type radius : int | float
+    :param radius :  The radius of sphere.
+    
+    :type lon1, lat1 : radian, float | nD np.array
+    :param lon1, lat1 :  If float, the longitude and latitude of first 
+        point(s, if nD np.array). 
+    
+    :type lon1, lat1 : radian, float 
+    :param lon1, lat1 :  The longitude and latitude of end point.
+
+    :type phi1, phi2 : radian, float | nD np.array
+    :param phi1, phi2 :  Replace lat1 and lat2, which are angles from 
+        equator, by specified polar angles.
+    
+    :rtype : idem to lon1, lat1 
+    :return : great circle distance(s). Given in same unit than radius.
+
+    .. seealso::
+    
+        https://en.wikipedia.org/wiki/Haversine_formula
+    ______________________________________________________________________
+    
+    """
+    if phi1 is None:
+        pass
+    else:
+        lat1, lat2 = ( np.pi/2-phi1, np.pi/2-phi2 )
+        
+    lat1, lon1, lat2, lon2 = (np.asarray(lat1), np.asarray(lon1), np.asarray(lat2), np.asarray(lon2))
+    if len(lon1.shape)>0:
+        if lon1.shape[0]>1 and sum(lon1.shape[1:])<=1 and len(lon2.shape) == 2 :
+            d3 =  tuple(np.concatenate( (np.asarray(lon2.shape)*0+1, np.asarray([len(lon1)]) )  , axis=0 ))
+            d1 =  tuple(np.concatenate( (np.asarray(lon2.shape), np.asarray([1]) )  , axis=0 ))
+            
+            lon2 = np.repeat( np.expand_dims(lon2, axis=len(lon2.shape)), len(lon1) , axis=len(lon2.shape)) 
+            lat2 = np.repeat( np.expand_dims(lat2, axis=len(lat2.shape)), len(lon1) , axis=len(lat2.shape)) 
+            
+            lon1 = np.tile( np.reshape(lon1, d3 ), d1 )    
+            lat1 = np.tile( np.reshape(lat1, d3 ), d1 )
+    
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
+    c = 2 * np.arcsin(np.sqrt(a)) 
+
+    return radius * c
+
 
 
 def cartesian_to_spherical(vector):
@@ -354,6 +332,32 @@ def vector_normal(XYZ, v_or_h):
         XYZ_n = XYZ
 
     return XYZ_n
+
+
+def rotation_matrix(axis, theta):
+    """
+    Return the rotation matrix associated with counterclockwise rotation about
+    the given axis by theta radians.
+    
+    v = [3, 5, 0]
+	axis = [4, 4, 1]
+	theta = 1.2 
+
+	print(np.dot(rotation_matrix(axis,theta), v)) 
+	# [ 2.74911638  4.77180932  1.91629719]
+
+    """
+    axis = np.asarray(axis)
+    theta = np.asarray(theta)
+    axis = axis/np.sqrt(np.dot(axis, axis))
+    a = np.cos(theta/2.0)
+    b, c, d = -axis*np.sin(theta/2.0)
+    aa, bb, cc, dd = a*a, b*b, c*c, d*d
+    bc, ad, ac, ab, bd, cd = b*c, a*d, a*c, a*b, b*d, c*d
+    return np.array([[aa+bb-cc-dd, 2*(bc+ad), 2*(bd-ac)],
+                     [2*(bc-ad), aa+cc-bb-dd, 2*(cd+ab)],
+                     [2*(bd+ac), 2*(cd-ab), aa+dd-bb-cc]])
+
 
 def mt_full(mt):
     """    
@@ -1659,9 +1663,7 @@ class SyntheticWavelets(object):
         
         current_gap = 0 
           
-        # Gets the seismic source model
-        self.SeismicSource = SeismicSource(mt)
-        self.MomentTensor = MomentTensor(mt,system='XYZ',debug=2)
+        
 
         # 
         if full_sphere == 1 :
@@ -1696,6 +1698,9 @@ class SyntheticWavelets(object):
                 obs = np.array([ obs[i,:] for i in [2,1,0] ])
         
         n=obs.shape[1]
+        
+        
+        # Get infos
         self.title = 'observations'
         self.observations = {'types': np.tile('P', (n, 1)),
                              'cart' : obs,
@@ -1703,6 +1708,11 @@ class SyntheticWavelets(object):
                              'mt'   : mt,
                              'n'    : n, 
                              'gap'  : current_gap }
+        
+        ## Gets the seismic source model
+        self.SeismicSource = SeismicSource(mt)
+        self.MomentTensor = MomentTensor(mt,system='XYZ',debug=2)
+        
         
         # Generates template wavelets #####################
         t = np.linspace(.0, 1., 20, endpoint=False)
@@ -1718,7 +1728,7 @@ class SyntheticWavelets(object):
         ## Apply modeled amplitudes to artificial wavelets
         wavelets *= np.swapaxes(np.tile(np.sign(amplitudes),(wavelets.shape[1],1)),0,1)
         
-        #
+        # get data in stream
         self.Stream = Stream()        
         for i in range(n):
             self.Stream.append(Trace(data=wavelets[i,:] , 
@@ -1728,6 +1738,9 @@ class SyntheticWavelets(object):
                                                    'channel' : "EHL",   # in origin center sphere: L: Radius, T: Parallel, Q: Meridian
                                                    'npts'    : len(t),
                                                    'delta'   : 1/((t[-1]-t[0])/len(t)) }) ))        
+        
+        
+        
         
     def get(self):
         
@@ -1845,16 +1858,18 @@ class BodyWavelets(object):
 
     def get(self):
         
-        return self.wavelets, self.obs_sph, self.obs_cart
-
+        return self
+    
     def degrade(self, shift = [-.1, .1], snr = [.5, 5.]):
         
-        self.__init__(self.n_wavelet, self.az_max,self.mt)
-        self.wavelets = degrade(self.wavelets, shift,snr)
+        #self.__init__(self.observations['n'], self.observations['mt'])
 
+        self.Stream = degrade( self.Stream , shift, snr)
+                
+            
     def plot(self, style = '*'):
-        
-        plot_wavelet(self, style)
+         
+        return plot_wavelet( self, style)
 
 
 
@@ -2501,48 +2516,99 @@ def mt_diff( mt1, mt2):
                     
     return np.rad2deg(np.mean(diff))
         
-def test_scan( nstep = 20 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 10 , sol='b'):
+def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , sol='b'):
     
     print 'This may take a long time...'
     
     N_tests = np.asarray(N_tests)
     
-    N_range = np.linspace(2,175,nstep)
+    N_range = np.linspace(2,300,nstep)
     gap_range = N_range
     snr_range = np.linspace(.1,10.,nstep)
     shift_range = np.linspace(.0,.5,nstep)
-    ndc_range = np.linspace(.01,.99,nstep)
+    ndc_range = np.linspace(.00001,.99999,nstep)
     
-    rms = np.zeros([nstep, N_bootstrap, 4, len(N_tests)+1])
-    error = np.zeros([nstep, N_bootstrap, 4, len(N_tests)+1])
+    x = np.asarray([N_range, snr_range, shift_range, ndc_range])
+    
+    rms = np.zeros([nstep, N_bootstrap, 4, len(N_tests)])*np.nan
+    error = np.zeros([nstep, N_bootstrap, 4, len(N_tests)])*np.nan
     labels = []   #np.zeros([4, len(N_tests)])
     labels.append([])
-    labels[0].append( r'N, G0$^\circ$' )
+    labels.append([])        
+    labels.append([])
+    labels.append([])
     
-    c=2  
+    
+    c=1  
     simple_models={'LV'   : np.array([c/2,0,0,0.,0.,0.])  ,
                    'Iso.' : np.array([c/2.0001,c/2.000001,c/2.0000000001,0.,0.,0.]) * 1./np.sqrt(3.), 
                    'CLVD' : np.array([-c,c/2,c/2,0.,0.,0.]) * 1./np.sqrt(6.),
                    'DC'   : np.array([0.,0.,0.,np.sqrt(c),0.,0.]) * 1./np.sqrt(2.)  }    
     
     dcscanner = SourceScan()
-
-    for i,N in enumerate(N_range):
-        for k in range(N_bootstrap):
-            data = SyntheticWavelets(n=int(N), mt=None) 
-            dcscanner.scan(data=data)
-            if sol is 'c':
-                rms[i,k, 0,0] += dcscanner.centroid[1]  #centroid best_likelyhood
-                error[i,k, 0,0] +=  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor) 
-            else:
-                rms[i,k, 0,0] += dcscanner.best_likelyhood[1]  #centroid best_likelyhood
-                error[i,k, 0,0] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) 
+    
+    for j,N in enumerate(['LV', 'Iso.', 'CLVD']):  
+        labels[3].append( N )
+        t = [np.round(np.random.uniform(0,2,N_bootstrap)), np.round(np.random.uniform(0,2,N_bootstrap)) ] 
+        for i,shift in enumerate(ndc_range):    
+            for k in range(N_bootstrap):
+                
+                mt = [np.random.uniform(0,360) ,np.random.uniform(-90,90),np.random.uniform(0,180)]
+                random_DC = np.ravel(np.asarray( (MomentTensor(mt,system='XYZ',debug=2)).get_M(system='XYZ')))[[0,4,8,3,6,7]]
+                random_DC[:3] = 0.
+                random_DC[3:] *= 100./(MomentTensor(random_DC.ravel(),system='XYZ',debug=2)).get_DC_percentage()       
+                
+                mt = np.asarray([ np.roll((simple_models[N]*shift)[:3], int(t[0][k])), 
+                                 np.roll((random_DC*(1.-shift))[3:], int(t[1][k])) ])
+                
+                i_dc = np.argmin(abs(x[-1]-(100.-(MomentTensor(mt.ravel(),system='XYZ',debug=2)).get_DC_percentage())/100.))
+                
+                if N is 'LV':
+                    ndc = (MomentTensor(mt.ravel(),system='XYZ',debug=2)).get_CLVD_percentage()-(MomentTensor(mt.ravel(),system='XYZ',debug=2)).get_iso_percentage()
+                elif N is 'Iso.':
+                    ndc = (MomentTensor(mt.ravel(),system='XYZ',debug=2)).get_iso_percentage()
+                elif N is 'CLVD':
+                    ndc = (MomentTensor(mt.ravel(),system='XYZ',debug=2)).get_CLVD_percentage()
+                
+                i_ndc = np.argmin(abs(x[-1]-(ndc/100.)))
+                
+                data = SyntheticWavelets(n=300, mt= mt.ravel()) 
+                dcscanner.scan(data=data)
+                if sol is 'c':
+                    rms[i_ndc,k, 3,j] = dcscanner.centroid[1] 
+                    error[i_ndc,k, 3,j] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor)  
+                else:
+                    rms[i_ndc,k, 3,j] = dcscanner.best_likelyhood[1] 
+                    error[i_ndc,k, 3,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)  
+               
       
     for j,N in enumerate(N_tests):
-        labels.append([])
-        labels.append([])
         labels[1].append( 'N'+str(int(N)) )
         labels[2].append( 'N'+str(int(N)) )
+        
+        for i,snr in enumerate(snr_range):                
+            for k in range(N_bootstrap):
+                data = SyntheticWavelets(n=int(N), mt=None) 
+                data.degrade(snr=[snr,snr], shift=[0.,0.])
+                dcscanner.scan(data=data) 
+                if sol is 'c':
+                    rms[i,k, 1,j] = dcscanner.centroid[1] 
+                    error[i,k, 1,j] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor) 
+                else:                    
+                    rms[i,k, 1,j] = dcscanner.best_likelyhood[1] 
+                    error[i,k, 1,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) 
+        
+        for i,shift in enumerate(shift_range):       
+            for k in range(N_bootstrap):
+                data = SyntheticWavelets(n=int(N), mt=None) 
+                data.degrade(snr=[10.,10.], shift=[-shift,shift])
+                dcscanner.scan(data=data)
+                if sol is 'c':
+                    rms[i,k, 2,j] = dcscanner.centroid[1] 
+                    error[i,k, 2,j] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor)  
+                else:
+                    rms[i,k, 2,j] = dcscanner.best_likelyhood[1] 
+                    error[i,k, 2,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)  
         
         if N < N_tests[-1]:
             labels[0].append( 'G, N' + str(int(N)) +'' )
@@ -2551,57 +2617,29 @@ def test_scan( nstep = 20 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 10 , so
                     data = SyntheticWavelets(n=int(N), mt=None, gap=gap) 
                     dcscanner.scan(data=data) 
                     if sol is 'c':
-                        rms[i,k, 0,j+1] += dcscanner.centroid[1] 
-                        error[i,k, 0,j+1] +=  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor) 
+                        rms[i,k, 0,j] = dcscanner.centroid[1] 
+                        error[i,k, 0,j] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor) 
                     else:
-                        rms[i,k, 0,j+1] += dcscanner.best_likelyhood[1] 
-                        error[i,k, 0,j+1] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) 
-        
-        for i,snr in enumerate(snr_range):                
-            for k in range(N_bootstrap):
-                data = SyntheticWavelets(n=int(N), mt=None) 
-                data.degrade(snr=[snr,snr], shift=[0.,0.])
-                dcscanner.scan(data=data) 
-                if sol is 'c':
-                    rms[i,k, 1,j] += dcscanner.centroid[1] 
-                    error[i,k, 1,j] +=  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor) 
-                else:                    
-                    rms[i,k, 1,j] += dcscanner.best_likelyhood[1] 
-                    error[i,k, 1,j] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) 
-        
-        for i,shift in enumerate(shift_range):       
-            for k in range(N_bootstrap):
-                data = SyntheticWavelets(n=int(N), mt=None) 
-                data.degrade(snr=[10.,10.], shift=[-shift,shift])
-                dcscanner.scan(data=data)
-                if sol is 'c':
-                    rms[i,k, 2,j] += dcscanner.centroid[1] 
-                    error[i,k, 2,j] +=  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor)  
-                else:
-                    rms[i,k, 2,j] += dcscanner.best_likelyhood[1] 
-                    error[i,k, 2,j] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)  
+                        rms[i,k, 0,j] = dcscanner.best_likelyhood[1] 
+                        error[i,k, 0,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) 
+                        
                     
-
-    for j,N in enumerate(['LV', 'Iso.', 'CLVD']):  
-        labels.append([])
-        labels[3].append( N )
-        t = [np.round(np.random.uniform(0,2,N_bootstrap)), np.round(np.random.uniform(0,2,N_bootstrap)) ] 
-        for i,shift in enumerate(ndc_range):           
-            for k in range(N_bootstrap):
-                mt = np.asarray([ np.roll((simple_models[N]*shift)[:3], int(t[0][k])), 
-                                 np.roll((simple_models['DC']*(1-shift))[3:], int(t[1][k])) ])
-                data = SyntheticWavelets(n=300, mt= mt.ravel()) 
-                dcscanner.scan(data=data)
-                if sol is 'c':
-                    rms[i,k, 3,j] += dcscanner.centroid[1] 
-                    error[i,k, 3,j] +=  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor)  
-                else:
-                    rms[i,k, 3,j] += dcscanner.best_likelyhood[1] 
-                    error[i,k, 3,j] +=  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)  
-                    
+    labels[0].append( r'N, G0$^\circ$' )
+    for i,N in enumerate(N_range):
+        for k in range(N_bootstrap):
+            data = SyntheticWavelets(n=int(N), mt=None) 
+            dcscanner.scan(data=data)
+            if sol is 'c':
+                rms[i,k, 0,-1] = dcscanner.centroid[1]  #centroid best_likelyhood
+                error[i,k, 0,-1] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor) 
+            else:
+                rms[i,k, 0,-1] = dcscanner.best_likelyhood[1]  #centroid best_likelyhood
+                error[i,k, 0,-1] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) 
+                
+     
     
-    rms[np.isnan(rms)] = 0.
-    error[np.isnan(error)] = 0.
+    #rms[rms == 0.] = np.nan
+    #error[error == 0.] = np.nan
     
     # Plots
     fig = plt.figure(figsize=(9,9))    
@@ -2610,13 +2648,17 @@ def test_scan( nstep = 20 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 10 , so
           plt.subplot2grid((2,2), (1, 0)),
           plt.subplot2grid((2,2), (1, 1)) ]
     
-    colors = ['b', 'g' , 'r', 'c', 'm', 'y', 'k']
+    colors = ['r',  'b', 'c' , 'g', 'm']
     
-    x = np.asarray([N_range, snr_range, shift_range, ndc_range])
-    for i,name in enumerate(['Test 1: data coverage (N & gap)','Test 2: signal to noise ratio','Test 3: arrival time error', 'Test 4: non-DC component']):    
+    
+    for i,name in enumerate([r'A. N & gap.', r'B. SNR.', r'C. $\frac{\delta t}{T}$.', r'D. Non-DC component.']):    
         for j,N in enumerate(labels[i]):
-            ax[i].plot(x[i], np.nanmean(rms[:,:,i,j], axis=1), label=labels[i][j], color=colors[j])
-            ax[i].plot(x[i], np.nanmean(error[:,:,i,j]/90, axis=1), '--', color=colors[j])
+            if i==0 and j==len(labels[i])-1:
+                c = 'm'
+            else:
+                c= colors[j]
+            ax[i].plot(x[i], np.nanmean(rms[:,:,i,j], axis=1), label=labels[i][j], color=c)
+            ax[i].plot(x[i], np.nanmean(error[:,:,i,j]/90, axis=1), '--', color=c)
         
         leg = ax[i].legend(fancybox=True,loc=9, ncol=2,columnspacing=1)
         leg.get_frame().set_alpha(0.5)
@@ -2629,7 +2671,67 @@ def test_scan( nstep = 20 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 10 , so
         
         ax[i].set_ylim([0., 1.])
             
-        
+
+def test_radpat():
+    
+    # Initiate stats 
+    statistics =np.zeros((100,3,3,3))
+
+    c=1  
+    simple_models={'LV'   : np.array([c/2,0,0,0.,0.,0.])  ,
+                   'Iso.' : np.array([c/2.0001,c/2.000001,c/2.0000000001,0.,0.,0.]) * 1./np.sqrt(3.), 
+                   'CLVD' : np.array([-c,c/2,c/2,0.,0.,0.]) * 1./np.sqrt(6.),
+                   'DC'   : np.array([0.,0.,0.,np.sqrt(c),0.,0.]) * 1./np.sqrt(2.)  }    
+
+    # Increasing the tensile percentage, decreasing double couple 
+    for x in range(1, 9):        
+        for m,model in enumerate(['LV', 'Iso.', 'CLVD']):  
+
+            example = SeismicSource(simple_models['DC']*(10-x)/10 + simple_models[model]*x/10)    
+            Gp, XYZ = example.Aki_Richards.radpat('P')  
+            Gp[Gp<0.0001]=0.0001    
+
+            for w,wave in enumerate(['Sm','Sh','S']):
+
+                Gs, XYZ = example.Aki_Richards.radpat(wave)  
+                Gs[Gs<0.0001]=0.0001 
+
+                for s,stat in enumerate(energy_seismicsourcemodel(Gs/Gp, XYZ)):
+                    statistics[x-1,s,w,m] = stat
+
+
+    # Plotting the results 
+    percentage = np.arange(1,x).T
+    codes = ['r+', 'bs', 'g^']
+
+    fig = plt.figure(figsize=plt.figaspect(0.3))
+
+    for w,wave in enumerate(['S_V','S_H','S']):    
+        ax = fig.add_subplot(1, 3, w+1)    
+
+        for s,stat in enumerate(['rms','norm.','av.']):   
+            ax.plot(percentage, statistics[:x-1,s,w,0]/max(statistics[:x,s,w,0]), codes[s], label=stat+' /'+str(int(max(statistics[:x,s,w,0]))))
+
+        ax.set_xlabel('Linear vector %')
+        ax.set_ylabel(r'Normalized $\frac{S}{P}$')
+        ax.set_title(r'The evolution of $\frac{S}{P}$ (ampl.)' )
+        ax.grid(True)
+        ax.legend()
+
+
+
+    fig = plt.figure(figsize=plt.figaspect(0.3))
+    for m,model in enumerate(['Linear vector','Isotropic','Compensated lin. vect.']):    
+        ax = fig.add_subplot(1, 3, m+1)  
+
+        for w,wave in enumerate(['S_V','S_H','S']):    
+            ax.plot(percentage, statistics[:x-1,2,w,m], codes[w], label=r'$\frac{'+wave+'}{P}$')
+
+        ax.set_xlabel(model+'%')
+        ax.set_ylabel(r'Averaged $\frac{S}{P}$ (ampl.)')
+        ax.set_title(r'The evolution of $\frac{S}{P}$' )
+        ax.grid(True)
+        ax.legend()
 
     
          
