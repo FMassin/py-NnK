@@ -695,6 +695,10 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
     ax.set_xlim(mean_x - max_range, mean_x + max_range)
     ax.set_ylim(mean_y - max_range, mean_y + max_range)
     ax.set_zlim(mean_z - max_range, mean_z + max_range)
+    
+    ax.set_xlim(-.7, .7)
+    ax.set_ylim(-.7, .7)
+    ax.set_zlim(-.7, .7)
 
 
     plt.show() 
@@ -1456,28 +1460,7 @@ class SeismicSource(object):
         
         
 
-def sphere2basemap(map, azimuthangle_polarangle_radialdistance):
-    
-    azimuth =  450. - np.rad2deg(azimuthangle_polarangle_radialdistance[0])
-    takeoff =   90. - np.rad2deg(azimuthangle_polarangle_radialdistance[1])
-    #radius = azimuthangle_polarangle_radialdistance[2]
-    
-    while len(takeoff[takeoff>90.])>0 or len(takeoff[takeoff<-90.])>0 :
-        
-        azimuth[takeoff <-90.] += 180.
-        takeoff[takeoff <-90.] += 180.
-        
-        azimuth[takeoff  >90.] += 180.
-        takeoff[takeoff  >90.] -= 180.
-    
-    
-    while len(azimuth[azimuth>360.])>0 or len(azimuth[azimuth<0.])>0 :
-        
-        azimuth[azimuth   <0.] += 360.
-        azimuth[azimuth >360.] -= 360.
-        
-       
-    return map( azimuth, takeoff )
+
 
 
 
@@ -1504,7 +1487,7 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
     
     ## Initializing the plot
     if ax == None:
-         ax = (plt.figure(figsize=plt.figaspect(1.))).gca(projection='3d')
+         ax = (plt.figure(figsize=plt.figaspect(1.))).gca(projection='3d', xlabel='Lon.', ylabel='Lat.')
                 
     axins = inset_axes(ax,
                    width="60%", # width = 30% of parent_bbox
@@ -1512,9 +1495,10 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
                    loc=3)
     
     axins.patch.set_alpha(0.5)
-
+    cbar = []
     if hasattr(bodywavelet, 'SeismicSource'):
         ax, cbar = bodywavelet.SeismicSource.Aki_Richards.plot(wave='P', style='s', ax=ax, insert_title=" and "+bodywavelet.title)
+
     
     wavelets = []
     ws = [] 
@@ -1735,7 +1719,7 @@ class SyntheticWavelets(object):
                                      header=Stats({'network' : "SY",
                                                    'station' : str(i),
                                                    'location': "00",
-                                                   'channel' : "EHL",   # in origin center sphere: L: Radius, T: Parallel, Q: Meridian
+                                                   'channel' : "EHZ",   # in origin center sphere: L: Radius, T: Parallel, Q: Meridian
                                                    'npts'    : len(t),
                                                    'delta'   : 1/((t[-1]-t[0])/len(t)) }) ))        
         
@@ -1769,17 +1753,34 @@ class BodyWavelets(object):
         This object is composed of two methods : get and plot.
         ______________________________________________________________________
         """
-    def __init__(self, f= 100., starts=-0.05, ends=0.2, n_wavelet= 50, sds= "/Users/massin/Documents/Data/ANT/sds/", catalog = "/Users/massin/Desktop/arrivals-hybrid.Id-Net-Sta-Type-W_aprio-To-D-Az-Inc-hh-mm-t_obs-tt_obs-tt_calc-t_calc-res-W_apost-F_peak-F_median-A_max-A_unit-Id-Ot-Md-Lat-Lon-Dep-Ex-Ey-Ez-RMS-N_P-N_S-D_min-Gap-Ap-score_S-score_M", sacs= "/Users/massin/Documents/Data/WY/dtec/2010/01/21/20100121060160WY/", nll = "//Users/massin/Documents/Data/WY/dtec/2010/01/21/20100121060160WY/20100121060160WY.UUSS.inp.loc.nlloc/WY_.20100121.061622.grid0.loc.hyp", mode="sds-column"):
+    def __init__(self, f= 100., starts=-0.05, ends=0.2, n= 50, sds= "/Users/massin/Documents/Data/ANT/sds/", catalog = "/Users/massin/Desktop/arrivals-hybrid.Id-Net-Sta-Type-W_aprio-To-D-Az-Inc-hh-mm-t_obs-tt_obs-tt_calc-t_calc-res-W_apost-F_peak-F_median-A_max-A_unit-Id-Ot-Md-Lat-Lon-Dep-Ex-Ey-Ez-RMS-N_P-N_S-D_min-Gap-Ap-score_S-score_M", sacs= "/Users/massin/Documents/Data/WY/dtec/2010/01/21/20100121060160WY/", nll = "//Users/massin/Documents/Data/WY/dtec/2010/01/21/20100121060160WY/20100121060160WY.UUSS.inp.loc.nlloc/WY_.20100121.061622.grid0.loc.hyp", mode="sds-column", mt=[]):
 
         from obspy.core.stream import read
 
-        self.n_wavelet = n_wavelet
-        self.az_max = []
-        self.mt = []
-        self.wavelets = np.asarray([])
-        self.obs_sph = np.asarray([])
+        #self.n_wavelet = n_wavelet
+        #self.az_max = []
+        #self.mt = []
+        #self.wavelets = np.asarray([])
+        #self.obs_sph = np.asarray([])
         npoints = f*(ends - starts)-1
         
+        # Get infos
+        self.title = 'observations'
+        self.observations = {'types': np.tile('P', (n, 1)),
+                             'cart' : np.zeros((3,n)),
+                             'sph'  : np.zeros((3,n)),#                             
+                             'mt'   : mt,
+                             'n'    : n, 
+                             'gap'  : 0. }
+        
+        ## Gets the seismic source model
+        if mt:
+            self.observations['mt'] = mt
+            self.SeismicSource = SeismicSource(mt)
+            self.MomentTensor = MomentTensor(mt,system='XYZ',debug=2)
+            
+        self.Stream = Stream() 
+        index = -1
         
         if mode == "sds-column" :
             
@@ -1793,7 +1794,7 @@ class BodyWavelets(object):
             metadata = np.genfromtxt(catalog, usecols=columns, comments="Id", names=names, dtype=None)
 
             for arrival,md in enumerate(metadata):
-                if metadata[arrival][5] > 1. and self.wavelets.shape[0] < n_wavelet :
+                if metadata[arrival][5] > 1. and len(self.Stream) < n :
                     
                     time = "%17.3f" % metadata[arrival][4]
                     time = UTCDateTime(time[:8]+'T'+time[8:])
@@ -1801,25 +1802,26 @@ class BodyWavelets(object):
                         (metadata[arrival][9]-time.minute)*60 + \
                         (metadata[arrival][10]-(time.second+time.microsecond/1000000.))
                     
-                    st = client.get_waveforms(metadata[arrival][0], metadata[arrival][1], "*", "*[Z]", time+2*starts, time+2*ends) #
+                    st = client.get_waveforms(metadata[arrival][0], metadata[arrival][1], "*", "*[Z]", time+3*starts, time+2*ends) #
                     #st.trim(time+starts, time+ends)
                     st.detrend()
                     st.normalize()
-                    st.interpolate(f, starttime=time+starts, npts=npoints)
+                    
                     for t,Trace in enumerate(st):
-                        if self.wavelets.shape[0] < n_wavelet :
+                        if len(self.Stream) < n and 1./st[0].stats.delta>= f*.9 :
+                            
+                            index +=1
                             
                             data = np.zeros((1,npoints))
-                            data[:] = Trace.data[:npoints]
-                            angles = np.zeros((1,3))
-                            angles[:] = ([ np.deg2rad(metadata[arrival][6]), np.deg2rad(metadata[arrival][7]), 1.0]) # metadata[arrival][5]])
-                            if  self.wavelets.shape[0] == 0 :
-                                self.wavelets = data
-                                self.obs_sph = angles
-                            else :
-                                self.wavelets = np.concatenate((self.wavelets, data), axis=0)
-                                self.obs_sph =  np.concatenate((self.obs_sph, angles), axis=0)
-
+                            Trace.interpolate(f, starttime=time+starts, npts=npoints)
+                            Trace.data = Trace.data[:npoints]/np.max(abs(Trace.data[:npoints]))         
+                            self.Stream.append(Trace) 
+                            self.observations['sph'][:, index] = [np.deg2rad(metadata[arrival][6]),
+                                                                  np.deg2rad(metadata[arrival][7]), 
+                                                                  1.0] ## metadata[arrival][5]])                   
+            
+            
+            
         elif mode == "sac-nll" :
             
             from obspy import read_events
@@ -1827,7 +1829,7 @@ class BodyWavelets(object):
             cat = read_events(nll)
             
             for p,pick in enumerate(cat[0].picks):
-                if self.wavelets.shape[0] < n_wavelet :
+                if len(self.Stream) < n :
                     #print pick.waveform_id, pick.phase_hint, pick.time,
                     for a,arrival in enumerate(cat[0].origins[0].arrivals):
                         if arrival.pick_id == pick.resource_id:
@@ -1837,25 +1839,23 @@ class BodyWavelets(object):
                                 st = read(seismic_waveform_file)
                                 st.detrend()
                                 st.normalize()
-                                st.interpolate(f, starttime=pick.time+starts, npts=npoints)
+                                #st.interpolate(f, starttime=pick.time+starts, npts=npoints)
                                 for t,Trace in enumerate(st):
-                                    if self.wavelets.shape[0] < n_wavelet :
+                                    if len(self.Stream) < n and 1./st[0].stats.delta>= f*.9:
                                         
+                                        index +=1
+                            
                                         data = np.zeros((1,npoints))
-                                        data[:] = Trace.data[:npoints]/np.max(abs(Trace.data[:npoints]))
-                                        angles = np.zeros((1,3))
-                                        angles[:] = ([ np.deg2rad(arrival.azimuth), np.deg2rad(arrival.takeoff_angle), 1.0]) # metadata[arrival][5]])
-                                        if  self.wavelets.shape[0] == 0 :
-                                            self.wavelets = data
-                                            self.obs_sph = angles
-                                        else :
-                                            self.wavelets = np.concatenate((self.wavelets, data), axis=0)
-                                            self.obs_sph =  np.concatenate((self.obs_sph, angles), axis=0)
+                                        Trace.interpolate(f, starttime=pick.time+starts, npts=npoints)
+                                        Trace.data = Trace.data[:npoints]/np.max(abs(Trace.data[:npoints]))         
+                                        self.Stream.append(Trace)
+                                        self.observations['sph'][:, index] = [np.deg2rad(arrival.azimuth),
+                                                                              np.deg2rad(arrival.takeoff_angle), 
+                                                                              1.0] ## metadata[arrival][5]])  
                                             
-        self.obs_sph = (self.obs_sph.T)
-        self.obs_cart = np.asarray( spherical_to_cartesian(self.obs_sph))
-        self.n_wavelet = self.wavelets.shape[0]
-
+        self.observations['cart'] = np.asarray(spherical_to_cartesian( self.observations['sph'] )) 
+        self.observations['n'] = len(self.Stream)
+        
     def get(self):
         
         return self
@@ -2067,6 +2067,13 @@ class SourceScan(object):
         # get observation indexes corresponding to model space ##
         self.data_indexes = np.zeros([ self.data_wavelets.shape[0], len(self.atr[0].shape) ], dtype=np.int32)
         for i in range(len(data.Stream)):                       #
+            
+            #if data.Stream[i].stats.channel is "VERTICAL" or data.Stream[i].stats.channel is "UNKNOWN":
+            #    data.Stream[i].stats.channel = "EHZ"
+                
+            data.Stream[i].stats.channel=data.Stream[i].stats.channel.replace("VERTICAL", "EHZ")
+            data.Stream[i].stats.channel= data.Stream[i].stats.channel.replace("UNKNOWN", "EHZ")
+            
             distances = np.sqrt( (data.observations['sph'][0,i]-self.atr[0])**2. + (data.observations['sph'][1,i]-self.atr[1])**2. + (data.observations['sph'][2,i]-self.atr[2])**2. )
             d = np.argmin(distances)
             self.data_indexes[i,:] = np.unravel_index( d, self.atr[0].shape)
@@ -2131,8 +2138,6 @@ class SourceScan(object):
         ################################
 
         # Scans source ### how to make it linear ? #############
-        globaldist_opt_stack = 0.
-        #stacks = np.zeros([self.source_mechanisms['Mt'].shape[0],len(self.opt_stack)])
         for i in range(self.source_mechanisms['Mt'].shape[0]): #
             
             Mo = self.source_mechanisms['Mt'][i,:]
@@ -2141,15 +2146,12 @@ class SourceScan(object):
             for j,wavelet in enumerate(self.data_wavelets):  #
                 self.data_amplitudes[j][:] = self.modeled_amplitudes[ tuple(Mo), 
                                                                       data.observations['types'][j,0], 
-                                                                      data.Stream[j].stats.channel[-1] ][ tuple(self.data_indexes[j]) ]
+                                                                      (data.Stream[j].stats.channel[-1]).replace("Z", "L") ][ tuple(self.data_indexes[j]) ]
                             
             corrected_wavelets = np.sign(self.data_amplitudes) * self.data_wavelets * self.data_taperwindows 
             stack_wavelets = np.nansum(corrected_wavelets, axis=0)
             self.source_mechanisms['rms'][i] = np.nansum(stack_wavelets**2)*np.sign(np.nansum(stack_wavelets))
             self.source_mechanisms['xcorr'][i] = (np.corrcoef(self.opt_stack, stack_wavelets))[0,1]
-            
-            #stacks[i,:] = self.opt_stack-stack_wavelets
-            globaldist_opt_stack += np.nansum((self.opt_stack - stack_wavelets)**2)
             ##################################################
         
         self.source_mechanisms['xcorr'][self.source_mechanisms['rms']==0.] = 0
@@ -2162,17 +2164,6 @@ class SourceScan(object):
         self.source_mechanisms['P(d)']  = (np.nansum(np.abs(self.source_mechanisms['rms'])>=np.nanmax(self.source_mechanisms['rms']))*.5/len(self.source_mechanisms['rms'])) # *2/np.pi
         if info ==1:
             print "P(d), prelim",self.source_mechanisms['P(d)']
-        
-#         self.source_mechanisms['P(d)']  *= (self.power_opt_stack-np.nanmax(abs(self.source_mechanisms['rms'])))/self.power_opt_stack
-# #       self.source_mechanisms['P(d)']  += 1.-self.model_perfectmodel_corr
-#         if info ==1:
-#             print "      correction", (self.power_opt_stack-np.nanmax(abs(self.source_mechanisms['rms'])))/self.power_opt_stack
-        
-        # echelle ok, evolue mal en gap
-        #len(self.source_mechanisms['rms'])*len(self.opt_stack)/self.source_mechanisms['P(d)']
-        # evolue bien, mais pas a l'echelle:
-        #np.nanstd((self.power_opt_stack-self.source_mechanisms['rms'])/len(self.opt_stack))#**2
-        
         
         # limits impossibles values
         # must be np.nanmin(self.source_mechanisms['P(Mt)'])  < < np.nanmax(self.source_mechanisms['P(d|Mt)']) ????        
@@ -2229,7 +2220,7 @@ class SourceScan(object):
         ax1 = plt.subplot2grid((2,2), (0, 0), projection='3d')
         ax2 = plt.subplot2grid((2,2), (1, 0), projection='3d')
         ax3 = plt.subplot2grid((2,2), (1, 1), projection='3d')
-        ax4 = plt.subplot2grid((2,2), (0, 1))
+        ax4 = plt.subplot2grid((2,2), (0, 1))#, projection='3d')
         
         ## plots data
         ax, axins, cbar = plot_wavelet(self.data, style, ax=ax1, detail_level = 0)        
@@ -2254,7 +2245,7 @@ class SourceScan(object):
 #         ## plots PT result
 #         self.plot_PT(ax=ax3)
     
-    def plot_PT(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = '*', ax=None):
+    def plot_PT(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = '*', ax=None, poles=0):
         '''
             Plot pdfs
         '''
@@ -2277,8 +2268,8 @@ class SourceScan(object):
                       lon_0=0) 
         
         # define parallels and meridians to draw.
-        map.drawparallels(np.arange( -80., 81.,20.), color= '0.75')
-        map.drawmeridians(np.arange(-180.,179.,20.), color= '0.75')
+        map.drawparallels(np.arange( -80., 80.,20.), color= '0.75')
+        map.drawmeridians(np.arange(-180.,180.,20.), color= '0.75')
    
         
         # Solutions
@@ -2286,55 +2277,69 @@ class SourceScan(object):
         markers = ['o' , 'x']
         markeredgewidths = [0, 2]
         
-        for i in range(len(sols)):   
-                     
-            test = MomentTensor(sols[i],system='XYZ',debug=2)
-            P = np.asarray(cartesian_to_spherical(test.get_t_axis(system='XYZ')))
-            T = np.asarray(cartesian_to_spherical(test.get_p_axis(system='XYZ')))
-            
-            symetrics = [ 0 , np.pi , -1*np.pi ]
-            
-            for j,sym in enumerate(symetrics):                
-                
-                x, y = sphere2basemap(map, P+sym) # map( 180-np.rad2deg(P[0]+sym), -1*(90-np.rad2deg(P[1]+sym)))
-                map.plot(x,y,
-                         marker=markers[i],
-                         color='k', 
-                         markeredgewidth=markeredgewidths[i]+2)
-                x, y = sphere2basemap(map, T+sym) # map( 180-np.rad2deg(T[0]+sym), -1*(90-np.rad2deg(T[1]+sym)))
-                map.plot(x,y,
-                         marker=markers[i],
-                         color='k', 
-                         markeredgewidth=markeredgewidths[i]+2)
-                
-                x, y = sphere2basemap(map, P+sym) # map( 180-np.rad2deg(P[0]+sym), -1*(90-np.rad2deg(P[1]+sym)))
-                map.plot(x,y,
-                         marker=markers[i],
-                         color='r', 
-                         markeredgewidth=markeredgewidths[i])
-                x, y = sphere2basemap(map, T+sym) # map( 180-np.rad2deg(T[0]+sym), -1*(90-np.rad2deg(T[1]+sym)))
-                map.plot(x,y,
-                         marker=markers[i],
-                         color='b', 
-                         markeredgewidth=markeredgewidths[i])
+        if poles == 1:
+            for i in range(len(sols)):   
+
+                test = MomentTensor(sols[i],system='XYZ',debug=2)
+                P = np.asarray(cartesian_to_spherical(test.get_p_axis(system='XYZ')))
+                T = np.asarray(cartesian_to_spherical(test.get_t_axis(system='XYZ')))
+
+                symetrics = [ 0 , np.pi , -1*np.pi ]
+
+                for j,sym in enumerate(symetrics):                
+
+                    x, y = sphere2basemap(map, P+sym) # map( 180-np.rad2deg(P[0]+sym), -1*(90-np.rad2deg(P[1]+sym)))
+                    map.plot(x,y,
+                             marker=markers[i],
+                             color='k', 
+                             markeredgewidth=markeredgewidths[i]+2)
+                    x, y = sphere2basemap(map, T+sym) # map( 180-np.rad2deg(T[0]+sym), -1*(90-np.rad2deg(T[1]+sym)))
+                    map.plot(x,y,
+                             marker=markers[i],
+                             color='k', 
+                             markeredgewidth=markeredgewidths[i]+2)
+
+                    x, y = sphere2basemap(map, P+sym) # map( 180-np.rad2deg(P[0]+sym), -1*(90-np.rad2deg(P[1]+sym)))
+                    map.plot(x,y,
+                             marker=markers[i],
+                             color='b', 
+                             markeredgewidth=markeredgewidths[i])
+                    x, y = sphere2basemap(map, T+sym) # map( 180-np.rad2deg(T[0]+sym), -1*(90-np.rad2deg(T[1]+sym)))
+                    map.plot(x,y,
+                             marker=markers[i],
+                             color='r', 
+                             markeredgewidth=markeredgewidths[i])
         
         # Contour maps 
         ## compute native x,y coordinates of grid.
         x, y = sphere2basemap(map, self.pdf['sphere grid']) 
-        # x, y = map( 180-np.rad2deg(self.pdf['sphere grid'][0]), -1*(90-np.rad2deg(self.pdf['sphere grid'][1])))
+        #x, y, z = spherical_to_cartesian(self.pdf['sphere grid'])
+        #self.pdf['P/T'][:,:,i][z>0] = np.nan
         ## Machinery
-        colormaps = [ plt.cm.OrRd , plt.cm.Blues ]
-        colorlines = [ 'r' , 'b']
-        legends_title = ['P(p-axis|d) [%]', 'P(t-axis|d) [%]']
+        colormaps = [ plt.cm.Blues, plt.cm.OrRd]
+        colorlines = [ 'b', 'r' ]
+        legends_title = ['P(t-axis|d) [%]', 'P(p-axis|d) [%]']
         inset_locations = [3, 4] 
         locations = ['right', 'left']
         ## 
         for i in range(self.pdf['P/T'].shape[2]):                
             ### set desired contour levels.
-            clevs = np.linspace(np.mean(self.pdf['P/T'][:,:,i]),
+            clevs = np.linspace(0, #np.mean(self.pdf['P/T'][:,:,i]),
                                 np.max(self.pdf['P/T'][:,:,i]),
                                 10) 
             
+            
+            #ax.contourf(x, y, self.pdf['P/T'][:,:,i], 
+            #      clevs,#[-1, -0.1, 0, 0.1],
+            #      alpha=0.5,
+            #      cmap=colormaps[i])
+            
+            #norm = matplotlib.colors.Normalize(vmin=0,vmax=np.max(self.pdf['P/T'][:,:,i]))
+            #c_m = matplotlib.cm.Spectral
+            #s_m = matplotlib.cm.ScalarMappable(cmap=c_m, norm=norm)
+            #s_m.set_array([])
+            #ax.plot_surface(x, y, z, linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(self.pdf['P/T'][:,:,i]), alpha=1.) 
+        
             ### plot SLP contours.
             CS1 =  map.contour(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100., 
                              animated=True, colors=colorlines[i], linewidths=0.5)
@@ -2354,7 +2359,12 @@ class SourceScan(object):
             tmp = cbar.ax.get_position().bounds
             cbar.ax.set_position([tmp[0] , tmp[1], tmp[2] , tmp[3]*.5 ])
         
-        ax.set_title(r'P and T axis (red & blue)'+'\n'+'$^{best \/ and \/ centroid \/( \circ \/&\/ x )}$')
+        ax.set_title(r'P and T axis'+'\n'+'$^{(red  \/& \/ blue)}$')#best \/ and \/ centroid \/( \circ \/&\/ x )}$')
+        #ax.view_init(-90, 90)
+        #ax.set_xlabel('x')
+        #ax.set_ylabel('y')
+        #ax.set_xlim([-1,1])
+        #ax.set_ylim([-1,1])
         pos1 = ax.get_position().bounds # get the original position 
         ax.set_position([pos1[0]+pos1[2]*.051 , pos1[1] ,  pos1[2] * .9, pos1[3]]) # set a new position
 
@@ -2447,7 +2457,7 @@ class SourceScan(object):
         for i in range(len(results.Stream)):              
             results.Stream[i].data *= np.sign(amplitudes[
                                                          results.observations['types'][i,0], 
-                                                         results.Stream[i].stats.channel[-1] ][i])
+                                                         (results.Stream[i].stats.channel[-1]).replace("Z", "L") ][i])
             
             forrms[:len(results.Stream[i].data)] += results.Stream[i].data * self.data_taperwindows[i]
         
@@ -2486,7 +2496,7 @@ class SourceScan(object):
                                        lon2 = self.pdf['sphere grid'][0],
                                        radius = 1.) / np.pi )**.5
             
-            rms =  np.reshape(self.source_mechanisms['P(Mt|d)']*-1,
+            rms =  np.reshape(self.source_mechanisms['P(Mt|d)'],
                               ( 1, 1, len(self.source_mechanisms['P(Mt|d)'] )))
             
             self.pdf['P/T'][:,:,i] += np.sum( rms * clust_coef , axis=2) 
@@ -2498,7 +2508,31 @@ class SourceScan(object):
         self.pdf['P/T'] *= np.max(self.source_mechanisms['P(Mt|d)'])
         
         
+def sphere2basemap(map, azimuthangle_polarangle_radialdistance):
     
+    ## PT axis should not be givien to this, not same convention!
+    
+    azimuth = -1* (360 - (450. - np.rad2deg(azimuthangle_polarangle_radialdistance[0]))) # 450-
+    takeoff =  90. - np.rad2deg(azimuthangle_polarangle_radialdistance[1]) #90. - 
+    #radius = azimuthangle_polarangle_radialdistance[2]
+    
+    while len(takeoff[takeoff>90.])>0 or len(takeoff[takeoff<-90.])>0 :
+        
+        azimuth[takeoff <-90.] += 180.
+        takeoff[takeoff <-90.] = -180 - takeoff[takeoff <-90.] 
+        
+        azimuth[takeoff  >90.] += 180.
+        takeoff[takeoff  >90.] = 180 - takeoff[takeoff >90.] 
+    
+    
+    while len(azimuth[azimuth>360.])>0 or len(azimuth[azimuth<0.])>0 :
+        
+        azimuth[azimuth   <0.] += 360.
+        azimuth[azimuth >360.] -= 360.
+        
+       
+    return map( azimuth, takeoff )
+
 def mt_diff( mt1, mt2):
     
     fps = np.deg2rad([mt1.get_fps(), mt2.get_fps()])
@@ -2539,7 +2573,7 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
     labels.append([])
     
     
-    c=1  
+    c=2  
     simple_models={'LV'   : np.array([c/2,0,0,0.,0.,0.])  ,
                    'Iso.' : np.array([c/2.0001,c/2.000001,c/2.0000000001,0.,0.,0.]) * 1./np.sqrt(3.), 
                    'CLVD' : np.array([-c,c/2,c/2,0.,0.,0.]) * 1./np.sqrt(6.),
@@ -2555,11 +2589,12 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
                 
                 mt = [np.random.uniform(0,360) ,np.random.uniform(-90,90),np.random.uniform(0,180)]
                 random_DC = np.ravel(np.asarray( (MomentTensor(mt,system='XYZ',debug=2)).get_M(system='XYZ')))[[0,4,8,3,6,7]]
-                random_DC[:3] = 0.
-                random_DC[3:] *= 100./(MomentTensor(random_DC.ravel(),system='XYZ',debug=2)).get_DC_percentage()       
                 
-                mt = np.asarray([ np.roll((simple_models[N]*shift)[:3], int(t[0][k])), 
-                                 np.roll((random_DC*(1.-shift))[3:], int(t[1][k])) ])
+                #mt = np.asarray([ np.roll((simple_models[N]*shift)[:3], int(t[0][k])), 
+                #                 np.roll((random_DC*(1.-shift))[3:], int(t[1][k])) ])
+                
+                mt = random_DC*(1.-shift)
+                mt[:3] += np.roll((simple_models[N]*shift)[:3], int(t[0][k]))
                 
                 i_dc = np.argmin(abs(x[-1]-(100.-(MomentTensor(mt.ravel(),system='XYZ',debug=2)).get_DC_percentage())/100.))
                 
@@ -2575,13 +2610,14 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
                 data = SyntheticWavelets(n=300, mt= mt.ravel()) 
                 dcscanner.scan(data=data)
                 if sol is 'c':
-                    rms[i_ndc,k, 3,j] = dcscanner.centroid[1] 
-                    error[i_ndc,k, 3,j] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor)  
+                    rms[i_dc,k, 3,j] = dcscanner.centroid[1] 
+                    error[i_dc,k, 3,j] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor)  
                 else:
-                    rms[i_ndc,k, 3,j] = dcscanner.best_likelyhood[1] 
-                    error[i_ndc,k, 3,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)  
+                    rms[i_dc,k, 3,j] = dcscanner.best_likelyhood[1] 
+                    error[i_dc,k, 3,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)  
                
-      
+    
+    labels[0].append( r'N, G0$^\circ$' )  
     for j,N in enumerate(N_tests):
         labels[1].append( 'N'+str(int(N)) )
         labels[2].append( 'N'+str(int(N)) )
@@ -2624,7 +2660,7 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
                         error[i,k, 0,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor) 
                         
                     
-    labels[0].append( r'N, G0$^\circ$' )
+    
     for i,N in enumerate(N_range):
         for k in range(N_bootstrap):
             data = SyntheticWavelets(n=int(N), mt=None) 
@@ -2684,10 +2720,10 @@ def test_radpat():
                    'DC'   : np.array([0.,0.,0.,np.sqrt(c),0.,0.]) * 1./np.sqrt(2.)  }    
 
     # Increasing the tensile percentage, decreasing double couple 
-    for x in range(1, 9):        
+    for x in range(1, 99):        
         for m,model in enumerate(['LV', 'Iso.', 'CLVD']):  
 
-            example = SeismicSource(simple_models['DC']*(10-x)/10 + simple_models[model]*x/10)    
+            example = SeismicSource(simple_models['DC']*(100-x)/100. + simple_models[model]*x/100.)    
             Gp, XYZ = example.Aki_Richards.radpat('P')  
             Gp[Gp<0.0001]=0.0001    
 
@@ -2702,34 +2738,38 @@ def test_radpat():
 
     # Plotting the results 
     percentage = np.arange(1,x).T
-    codes = ['r+', 'bs', 'g^']
+    codes = ['r', 'b', 'g']
 
-    fig = plt.figure(figsize=plt.figaspect(0.3))
+    #fig = plt.figure(figsize=plt.figaspect(0.3))
+    #for w,wave in enumerate(['S_V','S_H','S']):    
+    #    ax = fig.add_subplot(1, 3, w+1)    
 
-    for w,wave in enumerate(['S_V','S_H','S']):    
-        ax = fig.add_subplot(1, 3, w+1)    
+    #    for s,stat in enumerate(['rms','norm.','av.']):   
+    #        ax.plot(percentage, statistics[:x-1,s,w,0]/max(statistics[:x,s,w,0]), codes[s], label=stat+' /'+str(int(max(statistics[:x,s,w,0]))))
 
-        for s,stat in enumerate(['rms','norm.','av.']):   
-            ax.plot(percentage, statistics[:x-1,s,w,0]/max(statistics[:x,s,w,0]), codes[s], label=stat+' /'+str(int(max(statistics[:x,s,w,0]))))
-
-        ax.set_xlabel('Linear vector %')
-        ax.set_ylabel(r'Normalized $\frac{S}{P}$')
-        ax.set_title(r'The evolution of $\frac{S}{P}$ (ampl.)' )
-        ax.grid(True)
-        ax.legend()
-
+    #    ax.set_xlabel('Linear vector %')
+    #    ax.set_ylabel(r'Normalized $\frac{S}{P}$')
+    #    ax.set_title(r'The evolution of $\frac{S}{P}$ (ampl.)' )
+    #    ax.grid(True)
+    #    ax.legend()
 
 
-    fig = plt.figure(figsize=plt.figaspect(0.3))
-    for m,model in enumerate(['Linear vector','Isotropic','Compensated lin. vect.']):    
+
+    fig = plt.figure(figsize=(12,5))
+    for m,model in enumerate(['LV','Iso.','CLVD']):    
         ax = fig.add_subplot(1, 3, m+1)  
 
-        for w,wave in enumerate(['S_V','S_H','S']):    
-            ax.plot(percentage, statistics[:x-1,2,w,m], codes[w], label=r'$\frac{'+wave+'}{P}$')
+        for w,wave in enumerate(['S_Q','S_T','S']):    
+            ax.plot(percentage/100., statistics[:x-1,2,w,m], color=codes[w], label=r'$\frac{'+wave+'}{P}$')
 
-        ax.set_xlabel(model+'%')
-        ax.set_ylabel(r'Averaged $\frac{S}{P}$ (ampl.)')
-        ax.set_title(r'The evolution of $\frac{S}{P}$' )
+        ax.set_xlabel(model+' component.')
+        if m==0:
+            ax.set_ylabel(r'Averaged $\frac{S}{P}$ (ampl.)')
+        elif m==1:
+            ax.set_title(r'The evolution of $\frac{S}{P}$' )
+        else:
+            ax.set_ylabel('')
+        
         ax.grid(True)
         ax.legend()
 
