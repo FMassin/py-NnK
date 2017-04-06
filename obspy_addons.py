@@ -21,7 +21,12 @@ from math import radians, cos, sin, asin, sqrt
 
 def get_values(self, lst, att=None, types=['b'] , full=False, pref=False, last=False, first=False, nan=True):
     """
-        types = [ 'bests', 'all', 'lasts', 'firsts', 'nans' ]
+        use
+        types = [ 'bests' [, 'all'] [, 'lasts' ] [, 'firsts' ] [, 'nans'] ]
+        
+        instead of 
+        full=False, pref=False, last=False, first=False, nan=True
+       
     """
     out = list()
     
@@ -515,17 +520,25 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
             #                          loc=4)
     return f
 
-def evfind(self=obspy.core.event.catalog.Catalog(),tofind=obspy.core.event.catalog.Catalog(),v=False,x=True):
-
+def evfind(self=obspy.core.event.catalog.Catalog(),toadd=obspy.core.event.catalog.Catalog(),v=False,x=True):
+    """
+    use get_values instead of loop
+    """
+    
+    tofind = toadd.copy()
     matchs = obspy.core.event.catalog.Catalog()
     extras = obspy.core.event.catalog.Catalog()
     matchs.description = 'Intersections of '+str(self.description)+' and '+str(tofind.description)
     missed = obspy.core.event.catalog.Catalog()
     missed.description = 'Part of '+str(self.description)+' not in '+str(tofind.description)
     listfound=list()
-
-    for e in tofind.events:
+    
+    for e in self.events :
+        
         o = e.preferred_origin() or e.origins[-1]
+        
+        tofind.filter(*sed_filter).get_values('origins','latitude')
+        
         found=False
         memdl=99999999
         memdt=99999999
@@ -533,71 +546,83 @@ def evfind(self=obspy.core.event.catalog.Catalog(),tofind=obspy.core.event.catal
             print('---- event',e.short_str(),'...')
     
         if len(listfound) < len(self.events):
-            # optimize with select ?
-            for i,ref in enumerate(self.events):
+            
+            filter = ["time >= "+str(o.time-120),
+                      "time <= "+str(o.time+120),
+                      "latitude >= "+str(o.latitude-5),
+                      "latitude <= "+str(o.latitude+5),
+                      "longitude >= "+str(o.longitude-5),
+                      "longitude <= "+str(o.longitude+5)]
+            
+            for candidate in tofind.filter( *filter ).events:
+
+                i = candidate.resource_id
+                candidateo = candidate.preferred_origin() or candidate.origins[-1]
+                dt = abs(o.time-candidateo.time)
+                dl = numpy.sqrt((o.latitude-candidateo.latitude)**2+(o.longitude-candidateo.longitude)**2)
                 
-                refo = ref.preferred_origin() or ref.origins[-1]
-                dt = abs(o.time-refo.time)
-                dl = numpy.sqrt((o.latitude-refo.latitude)**2+(o.longitude-refo.longitude)**2)
-                
-                if (i not in listfound and
-                    dt < 5 and dl <=.1 and
+                if (dt < 5 and dl <=.1 and
                     (dl<memdl or dt<memdt)):
                     
                     found = True
                     memi = i
                     memdl = dl
                     memdt = dt
+                    meme = candidate
                     break
                     
                     if v:
                         print('fits nicely input catalog ',tofind.description,':\n  ', ref.short_str())
             
-                elif (i not in listfound and
-                      dt < 60 and dl <=.5 and
+                elif (dt < 60 and dl <=.5 and
                       (dl<memdl or dt<memdt)):
                     
                     found = True
                     memi = i
                     memdl = dl
                     memdt = dt
+                    meme = candidate
                     if v:
                         print('fits input catalog ',tofind.description,':\n  ', ref.short_str())
 
-                elif (i not in listfound and
-                      dt < 60 and dl <1 and
+                elif (dt < 60 and dl <1 and
                       (dl<memdl or dt<memdt)):
                     
                     found = True
                     memi = i
                     memdl = dl
                     memdt = dt
+                    meme = candidate
                     if v:
                         print('poorly fits input catalog ',tofind.description,':\n  ', ref.short_str())
-
+                
 
         if not found:
             if v:
                 print('does not exist in current catalog')
             missed.events.append(e)
         elif found:
-            matchs.events.append(self.events[memi]) #e)
+            matchs.events.append(e)
             listfound.append(memi)
             
-            matchs.events[-1].preferred_origin_id = e.preferred_origin_id
-            matchs.events[-1].preferred_magnitude_id = e.preferred_magnitude_id
+            for prefatt in [ 'preferred_origin_id', 'preferred_magnitude_id' ]:
+                if hasattr(meme, prefatt):
+                    matchs.events[-1][prefatt] = meme[prefatt]
+        
+            for listatt in [ 'origins' , 'magnitudes', 'picks' ]:
+                if hasattr(meme, listatt):
+                    matchs.events[-1][listatt].extend( meme[listatt] )
 
-            for elt in e.origins: #self.events[memi].origins:
-                matchs.events[-1].origins.append(elt)
-            for elt in e.magnitudes: #self.events[memi].magnitudes:
-                matchs.events[-1].magnitudes.append(elt)
-            for elt in e.picks:
-                matchs.events[-1].picks.append(elt)
+            tofind.events.remove(meme)
+            
+                
             
 
     if x :
         matchs_otherversion, extras, trash = tofind.evfind(self,v=v,x=False)
     return matchs, missed, extras
+
+
 
 def hasdata(self,data=obspy.core.stream.Stream()):
     inv_ok = obspy.core.inventory.Inventory(networks=[],source=[])
