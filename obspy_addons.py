@@ -98,7 +98,8 @@ class Solutions():
                  last=0,
                  arrivals=0,
                  agency_id=['*'],
-                 magnitude_type=['MVS','Mfd']):
+                 magnitude_type=['MVS','Mfd'],
+                 nan=False):
 
         self.mags=list()
         self.depths=list()
@@ -142,9 +143,9 @@ class Solutions():
             fn=list
             if last:
                 fn=reversed
-        
-            sortedmarg = numpy.argsort([m.creation_info.creation_time for m in e.magnitudes])
             
+            found = 0
+            sortedmarg = numpy.argsort([m.creation_info.creation_time for m in e.magnitudes])
             for mi in fn(sortedmarg) :# list(enumerate(e.magnitudes))):
                 m = e.magnitudes[mi]
                 
@@ -209,6 +210,7 @@ class Solutions():
                             if m.magnitude_type is None :
                                 m.station_count = o.quality.used_station_count
                             if m.mag is not None :
+                                found = 1
                                 if '*' is not last  :
                                     Mtypes.append(m.magnitude_type+m.creation_info.author+o.creation_info.author)
                                 
@@ -273,6 +275,7 @@ class Solutions():
 
                                 self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, d])
                                 
+
                                 
                                 
                                 if False:
@@ -294,8 +297,9 @@ class Solutions():
                                                             break
 
 
+            if not found and nan:
+                self.mags_delays.append(numpy.nan)
 
-        
 
 def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*']):
     
@@ -351,7 +355,7 @@ def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'])
                                 nsta2msize([mags_stations[j] for j in matches],[0,32]),#mags_stations),
                                 [profs[j] for j in matches],
                                 m,
-                                norm=depth_norm(profs),
+                                norm=depth_norm([0,50]),#profs),
                                 label=types[i],alpha=.8,zorder=150,edgecolors='None')
         cb=matplotlib.pyplot.colorbar(sc)
         cb.set_label('Reference depth (km)')
@@ -365,21 +369,33 @@ def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'])
 
     return f
 
-def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',**kwargs):
+def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',**kwargs):
 
     catalogcopy = self.copy()
     
-    solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=['*'])
-    
+    solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=a, magnitude_type=[t], nan=True)
+
     for i,e in enumerate(catalogcopy.events):
-        e.depth = solutions.origins_mag_delays[t][i]
+        if solutions.mags_delays[i]>30:
+            solutions.mags_delays[i]=30
+        e.depth = solutions.mags_delays[i]
         for o in e.origins:
-            o.depth = solutions.origins_mag_delays[t][i]
-    
+            o.depth = solutions.mags_delays[i]*1000
+
+    catalogcopy.events.insert(0,e)
+    catalogcopy.events[0].depth = 0
+    for o in catalogcopy.events[0].origins:
+        o.depth = 0
+    catalogcopy.events.insert(0,e)
+    catalogcopy.events[0].depth = 30*1000
+    for o in catalogcopy.events[0].origins:
+        o.depth = 30*1000
+        
     f = catalogcopy.plot(**kwargs)
     f.texts[0].set_text(f.texts[0].get_text().replace('depth', t+' delay'))
     f.texts[0].set_text(f.texts[0].get_text().replace(' - ', '\n'))
-    f.bmap.drawcountries()
+    #s.set_clim([0,30])
+
     return f
 
 
@@ -551,6 +567,8 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
         ob1 = ax2.scatter(20,0,10,marker='o',color='b',edgecolors='k',zorder=-999)
         ax2.scatter(20,0,10,marker='o',color='w',edgecolors='w',linewidths=3,zorder=-99)
         ax2.set_xlim([1,30])
+        ax2.set_ylim([-1.1,1.1])
+        ax1.set_ylim([1,100])
         xmin=9999999
         xmax=0
         for k in solutions_first.origins_mag_delays:
