@@ -299,6 +299,7 @@ class Solutions():
 
             if not found and nan:
                 self.mags_delays.append(numpy.nan)
+                self.mags.append(numpy.nan)
 
 
 def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*']):
@@ -369,10 +370,24 @@ def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'])
 
     return f
 
+def sticker(t,a,x=0,y=0):
+    
+    o = list()
+    colorin=['None','None']
+    for i,c in enumerate(['w','k']):
+        o.append( a.text(x,y,t,
+            fontweight='bold',
+            zorder=999,#            alpha=0.4,
+            color=colorin[i],
+            fontsize='large',
+            transform=a.transAxes,
+            path_effects=[matplotlib.patheffects.withStroke(linewidth=1.5-i, foreground=c)]))
+        
+    return o
+
 def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',**kwargs):
 
     catalogcopy = self.copy()
-    
     solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=a, magnitude_type=[t], nan=True)
 
     for i,e in enumerate(catalogcopy.events):
@@ -382,11 +397,15 @@ def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',**kwargs):
         for o in e.origins:
             o.depth = solutions.mags_delays[i]*1000
 
-    catalogcopy.events.insert(0,e)
-    catalogcopy.events[0].depth = 0
+    indexes = numpy.argsort(solutions.mags)
+
+    catalogcopy.events = [catalogcopy.events[i] for i in reversed(indexes)]
+
+    catalogcopy.events.insert(0,e.copy())
+    catalogcopy.events[0].depth = 0.001
     for o in catalogcopy.events[0].origins:
-        o.depth = 0
-    catalogcopy.events.insert(0,e)
+        o.depth = 0.001
+    catalogcopy.events.insert(0,e.copy())
     catalogcopy.events[0].depth = 30*1000
     for o in catalogcopy.events[0].origins:
         o.depth = 30*1000
@@ -409,7 +428,7 @@ def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log
     ax[0].xaxis.set_label_position('top')
     ax[0].set_xlabel('Error in location (km)')
     ax[1].set_xlabel('Error in magnitude')
-    medsigma12=[2.5, 15.9, 50, 84.1, 97.5]
+    medsigma12=[50-34.1-13.6, 50-34.1, 50, 50+34.1, 50+34.1+13.6]
     for a in ax:
         a.set_ylabel('%')
         a.grid()
@@ -477,6 +496,8 @@ def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log
     ax[1].legend(loc=2, numpoints=1, scatterpoints=1, fancybox=True, framealpha=0.5)
     ax[0].set_xlim([1,100])
     ax[1].set_xlim([-1.1,1.1])
+    ax[0].set_ylim([0,100])
+    ax[1].set_ylim([0,100])
     print('set set_xlim([1,100]) and [-1.1,1.1]')
     return f
 
@@ -566,9 +587,7 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
         ob2 = ax2.scatter(20,0,10,marker='o',alpha=0.1,color='b', edgecolors='none',zorder=-999)
         ob1 = ax2.scatter(20,0,10,marker='o',color='b',edgecolors='k',zorder=-999)
         ax2.scatter(20,0,10,marker='o',color='w',edgecolors='w',linewidths=3,zorder=-99)
-        ax2.set_xlim([1,30])
-        ax2.set_ylim([-1.1,1.1])
-        ax1.set_ylim([1,100])
+        
         xmin=9999999
         xmax=0
         for k in solutions_first.origins_mag_delays:
@@ -576,6 +595,8 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
             xmax = numpy.max([xmax, numpy.max(solutions_first.origins_mag_delays[k])])
         ax2.set_xlim([1,xmax*1.1])
         ax2.set_xlim([3,30])
+        ax2.set_ylim([-1.1,1.1])
+        ax1.set_ylim([1,100])
             #lg = matplotlib.pyplot.legend((ob1, ob2),
             #                          ('Solutions (loc. or M)', 'Picks (t or A)'),
             #                          numpoints=1,
@@ -821,7 +842,7 @@ def get_event_waveform(self=obspy.core.event.event.Event(), client_eq=None, afte
 
     return self
 
-def plot_eventsections(self, client_wf, afterpick = 30, file = None):
+def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['Pb']):
 
     fig = list()
     for ie,e in enumerate(self.events):
@@ -853,7 +874,10 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None):
         for co in e.origins:
             if co.resource_id == e.preferred_origin_id:
                 o=co
-
+        pm = e.magnitudes[-1]
+        for cm in e.magnitudes:
+            if cm.resource_id == e.preferred_magnitude_id:
+                pm=cm
         pmax = max([p.time for p in e.picks])
 
         for p in e.picks:
@@ -898,13 +922,13 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None):
                                                        channel=tr.stats.channel,
                                                        level="response")
                             inv.write(ifile, format='STATIONXML')
+                            toadd.attach_response(inv)
                         except:
-                            print('removing'+tr.stats.network+tr.stats.station+tr.stats.location+tr.stats.channel)
+                            print('no response removing '+tr.stats.network+tr.stats.station+tr.stats.location+tr.stats.channel)
                             toadd.remove(tr)
                     else:
                         inv = obspy.read_inventory(ifile)
-                    
-                    toadd.attach_response(inv)
+                        toadd.attach_response(inv)
                     
                 st += toadd
                         
@@ -933,46 +957,62 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None):
             tmp.plot(type='section', # starttime=o.time-10,
                      reftime=o.time,
                      time_down=True,
-                     linewidth=.5,
-                     grid_linewidth=.25,
+                     linewidth=.75,
+                     grid_linewidth=0,
                      show=False,
                      fig=fig[-1],
                      color='network',
-                     orientation='horizontal')
+                     orientation='horizontal',
+                     scale=3)
             ax = matplotlib.pyplot.gca()
             
             transform = matplotlib.transforms.blended_transform_factory(ax.transAxes, ax.transAxes )
             transform_picks = matplotlib.transforms.blended_transform_factory(ax.transAxes,ax.transAxes)
-
-            for i,tr in enumerate(st):
-                ax.text(30.0, tr.stats.distance / 1e3,  tr.stats.station, #rotation=270,
-                        va="bottom", ha="left",#         transform=transform,
-                        zorder=10)
             
+            if len(st)<5:
+                for i,tr in enumerate(st):
+                    ax.text(30.0, tr.stats.distance / 1e3,  tr.stats.station, #rotation=270,
+                            va="bottom", ha="left",#         transform=transform,
+                            zorder=10)
             
+            markers = {'P':'+','S':'x','Pg':'+','Sg':'x'}
+            colors = {'P':'g','S':'k','Pg':'g','Sg':'k'}
+            textdone = list()
             for i,p in enumerate(picks):
-                if arrivals[i].distance*110 < tr.stats.distance/ 1e3:
+                if arrivals[i].distance*110 < st[-1].stats.distance/ 1e3:
                     ax.plot(picks[i].time - o.time,
                             arrivals[i].distance*110,
-                            '+k',#                        transform=transform_picks,
-                            zorder=10)
-                            
-                    ax.text(picks[i].time - o.time,
-                            arrivals[i].distance*110,
-                            str(arrivals[i].phase),
-                            weight="heavy",
-                            color="k",
-                            horizontalalignment='right',
-                            verticalalignment='bottom',
-                            zorder=-20,alpha=.3,
-                            path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
-                                                                        foreground="white")])
+                            marker=markers[str(arrivals[i].phase)],
+                            color=colors[str(arrivals[i].phase)],
+                            zorder=-20)
+                    if str(arrivals[i].phase) not in textdone:
+                        textdone.append(str(arrivals[i].phase))
+                        ax.text(picks[i].time - o.time,
+                                arrivals[i].distance*110,
+                                str(arrivals[i].phase),
+                                weight="heavy",
+                                color=colors[str(arrivals[i].phase)],
+                                horizontalalignment='right',
+                                verticalalignment='bottom',
+                                zorder=-10,alpha=.3,
+                                path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
+                                                                            foreground="white")])
+
 
             ax2 = fig[-1].add_subplot(311)
+            ax3 = fig[-1].add_subplot(312)
+            ax3r = ax3.twinx()
             pos1 = ax.get_position() # get the original position
-            pos2 = [pos1.x0 , pos1.y0,  pos1.width, pos1.height *2/3.]
+            pos2 = [pos1.x0 , pos1.y0,  pos1.width, pos1.height *1/3.]
             ax.set_position(pos2) # set a new position
+
             markers = {'MVS':'o','Mfd':'^'}
+            colors = {'MVS':'r','Mfd':'b'}
+            plotted=list()
+            plottedr=list()
+            plottedl=list()
+            plottedrl=list()
+            plottedm=list()
             for cm in e.magnitudes:
                 for co in e.origins:
                     if str(cm.origin_id) == str(co.resource_id):
@@ -1004,28 +1044,60 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None):
                         
 
                         if (cm.magnitude_type in ['MVS', 'Mfd'] and
-                            cm.creation_info.agency_id in ['Pb'] and
+                            cm.creation_info.agency_id in agencies and
                             OK_pipeline) :
                             
+                            
                             ct = max([cm.creation_info.creation_time, co.creation_info.creation_time ])
-                            print(ct)
+                            ax.axvline(ct - o.time, linewidth=.1, linestyle=':', color=colors[cm.magnitude_type])
+                            
                             tmp=st.slice(starttime=o.time, endtime= ct )
+                            R = [tr.stats.distance/1000                  for tr in tmp if tr.stats.distance/1000/6<ct - o.time]
+                            PGV = numpy.asarray([numpy.max(abs(tr.data)) for tr in tmp if tr.stats.distance/1000/6<ct - o.time ])
+                            PGVm = cuaheaton2007(magnitudes=[cm.mag], R = R)
+                            PGVerror = (PGV - PGVm)
                             
-                            PGV = numpy.asarray([numpy.max(abs(tr.data)) for tr in tmp])
-                            
-                            ax.axvline(cm.creation_info.creation_time - o.time, linewidth=.1, linestyle=':', color='k')
-                            
-                            PGVerror = PGV - cuaheaton2007(magnitudes=[cm.mag], R = [tr.stats.distance/1000  for tr in tmp ])
-                            
+                            LOCerror = haversine(o.longitude, o.latitude, co.longitude, co.latitude)/1000
+                            try:
+                                LOCerror = numpy.sqrt(LOCerror**2 + ((o.depth-co.depth)/1000)**2)
+                            except:
+                                print('no depth error in ')
+                                print(co)
                             ax2.plot(numpy.tile(ct - o.time, PGV.shape),
                                      PGVerror,
-                                     markers[cm.magnitude_type], alpha=.1)#, color='k')
+                                     markers[cm.magnitude_type],
+                                     alpha=.1,
+                                     color=colors[cm.magnitude_type])
+
+                            obl,=ax3.plot(ct - o.time,
+                                         LOCerror,
+                                         markers[cm.magnitude_type],
+                                         color=colors[cm.magnitude_type])
+                            obm,=ax3r.plot(ct - o.time,
+                                           pm.mag - cm.mag,
+                                           markers[cm.magnitude_type],
+                                           markeredgecolor=colors[cm.magnitude_type],
+                                           color='None')
+                                
+                            if (cm.magnitude_type not in plottedm ):
+                                plottedm.append(cm.magnitude_type)
+                                plotted.append(obl)
+                                plottedr.append(obm)
+                                plottedl.append(r'Loc$_{'+cm.magnitude_type[1:]+'}$')
+                                plottedrl.append(r'Mag$_{'+cm.magnitude_type[1:]+'}$')
 
 
 
-                
             ax2.xaxis.set_ticks_position('top')
             ax2.xaxis.set_label_position('top')
+            ax3.xaxis.set_ticks_position('top')
+            ax3.xaxis.set_label_position('top')
+            minorLocator = matplotlib.ticker.MultipleLocator(1)
+            majorLocator = matplotlib.ticker.MultipleLocator(5)
+            ax3.xaxis.set_minor_locator(minorLocator)
+            ax2.xaxis.set_minor_locator(minorLocator)
+            ax3.xaxis.set_major_locator(majorLocator)
+            ax2.xaxis.set_major_locator(majorLocator)
             ax2.set_xlim([0,30])
             l = ax.get_legend()
             la = [ text.get_text() for text in l.get_texts()]
@@ -1037,7 +1109,20 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None):
             ax.set_xlabel('Time after origin [s]')
             ax2.set_xlabel('Time after origin [s]')
             ax2.set_ylabel(r'PGV error [$m.s^{-1}$] ')
+            ax3.set_ylabel(r'Location error [km]')
+            ax3r.set_ylabel(r'Magnitude error')
+            ax2.set_ylim([-.021,-.008])
+            ax3.set_yscale('log')
+            ax3.set_ylim([1,100])
+            ax3.set_xlim([0,30])
+            ax3r.set_ylim([-1.1,1.1])
+
+            ax3.legend(plotted, plottedl, loc=2)
+            ax3r.legend(plottedr, plottedrl, loc=1)
+
             ax2.yaxis.grid(True,linestyle='--')
+            ax3.yaxis.grid(True,linestyle='--')
+            ax3.axes.xaxis.set_ticklabels([])
             ax.xaxis.grid(False)
     
 
@@ -1048,7 +1133,7 @@ def cuaheaton2007(R=[100],
                   magnitudes=[5.],
                   types=['rock'],
                   outputs=['velocity'],
-                  phases=['S-wave'],
+                  phases=['P-wave'],
                   components=['Vertical amplitudes'],
                   corrections=[0]):
     """
