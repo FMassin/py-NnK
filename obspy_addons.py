@@ -129,7 +129,7 @@ class Solutions():
     
         for e in catalog.events:
             Mtypes=list()
-            #print(e)
+            
             for m in e.magnitudes:
                 if m.resource_id == e.preferred_magnitude_id:
                     preferred_magnitude_mag = m.mag
@@ -206,7 +206,7 @@ class Solutions():
                             dt>.01 and
                             dt<1000 and
                             OK_Maren == 1):
-
+                            
                             if m.magnitude_type is None :
                                 m.station_count = o.quality.used_station_count
                             if m.mag is not None :
@@ -365,8 +365,6 @@ def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'])
         lg.get_frame().set_alpha(0.1)
         lg.get_frame().set_color('k')
         matplotlib.pyplot.axis('equal')
-        print('set set_xlim([2,5.5]')
-        ax.set_ylim([-1.1,1.1])
 
     return f
 
@@ -653,46 +651,46 @@ def evfind(self=obspy.core.event.catalog.Catalog(),
                 tofind = client.get_events( **eq_specs )
             
             for candidate in tofind.filter( *filter ).events:
-
-                i = candidate.resource_id
                 candidateo = candidate.preferred_origin() or candidate.origins[-1]
-                dt = abs(o.time-candidateo.time)
-                dl = numpy.sqrt((o.latitude-candidateo.latitude)**2+(o.longitude-candidateo.longitude)**2)
+                if candidateo.time not in listfound:
                 
-                if (dt < 5 and dl <=.1 and
-                    (dl<memdl or dt<memdt)):
+                    dt = abs(o.time-candidateo.time)
+                    dl = numpy.sqrt((o.latitude-candidateo.latitude)**2+(o.longitude-candidateo.longitude)**2)
+                
+                    if (dt < 3 and dl <=.1 and
+                        (dl<memdl or dt<memdt)):
                     
-                    found = True
-                    memi = i
-                    memdl = dl
-                    memdt = dt
-                    meme = candidate
-                    break
+                        found = True
+                        memi = str(candidateo.time)
+                        memdl = dl
+                        memdt = dt
+                        meme = candidate
                     
-                    if v:
-                        print('fits nicely input catalog ',tofind.description,':\n  ', ref.short_str())
+                        if v:
+                            print('fits nicely input catalog ',tofind.description,':\n  ', candidate.short_str())
+                        break
             
-                elif (dt < 60 and dl <=.5 and
-                      (dl<memdl or dt<memdt)):
+                    elif (dt < 8 and dl <=.4 and
+                          (dl<memdl or dt<memdt)):
                     
-                    found = True
-                    memi = i
-                    memdl = dl
-                    memdt = dt
-                    meme = candidate
-                    if v:
-                        print('fits input catalog ',tofind.description,':\n  ', ref.short_str())
+                        found = True
+                        memi = str(candidateo.time)
+                        memdl = dl
+                        memdt = dt
+                        meme = candidate
+                        if v:
+                            print('fits input catalog ',tofind.description,':\n  ', candidate.short_str())
 
-                elif (dt < 60 and dl <1 and
-                      (dl<memdl or dt<memdt)):
+                    elif (dt < 15 and dl <.8 and
+                          (dl<memdl or dt<memdt)):
                     
-                    found = True
-                    memi = i
-                    memdl = dl
-                    memdt = dt
-                    meme = candidate
-                    if v:
-                        print('poorly fits input catalog ',tofind.description,':\n  ', ref.short_str())
+                        found = True
+                        memi = str(candidateo.time)
+                        memdl = dl
+                        memdt = dt
+                        meme = candidate
+                        if v:
+                            print('poorly fits input catalog ',tofind.description,':\n  ', candidate.short_str())
                 
 
         if not found:
@@ -701,6 +699,8 @@ def evfind(self=obspy.core.event.catalog.Catalog(),
             missed.events.append(e)
 
         elif found:
+            if v:
+                print('merged with ', meme.short_str())
             #matchs.events.append(e)
             matchs.events.append(meme)
             listfound.append(memi)
@@ -717,7 +717,7 @@ def evfind(self=obspy.core.event.catalog.Catalog(),
                 if hasattr(e, listatt):
                     matchs.events[-1][listatt].extend( e[listatt] )
 
-            tofind.events.remove(meme)
+            #tofind.events.remove(meme)
             
                 
             
