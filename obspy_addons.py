@@ -99,7 +99,8 @@ class Solutions():
                  arrivals=0,
                  agency_id=['*'],
                  magnitude_type=['MVS','Mfd'],
-                 nan=False):
+                 nan=False,
+                 minlikelyhood=0.99):
 
         self.mags=list()
         self.depths=list()
@@ -109,6 +110,9 @@ class Solutions():
         self.mags_types=list()
         self.mags_creation_times=list()
         self.mags_delays=list()
+        self.mags_orig_errors=list()
+        self.mags_lat=list()
+        self.mags_lon=list()
         
         self.origins_times=dict()
         self.origins_creation_times=dict()
@@ -181,17 +185,31 @@ class Solutions():
                                     preferred_origin_latitude,
                                     o.longitude,
                                     o.latitude)/1000
-                        OK_Maren=1
+                        OK_MarenJohn=1
                         if m.magnitude_type in ['Mfd']:
                             if ('forel' in m.creation_info.author or
                                 'alp' in m.creation_info.author):
-                                OK_Maren=0
+                                OK_MarenJohn=0
                                 if ((0.39 * o.longitude + 44) < o.latitude and
                                     'forel' in m.creation_info.author):
-                                    OK_Maren=1
+                                    OK_MarenJohn=1
                                 elif ((0.39 * o.longitude + 44) >= o.latitude and
                                       'alp' in m.creation_info.author):
-                                    OK_Maren=1
+                                    OK_MarenJohn=1
+                        elif m.magnitude_type in ['MVS']:
+                            OK_MarenJohn=0
+                            try :
+                                likelyhood = float(m.comments[-1].text)
+                            except:
+                                likelyhood=0.
+                            if minlikelyhood:
+                                if o.creation_info.author:
+                                    if (likelyhood >= minlikelyhood and
+                                        ('NLoT_auloc' in o.creation_info.author or
+                                         'autoloc' in o.creation_info.author)):
+                                        OK_MarenJohn=1
+                            else:
+                                OK_MarenJohn=1
                     
                         try:
                             d = numpy.sqrt( d**2 + ((preferred_origin_depth-o.depth)/1000)**2)
@@ -205,7 +223,7 @@ class Solutions():
                             d>.001 and
                             dt>.01 and
                             dt<1000 and
-                            OK_Maren == 1):
+                            OK_MarenJohn == 1):
                             
                             if m.magnitude_type is None :
                                 m.station_count = o.quality.used_station_count
@@ -244,9 +262,12 @@ class Solutions():
                                 
                                 merror = m.mag-preferred_magnitude_mag
                                 
+                                self.mags_orig_errors.append(d)
                                 self.mags_errors.append(merror)
                                 self.mags_types.append(m.magnitude_type)
                                 self.mags_creation_times.append(m.creation_info.creation_time)
+                                self.mags_lat.append(o.latitude)
+                                self.mags_lon.append(o.longitude)
                                 
                                 if m.creation_info.creation_time<o.creation_info.creation_time :
                                     self.mags_delays.append(o.creation_info.creation_time-preferred_origin_time)
@@ -300,11 +321,13 @@ class Solutions():
             if not found and nan:
                 self.mags_delays.append(numpy.nan)
                 self.mags.append(numpy.nan)
+                self.mags_lat.append(numpy.nan)
+                self.mags_lon.append(numpy.nan)
 
 
-def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*']):
+def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'],minlikelyhood=0.99):
     
-    solutions = Solutions(catalog=self,last=last, agency_id=agency_id)
+    solutions = Solutions(catalog=self,last=last, agency_id=agency_id, minlikelyhood = minlikelyhood)
     mags = solutions.mags
     profs = solutions.depths
     mags_stations = solutions.mags_station_counts
@@ -348,18 +371,18 @@ def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'])
                 ax.scatter([mags[j] for j in matches] ,
                             [m1_errors[j] for j in matches] ,
                             nsta2msize([mags_stations[j] for j in matches],[0,32]),#mags_stations),
-                            [profs[j] for j in matches],
+                           [solutions.mags_orig_errors[j] for j in matches], #[profs[j] for j in matches],
                             m,
                             facecolor='w',alpha=1.,zorder=100,edgecolors='k')
                 sc = ax.scatter([mags[j] for j in matches] ,
                                 [m1_errors[j] for j in matches] ,
                                 nsta2msize([mags_stations[j] for j in matches],[0,32]),#mags_stations),
-                                [profs[j] for j in matches],
+                                [solutions.mags_orig_errors[j] for j in matches],
                                 m,
-                                norm=depth_norm([0,50]),#profs),
+                                norm=depth_norm([0,100]),#profs),
                                 label=types[i],alpha=.8,zorder=150,edgecolors='None')
         cb=matplotlib.pyplot.colorbar(sc)
-        cb.set_label('Reference depth (km)')
+        cb.set_label('Location error (km)')
         lg = matplotlib.pyplot.legend(loc=1, numpoints=1, scatterpoints=1, fancybox=True)
         lg.set_title('Marker & Sizes')
         lg.get_frame().set_alpha(0.1)
@@ -383,12 +406,15 @@ def sticker(t,a,x=0,y=0):
         
     return o
 
-def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',**kwargs):
+def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',minlikelyhood=.99,**kwargs):
 
     catalogcopy = self.copy()
-    solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=a, magnitude_type=[t], nan=True)
-
+    solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=a, magnitude_type=[t], nan=True, minlikelyhood=minlikelyhood)
+    
+    meme=catalogcopy.events[-1].copy()
     for i,e in enumerate(catalogcopy.events):
+        if solutions.mags_delays[i] is not numpy.nan:
+            meme=e.copy()
         if solutions.mags_delays[i]>30:
             solutions.mags_delays[i]=30
         e.depth = solutions.mags_delays[i]
@@ -399,27 +425,34 @@ def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',**kwargs):
 
     catalogcopy.events = [catalogcopy.events[i] for i in reversed(indexes)]
 
-    catalogcopy.events.insert(0,e.copy())
+    catalogcopy.events.insert(0,meme)
     catalogcopy.events[0].depth = 0.001
     for o in catalogcopy.events[0].origins:
         o.depth = 0.001
-    catalogcopy.events.insert(0,e.copy())
-    catalogcopy.events[0].depth = 30*1000
+    catalogcopy.events.insert(0,meme)
+    catalogcopy.events[0].depth = 30000
     for o in catalogcopy.events[0].origins:
-        o.depth = 30*1000
+        o.depth = 30000
         
     f = catalogcopy.plot(**kwargs)
     f.texts[0].set_text(f.texts[0].get_text().replace('depth', t+' delay'))
     f.texts[0].set_text(f.texts[0].get_text().replace(' - ', '\n'))
     #s.set_clim([0,30])
 
+    for i,e in enumerate(self.events):
+        for o in e.origins:
+            if (o.resource_id == e.preferred_origin_id and
+                solutions.mags_lon[i] is not numpy.nan):
+                x, y = f.bmap([solutions.mags_lon[i],o.longitude],[solutions.mags_lat[i],o.latitude])
+                f.bmap.plot(x,y,'r-',zorder=99)
+
     return f
 
 
-def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log=None):
+def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log=None,minlikelyhood=.99):
 
-    solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=agency_id)
-    solutions_last = Solutions(catalog=self,last=1, arrivals=0, agency_id=agency_id)
+    solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
+    solutions_last = Solutions(catalog=self,last=1, arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
     
     f, ax = matplotlib.pyplot.subplots(2, 1, sharey=True)
     ax[0].xaxis.set_ticks_position('top')
@@ -499,10 +532,10 @@ def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log
     print('set set_xlim([1,100]) and [-1.1,1.1]')
     return f
 
-def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=None):
+def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=None,minlikelyhood=.99):
     
-    solutions_first = Solutions(catalog=self,last=0, arrivals=0, agency_id=agency_id)
-    solutions_all = Solutions(catalog=self,last='*', arrivals=0, agency_id=agency_id)
+    solutions_first = Solutions(catalog=self,last=0, arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
+    solutions_all = Solutions(catalog=self,last='*', arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
     
     f, (ax1,ax2) = matplotlib.pyplot.subplots(2, 1, sharex=True)
     ax1.set_ylabel('Error in location (km)')
