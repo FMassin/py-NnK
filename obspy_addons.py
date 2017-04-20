@@ -160,8 +160,7 @@ class Solutions():
                         continue
                 if (
                     (m.creation_info.agency_id in agency_id or '*' in agency_id) and
-                    (m.magnitude_type in magnitude_type or '*' in magnitude_type) and
-                    m.resource_id != e.preferred_magnitude_id and
+                    (m.magnitude_type in magnitude_type or '*' in magnitude_type) and # m.resource_id != e.preferred_magnitude_id and
                     e.preferred_magnitude_id is not None and
                     e.preferred_origin_id is not None
                     ) :
@@ -216,13 +215,9 @@ class Solutions():
                         except:
                             pass
                         
-                        if (m.origin_id == o.resource_id and
-                            o.resource_id != e.preferred_origin_id and
+                        if (m.origin_id == o.resource_id and # o.resource_id != e.preferred_origin_id and
                             m.magnitude_type+m.creation_info.author+o.creation_info.author not in Mtypes  and
-                            (m.magnitude_type not in ['MVS'] or ('NLoT_auloc' in o.creation_info.author or 'autoloc' in o.creation_info.author)) and
-                            d>.001 and
-                            dt>.01 and
-                            dt<1000 and
+                            (m.magnitude_type not in ['MVS'] or ('NLoT_auloc' in o.creation_info.author or 'autoloc' in o.creation_info.author)) and # d>.001 and dt>.01 and dt<1000 and
                             OK_MarenJohn == 1):
                             
                             if m.magnitude_type is None :
@@ -325,7 +320,7 @@ class Solutions():
                 self.mags_lon.append(numpy.nan)
 
 
-def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'],minlikelyhood=0.99):
+def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'],minlikelyhood=None):
     
     solutions = Solutions(catalog=self,last=last, agency_id=agency_id, minlikelyhood = minlikelyhood)
     mags = solutions.mags
@@ -406,18 +401,18 @@ def sticker(t,a,x=0,y=0):
         
     return o
 
-def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',minlikelyhood=.99,**kwargs):
+def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',minlikelyhood=None,**kwargs):
 
     catalogcopy = self.copy()
     solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=a, magnitude_type=[t], nan=True, minlikelyhood=minlikelyhood)
     
     meme=catalogcopy.events[-1].copy()
     for i,e in enumerate(catalogcopy.events):
-        if solutions.mags_delays[i] is not numpy.nan:
-            meme=e.copy()
+        if solutions.mags_delays[i] > 0 and solutions.mags_delays[i] <30 :
+            meme=e
         if solutions.mags_delays[i]>30:
             solutions.mags_delays[i]=30
-        e.depth = solutions.mags_delays[i]
+        e.depth = solutions.mags_delays[i]*1000
         for o in e.origins:
             o.depth = solutions.mags_delays[i]*1000
 
@@ -425,15 +420,15 @@ def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',minlikelyhoo
 
     catalogcopy.events = [catalogcopy.events[i] for i in reversed(indexes)]
 
-    catalogcopy.events.insert(0,meme)
-    catalogcopy.events[0].depth = 0.001
+    catalogcopy.events.insert(0,meme.copy())
+    catalogcopy.events.insert(0,meme.copy())
+    catalogcopy.events[0].depth = 1.
     for o in catalogcopy.events[0].origins:
-        o.depth = 0.001
-    catalogcopy.events.insert(0,meme)
-    catalogcopy.events[0].depth = 30000
-    for o in catalogcopy.events[0].origins:
-        o.depth = 30000
-        
+        o.depth = 1.
+    catalogcopy.events[1].depth = 30000.
+    for o in catalogcopy.events[1].origins:
+        o.depth = 30000.
+    
     f = catalogcopy.plot(**kwargs)
     f.texts[0].set_text(f.texts[0].get_text().replace('depth', t+' delay'))
     f.texts[0].set_text(f.texts[0].get_text().replace(' - ', '\n'))
@@ -449,7 +444,7 @@ def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',minlikelyhoo
     return f
 
 
-def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log=None,minlikelyhood=.99):
+def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log=None,minlikelyhood=None):
 
     solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
     solutions_last = Solutions(catalog=self,last=1, arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
@@ -500,8 +495,10 @@ def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log
                        linestyle='--',
                        color=m)
         
-            first=solutions.origins_errors[types[i]]
-            last=solutions_last.origins_errors[types[i]]
+            #first=solutions.origins_errors[types[i]]
+            #last=solutions_last.origins_errors[types[i]] # THIS IS NOT GIVING  SAME PLOT WHY ????
+            first=[solutions.mags_orig_errors[j] for j in matches]
+            last=[solutions_last.mags_orig_errors[j] for j in matches]
             
             #ax[0].plot([numpy.median(first),numpy.median(first)], [0,50], color=m)
             #ax[0].plot([numpy.median(last),numpy.median(last)], [0,50],linestyle=':', color=m)
@@ -532,7 +529,7 @@ def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log
     print('set set_xlim([1,100]) and [-1.1,1.1]')
     return f
 
-def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=None,minlikelyhood=.99):
+def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=None,minlikelyhood=None):
     
     solutions_first = Solutions(catalog=self,last=0, arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
     solutions_all = Solutions(catalog=self,last='*', arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
