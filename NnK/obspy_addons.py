@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-source - Module for seismic sources modeling.
+source - Addon module for obspy catalog.
 
-This module provides class hierarchy for earthquake modeling and
- representation.
+This module provides additionnal functionnalities for event catalogs.
 ______________________________________________________________________
 
 .. note::
@@ -15,12 +14,13 @@ import obspy
 from obspy import read
 import matplotlib
 import matplotlib.patheffects
+from mpl_toolkits.basemap import Basemap
 import numpy
 from math import radians, cos, sin, asin, sqrt
 import os
 import glob
-
-
+#import datetime
+from obspy import UTCDateTime
 
 
 def get(self, lst, att=None, types=[] , full=False, pref=False, last=False, first=False, nan=True):
@@ -41,7 +41,6 @@ def get(self, lst, att=None, types=[] , full=False, pref=False, last=False, firs
     out = list()
     
     for e in self.events:
-        
         patt = None
         if hasattr(e,'preferred_'+lst[:-1]):
             try :
@@ -67,23 +66,28 @@ def get(self, lst, att=None, types=[] , full=False, pref=False, last=False, firs
             out.append(e[patt][att])
 
         elif hasattr(e,lst) and len(e[lst]) and ((set(['f','first']) & set(types)) or (first and not pref)):
-            val = e[lst][0]
+            val = e[lst][0][att]
             mem=9999999999999999999999999999
             for elt in e[lst]:
                 if hasattr(elt,att) and hasattr(elt,'creation_info'):
-                    if elt.creation_info.creation_time < mem:
-                        mem = elt.creation_info.creation_time
-                        val = elt[att]
+                    if hasattr(elt.creation_info,'creation_time'):
+                        if elt.creation_info.creation_time:
+                            if elt.creation_info.creation_time < mem:
+                                mem = elt.creation_info.creation_time
+                                val = elt[att]
+
             out.append(val)
                 
         elif hasattr(e,lst) and len(e[lst]) and ((set(['l','last']) & set(types)) or (last or not pref)):
-            val = e[lst][-1]
+            val = e[lst][-1][att]
             mem=0
             for elt in e[lst]:
                 if hasattr(elt,att) and hasattr(elt,'creation_info'):
-                    if elt.creation_info.creation_time > mem:
-                        mem = elt.creation_info.creation_time
-                        val = elt[att]
+                    if hasattr(elt.creation_info,'creation_time'):
+                        if elt.creation_info.creation_time :
+                            if elt.creation_info.creation_time > mem:
+                                mem = elt.creation_info.creation_time
+                                val = elt[att]
             out.append(val)
         else:
             if nan or set(['n','nan']) & set(types) : #:
@@ -102,6 +106,9 @@ class Solutions():
                  nan=False,
                  minlikelyhood=0.99):
 
+        if last is not '*':
+            last = 1-last
+        
         self.mags=list()
         self.depths=list()
         
@@ -113,6 +120,7 @@ class Solutions():
         self.mags_orig_errors=list()
         self.mags_lat=list()
         self.mags_lon=list()
+        self.mags_orig_station_counts=list()
         
         self.origins_times=dict()
         self.origins_creation_times=dict()
@@ -144,10 +152,10 @@ class Solutions():
                     preferred_origin_latitude = o.latitude
                     preferred_origin_longitude = o.longitude
                     preferred_origin_time = o.time
-            fn=list
+        
+            fn=reversed
             if last:
-                fn=reversed
-            
+                fn=list
             found = 0
             sortedmarg = numpy.argsort([m.creation_info.creation_time for m in e.magnitudes])
             for mi in fn(sortedmarg) :# list(enumerate(e.magnitudes))):
@@ -224,6 +232,17 @@ class Solutions():
                                 m.station_count = o.quality.used_station_count
                             if m.mag is not None :
                                 found = 1
+                                
+                                
+                                # should I always use this approach ????
+                                timestamp= str(m.resource_id).split('.')[-3][-14:]+'.'+str(m.resource_id).split('.')[-2]
+                                timestamp = timestamp[:4]+'-'+timestamp[4:6]+'-'+timestamp[6:8]+'T'+timestamp[8:10]+':'+timestamp[10:12]+':'+timestamp[12:]
+                                m.creation_info.creation_time =  UTCDateTime(timestamp)
+                                
+                                timestamp= str(o.resource_id).split('.')[-3][-14:]+'.'+str(o.resource_id).split('.')[-2]
+                                timestamp = timestamp[:4]+'-'+timestamp[4:6]+'-'+timestamp[6:8]+'T'+timestamp[8:10]+':'+timestamp[10:12]+':'+timestamp[12:]
+                                o.creation_info.creation_time =  UTCDateTime(timestamp)
+                                
                                 if '*' is not last  :
                                     Mtypes.append(m.magnitude_type+m.creation_info.author+o.creation_info.author)
                                 
@@ -255,6 +274,8 @@ class Solutions():
                                 else:
                                     self.mags_station_counts.append(m.station_count)
                                 
+                                self.mags_orig_station_counts.append(o.quality.used_station_count)
+                                
                                 merror = m.mag-preferred_magnitude_mag
                                 
                                 self.mags_orig_errors.append(d)
@@ -276,12 +297,21 @@ class Solutions():
                                 self.origins_delays[m.magnitude_type].append(o.creation_info.creation_time-preferred_origin_time)
                                 self.origins_errors[m.magnitude_type].append(d)
                                 self.origins_mag_errors[m.magnitude_type].append(m.mag-preferred_magnitude_mag)
-                                
+
+
                                 if m.creation_info.creation_time<o.creation_info.creation_time :
                                     self.origins_mag_delays[m.magnitude_type].append(o.creation_info.creation_time-preferred_origin_time)
+                                    if len(self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author])>0:
+                                        self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author][-1][1]])
                                     self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, merror])
+                                    
+                                        
                                 else:
                                     self.origins_mag_delays[m.magnitude_type].append(m.creation_info.creation_time-preferred_origin_time)
+                                    
+                                    if len(self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author])>0:
+                                        self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author].append([m.creation_info.creation_time-preferred_origin_time, self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author][-1][1]])
+                                    
                                     self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author].append([m.creation_info.creation_time-preferred_origin_time, merror])
                                 
                                 if m.magnitude_type in ['Mfd'] :
@@ -289,6 +319,9 @@ class Solutions():
                                 else:
                                     self.origins_mag_station_counts[m.magnitude_type].append(m.station_count)
 
+
+                                if len(self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author])>0:
+                                    self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author][-1][1]])
                                 self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, d])
                                 
 
@@ -318,7 +351,224 @@ class Solutions():
                 self.mags.append(numpy.nan)
                 self.mags_lat.append(numpy.nan)
                 self.mags_lon.append(numpy.nan)
+                self.mags_orig_errors.append(numpy.nan)
 
+def adjust_spines(ax, spines):
+    for loc, spine in ax.spines.items():
+        if loc in spines:
+            spine.set_position(('outward', 5))  # outward by 10 points
+            spine.set_smart_bounds(True)
+        else:
+            spine.set_color('none')  # don't draw spine
+    # turn off ticks where there is no spine
+    if 'left' in spines:
+        ax.yaxis.set_ticks_position('left')
+        ax.yaxis.set_label_position('left')
+    elif 'right' in spines:
+        ax.yaxis.set_ticks_position('right')
+        ax.yaxis.set_label_position('right')
+    else:
+        # no yaxis ticks
+        ax.yaxis.set_ticks([])
+
+    if 'bottom' in spines:
+        ax.xaxis.set_ticks_position('bottom')
+        ax.xaxis.set_label_position('bottom')
+    elif 'top' in spines:
+        ax.xaxis.set_ticks_position('top')
+        ax.xaxis.set_label_position('top')
+    else:
+        # no xaxis ticks
+        ax.xaxis.set_ticks([])
+
+def plot_traveltime(self=obspy.core.event.catalog.Catalog(),
+                    NumbersofP=[6,4],
+                    NumbersofS=[1],
+                    ax=None,
+                    plots=True,
+                    style='versus',
+                    iplot=None):
+
+    if isinstance(self, list):
+        b=0
+        for i,c in enumerate(self):
+            b = numpy.nanmax([b,plot_traveltime(c,NumbersofP,NumbersofS,1,plots=False)[1]])
+    
+        if style in ['cum','c','cumulate']:
+            kw={'xlim':[0,b*1.1]}
+            x=len(self)
+            y=1
+        else:
+            y=len(self)
+            x=1
+            kw={'xlim':[0,b*1.1],'ylim':[0,b*1.1]}
+
+        f, (ax) = matplotlib.pyplot.subplots(x,y,subplot_kw=kw)
+        
+        for i,c in enumerate(self):
+            
+            
+            plot_traveltime(c,NumbersofP,NumbersofS,ax[i],iplot=len(self)-i-1,style=style)
+            #ax[i].grid()
+            if i==0:
+                if style in ['cum','c','cumulate']:
+                    ax[i].set_ylabel('Number of phases')
+                    ax[i].set_xlabel('Observed travel Time')
+                    adjust_spines(ax[i], ['left', 'top'])
+                else:
+                    ax[i].set_title('Observed travel times')
+                    ax[i].set_xlabel('Observed P travel time')
+                    ax[i].set_ylabel('Observed S travel time')
+                    adjust_spines(ax[i], ['left', 'bottom'])
+                
+            elif i==len(self)-1:
+                if style in ['cum','c','cumulate']:
+                    adjust_spines(ax[i], ['left', 'bottom'])
+                else:
+                    adjust_spines(ax[i], ['right', 'bottom'])
+            else:
+                if style in ['cum','c','cumulate']:
+                    adjust_spines(ax[i], ['left'])
+                else:
+                    adjust_spines(ax[i], ['bottom'])
+            
+
+        return ax
+    maxarr=0
+    for ie,e in enumerate(self.events):
+        maxarr=max([maxarr, len(e.picks)])
+    
+    N=numpy.zeros((maxarr,len(self.events)))*numpy.nan
+    n=numpy.zeros((maxarr,len(self.events)))*numpy.nan
+    mags=numpy.zeros((maxarr,len(self.events)))*numpy.nan
+    
+    
+
+    for ie,e in enumerate(self.events):
+        ns=0
+        np=0
+        VpVsRatio = 5./3.
+        mag=e.magnitudes[0].mag
+        for m in e.magnitudes:
+            if str(e.preferred_magnitude_id) == str(m.resource_id):
+                mag=m.mag
+        for o in e.origins:
+            if str(e.preferred_origin_id) == str(o.resource_id):
+                t=list()
+                for a in o.arrivals:
+                    for p in e.picks:
+                        if str(a.pick_id) == str(p.resource_id) :
+                            t.append(p.time)
+                
+                for ia in numpy.argsort(t):
+                    a=o.arrivals[ia]
+                    for p in e.picks:
+                        if str(a.pick_id) == str(p.resource_id) and p.time-o.time<30 and p.time-o.time>0:
+                            if a.phase[0] == 'S':
+                                ns+=1
+                                n[ns][ie] = p.time-o.time
+                                mags[np][ie] = mag
+                            elif a.phase[0] == 'P':
+                                np+=1
+                                N[np][ie] = p.time-o.time
+                                mags[np][ie] = mag
+                AvVsVpRatio=0.
+                AvN=0
+                for p in range(np):
+                    if n[p][ie] is not numpy.nan:
+                        AvVsVpRatio += n[p][ie]/N[p][ie]
+                        AvN+=1
+                        VpVsRatio = AvVsVpRatio/AvN
+                for p in range(np):
+                    if n[p][ie] is numpy.nan:
+                        n[p][ie] = N[p][ie]*VpVsRatio
+                        
+                break
+    
+    if not ax:
+        f, (ax) = matplotlib.pyplot.subplots(1, 1)
+        adjust_spines(ax, ['left', 'bottom'])
+        if style in ['vs','v','versus']:
+            ax.set_ylabel('Observed S travel time')
+            ax.set_xlabel('Observed P travel time')
+            ax.set_title('Observed travel times')
+            ax.grid()
+            ax.set_aspect('equal')
+        elif style in  ['cum','c','cumulate']:
+            ax.set_ylabel('Number of phases')
+            ax.set_xlabel('Observed travel Time')
+            x.set_title('Observed travel times')
+            ax.grid()
+
+    b=0
+    if style in ['vs','v','versus']:
+        for p in NumbersofP:
+            for s in NumbersofS:
+                b = max([b,numpy.nanmax(N[p]),numpy.nanmax(n[s])])
+                if plots:
+                    ax.scatter(N[p],
+                               n[s],#                           s=nsta2msize(mags[s],[0,7]),norm=mag_norm([0,7])
+                               marker='.',
+                               alpha=0.25,
+                               label=str(p)+'P || '+str(s)+'S')
+    elif style in ['cum','c','cumulate']:
+        l=['P','S']
+        p=max(NumbersofP)+2
+        b = max([b,numpy.nanmax(n[p])])
+        b = max([b,numpy.nanmax(N[p])])
+        if plots:
+            for e in range(len(n[p])):
+                #n[0,e]=0
+                ax.errorbar(n[:p,e],
+                            numpy.arange(p)-.5,
+                            yerr=.5,
+                            color='g',
+                            alpha=len(n[p])*0.02/500,
+                            linewidth=0,
+                            elinewidth=1)
+            for e in range(len(N[p])):
+                #N[0,e]=0
+                ax.errorbar(N[:p,e],
+                            numpy.arange(p)-.5,
+                            yerr=.5,
+                            color='b',
+                            alpha=len(n[p])*0.02/500,
+                            linewidth=0,
+                            elinewidth=1)
+            ax.errorbar(numpy.nanmedian(n[:p,:],1),
+                        numpy.arange(p)-0.5,
+                        yerr=.5,
+                        color='g',
+                        linewidth=0,
+                        elinewidth=2,
+                        label='S')
+            ax.errorbar(numpy.nanmedian(N[:p,:],1),
+                        numpy.arange(p)-0.5,
+                        yerr=.5,
+                        color='b',
+                        linewidth=0,
+                        elinewidth=2,
+                        label='P')
+            ax.errorbar(numpy.nanmedian(n[:p,:],1),
+                        numpy.arange(p),
+                        yerr=0,
+                        xerr=numpy.nanstd(n[:p,:],1),
+                        color='g',
+                        linewidth=0,
+                        elinewidth=2,capsize=4)
+            ax.errorbar(numpy.nanmedian(N[:p,:],1),
+                        numpy.arange(p),
+                        yerr=0,
+                        xerr=numpy.nanstd(N[:p,:],1),
+                        color='b',
+                        linewidth=0,
+                        elinewidth=2,capsize=4)
+    if plots:
+        if not iplot:
+            ax.legend(ncol=2)
+        if style in ['vs','v','versus']:
+            ax.plot([0,b],[0,b],color='grey')
+    return ax, b
 
 def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'],minlikelyhood=None):
     
@@ -365,13 +615,13 @@ def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'],
             if matches:
                 ax.scatter([mags[j] for j in matches] ,
                             [m1_errors[j] for j in matches] ,
-                            nsta2msize([mags_stations[j] for j in matches],[0,32]),#mags_stations),
+                            nsta2msize([solutions.mags_orig_station_counts[j] for j in matches],[0,32]),# mags_stations)
                            [solutions.mags_orig_errors[j] for j in matches], #[profs[j] for j in matches],
                             m,
                             facecolor='w',alpha=1.,zorder=100,edgecolors='k')
                 sc = ax.scatter([mags[j] for j in matches] ,
                                 [m1_errors[j] for j in matches] ,
-                                nsta2msize([mags_stations[j] for j in matches],[0,32]),#mags_stations),
+                                nsta2msize([solutions.mags_orig_station_counts[j] for j in matches],[0,32]),# mags_stations),
                                 [solutions.mags_orig_errors[j] for j in matches],
                                 m,
                                 norm=depth_norm([0,100]),#profs),
@@ -386,7 +636,7 @@ def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'],
 
     return f
 
-def sticker(t,a,x=0,y=0):
+def sticker(t,a,x=0,y=0,ha='left',va='bottom'):
     
     o = list()
     colorin=['None','None']
@@ -395,54 +645,238 @@ def sticker(t,a,x=0,y=0):
             fontweight='bold',
             zorder=999,#            alpha=0.4,
             color=colorin[i],
+            ha=ha,va=va,
             fontsize='large',
             transform=a.transAxes,
             path_effects=[matplotlib.patheffects.withStroke(linewidth=1.5-i, foreground=c)]))
         
     return o
 
-def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',minlikelyhood=None,**kwargs):
+def nicemap(self=obspy.core.event.catalog.Catalog(),aspectratio=2):
+    
+    
+    
+    f=matplotlib.pyplot.figure()
+
+    lats = get(self, 'origins','latitude', types=['p'])
+    lons = get(self, 'origins','longitude', types=['p'])
+    
+    y = lats.copy()
+    x = lons.copy()
+    
+    if max(lons)-min(lons) > aspectratio*(max(lats)-min(lats)):
+        # Too large
+        m = sum(y)/len(y)
+        d = max(x)-min(x)
+        lats.append(m + d/(2*aspectratio) )
+        lats.append(m - d/(2*aspectratio) )
+    else:
+        # Too high
+        m = sum(x)/len(x)
+        d = max(y)-min(y)
+        lons.append(m + d*aspectratio/2 )
+        lons.append(m - d*aspectratio/2 )
+
+    f.bmap = Basemap(llcrnrlon=min(lons)-(max(lons)-min(lons))*.1,
+                 llcrnrlat=min(lats)-(max(lats)-min(lats))*.1,
+                 urcrnrlon=max(lons)+(max(lons)-min(lons))*.1,
+                 urcrnrlat=max(lats)+(max(lats)-min(lats))*.1,
+                 epsg=4326,
+                 resolution='h')
+
+    steps=numpy.asarray([ 0.01,0.025,0.05,0.1,0.25,.5,1,2.5,5,10,25,50,100])
+    step = steps[numpy.argmin(abs((max(lons)-min(lons))/5 - steps))]
+    
+    im1 = f.bmap.arcgisimage(service='World_Physical_Map',xpixels=900)
+    im2 = f.bmap.arcgisimage(service='ESRI_Imagery_World_2D',xpixels=900)
+    im2.set_alpha(0.5)
+
+    steps=numpy.asarray([ 0.01,0.025,0.05,0.1,0.25,.5,1,2.5,5,10,25,50,100])
+    step = steps[numpy.argmin(abs((max(lons)-min(lons))/5 - steps))]
+
+    f.bmap.resolution='h'
+    f.bmap.drawmeridians(meridians=numpy.arange(int(min(lons))-1,int(max(lons))+1,step),labels=[0,0,0,1],linewidth=.5, color = 'w')
+    f.bmap.drawparallels(circles=numpy.arange(int(min(lats))-1,int(max(lats))+1,step),labels=[1,0,0,0],linewidth=.5, color = 'w')
+    f.bmap.drawcoastlines(linewidth=.5, color = 'w')
+    f.bmap.drawstates(linewidth=1.,color = 'w')
+    f.bmap.drawcountries(linewidth=2,color='w')
+    f.bmap.drawstates(linewidth=.5)
+    f.bmap.drawcountries(linewidth=1)
+    f.bmap.readshapefile('/Users/fmassin/Documents/Data/misc/tectonicplates/PB2002_plates', name='PB2002_plates', drawbounds=True, color='r')
+    
+    return f
+
+def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',color='delay',minlikelyhood=None,**kwargs):
 
     catalogcopy = self.copy()
-    solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=a, magnitude_type=[t], nan=True, minlikelyhood=minlikelyhood)
-    
-    meme=catalogcopy.events[-1].copy()
-    for i,e in enumerate(catalogcopy.events):
-        if solutions.mags_delays[i] > 0 and solutions.mags_delays[i] <30 :
-            meme=e
-        if solutions.mags_delays[i]>30:
-            solutions.mags_delays[i]=30
-        e.depth = solutions.mags_delays[i]*1000
-        for o in e.origins:
-            o.depth = solutions.mags_delays[i]*1000
+    if color == 'delay':
+        solutions = Solutions(catalog=self,last=0, arrivals=0, agency_id=a, magnitude_type=[t], nan=True, minlikelyhood=minlikelyhood)
+        
+        meme=None
+        nane=None
+        for i,e in enumerate(catalogcopy.events):
+            if not meme:
+                if solutions.mags_delays[i] > 0 and solutions.mags_delays[i] <30 :
+                    meme=e
+        
+            if solutions.mags_delays[i]>30:
+                solutions.mags_delays[i]=30.
+            if solutions.mags_delays[i]<=1:
+                solutions.mags_delays[i]=numpy.nan
+            if solutions.mags_orig_errors[i] <= 0.001 or solutions.mags_orig_errors[i] is numpy.nan:
+                solutions.mags_delays[i]=numpy.nan
+            
+            
+            e.depth = solutions.mags_delays[i]*1000
+            for o in e.origins:
+                o.depth = solutions.mags_delays[i]*1000
+            if solutions.mags_delays[i] is numpy.nan:
+                if not nane:
+                    nane = e
 
-    indexes = numpy.argsort(solutions.mags)
+        indexes = numpy.argsort(solutions.mags)
 
-    catalogcopy.events = [catalogcopy.events[i] for i in reversed(indexes)]
+        catalogcopy.events = [catalogcopy.events[i] for i in reversed(indexes)]
 
-    catalogcopy.events.insert(0,meme.copy())
-    catalogcopy.events.insert(0,meme.copy())
-    catalogcopy.events[0].depth = 1.
-    for o in catalogcopy.events[0].origins:
-        o.depth = 1.
-    catalogcopy.events[1].depth = 30000.
-    for o in catalogcopy.events[1].origins:
-        o.depth = 30000.
-    
-    f = catalogcopy.plot(**kwargs)
-    f.texts[0].set_text(f.texts[0].get_text().replace('depth', t+' delay'))
+        if True:
+            catalogcopy.events.insert(0,meme.copy())
+            catalogcopy.events.insert(0,meme.copy()) #append(meme.copy())#
+            catalogcopy.events[0].depth = 1.
+            catalogcopy.events[0].latitude = 0.
+            catalogcopy.events[0].longitude = 0.
+            for o in catalogcopy.events[0].origins:
+                o.depth = 1.
+                o.latitude = 0.
+                o.longitude = 0.
+            catalogcopy.events[1].depth = 30000.
+            catalogcopy.events[1].latitude = 0.
+            catalogcopy.events[1].longitude = 0.
+            for o in catalogcopy.events[1].origins:
+                o.depth = 30000.
+                o.latitude = 0.
+                o.longitude = 0.
+            for i in range(10):
+                catalogcopy.events.insert(0,nane.copy())
+
+    f = nicemap(self)
+    f = catalogcopy.plot(fig=f, color=color, **kwargs)
+
     f.texts[0].set_text(f.texts[0].get_text().replace(' - ', '\n'))
-    #s.set_clim([0,30])
+    if color in [ 'delay']:
+        f.texts[0].set_text(f.texts[0].get_text().replace(str(len(catalogcopy.events))+' ', str(len(catalogcopy.events)-12)+' '))
+        f.texts[0].set_text(f.texts[0].get_text().replace('depth', t+' '+color))
+    
+        for i,e in enumerate(self.events):
+            for o in e.origins:
+                if (o.resource_id == e.preferred_origin_id and
+                    solutions.mags_lon[i] is not numpy.nan):
+                    x, y = f.bmap([solutions.mags_lon[i],o.longitude],[solutions.mags_lat[i],o.latitude])
+                    f.bmap.plot(x,y,'r-',zorder=99)
 
-    for i,e in enumerate(self.events):
-        for o in e.origins:
-            if (o.resource_id == e.preferred_origin_id and
-                solutions.mags_lon[i] is not numpy.nan):
-                x, y = f.bmap([solutions.mags_lon[i],o.longitude],[solutions.mags_lat[i],o.latitude])
-                f.bmap.plot(x,y,'r-',zorder=99)
+    tl=f.axes[1].get_xticklabels()
+    [tl[i].set_text(l.get_text()+'km') for i,l in enumerate(tl)]
+    f.axes[1].set_xticklabels(tl)
+    min_size = 2
+    max_size = 30
+    mags=get(catalogcopy,'magnitudes','mag','b')
+    steps=numpy.asarray([0.01,0.02,0.05,0.1,0.2,.5,1.,2.,5.])
+    s = steps[numpy.argmin(abs((max(mags)-min(mags))/5-steps))+1]
+    min_size_ = min(mags) - 1
+    max_size_ = max(mags) + 1
+    magsscale=[_i for _i in numpy.arange(-2,10,s) if _i>=min_size_ and _i<=max_size_]
+    frac = [(0.2 + (_i - min_size_)) / (max_size_ - min_size_) for _i in magsscale] #mags]
+    size_plot = [(_i * (max_size - min_size)) ** 2 for _i in frac]
+    x = (numpy.asarray(magsscale)-min(magsscale))/(max(magsscale)-min(magsscale))*.6+.2
+    f.axes[1].scatter(x,numpy.repeat(.9,len(magsscale)),s=size_plot, facecolor='None', linewidth=3, edgecolor='w')
+    f.axes[1].scatter(x,numpy.repeat(.9,len(magsscale)),s=size_plot, facecolor='None', edgecolor='k')
+    for i,v in enumerate(magsscale):
+        f.axes[1].text(x[i],1.2,'M'+str(v), ha='center')
+
 
     return f
 
+
+def lineMagnitude(x1, y1, x2, y2):
+    lineMagnitude = numpy.sqrt(numpy.power((x2 - x1), 2)+ numpy.power((y2 - y1), 2))
+    return lineMagnitude
+
+#Calc minimum distance from a point and a line segment (i.e. consecutive vertices in a polyline).
+def DistancePointLine(px, py, x1, y1, x2, y2):
+    #http://local.wasp.uwa.edu.au/~pbourke/geometry/pointline/source.vba
+    LineMag = lineMagnitude(x1, y1, x2, y2)
+    
+    if LineMag < 0.00000001:
+        DistancePointLine = numpy.sqrt(numpy.power((px - x1), 2)+ numpy.power((py - y1), 2)) # 9999
+        return DistancePointLine
+    
+    u1 = (((px - x1) * (x2 - x1)) + ((py - y1) * (y2 - y1)))
+    u = u1 / (LineMag * LineMag)
+
+    if (u < 0.00001) or (u > 1):
+        #// closest point does not fall within the line segment, take the shorter distance
+        #// to an endpoint
+        ix = lineMagnitude(px, py, x1, y1)
+        iy = lineMagnitude(px, py, x2, y2)
+        if ix > iy:
+            DistancePointLine = iy
+        else:
+            DistancePointLine = ix
+    else:
+        # Intersecting point is on the line, use the formula
+        ix = x1 + u * (x2 - x1)
+        iy = y1 + u * (y2 - y1)
+        DistancePointLine = lineMagnitude(px, py, ix, iy)
+    
+    return DistancePointLine
+
+
+def distfilter(self=obspy.core.event.catalog.Catalog(),
+               dmax=None,
+               dmin=0.,
+               x1=None,
+               y1=None,
+               x2=None,
+               y2=None,
+               z1=None,
+               save=True,
+               out=False):
+    
+    distances=list()
+    bad=list()
+    good=list()
+    for e in self.events:
+        d=numpy.nan
+        for o in e.origins: # IS THIS ALWAY THE RIGHT ORDER ? SHOULD IT BE SORTED BY CREATION TIME?
+            if str(e.preferred_origin_id) == str(o.resource_id):
+                break
+        if (x1 and y1) or (x2 and y2):
+            d = 110.*DistancePointLine(o.longitude, o.latitude, x1, y1, x2, y2)
+        else:
+            d = o.quality.minimum_distance*110.
+        if z1 is not None:
+            d = numpy.sqrt(d**2. + (o.depth/1000-z1)**2)
+        distances.append(d)
+
+    for i,d in enumerate(distances):
+        for o in self.events[i].origins: # IS THIS ALWAY THE RIGHT ORDER ? SHOULD IT BE SORTED BY CREATION TIME?
+            if str(self.events[i].preferred_origin_id) == str(o.resource_id):
+                break
+        if str(self.events[i].event_type) == 'not existing' or str(o.evaluation_mode)=='automatic':
+            pass
+        else:
+            if d<dmin or d>dmax:
+                bad.append(self.events[i])
+            else :
+                good.append(self.events[i])
+
+
+    if out in ['d','dist','distance']:
+        return distances
+    else:
+        if out:
+            return obspy.core.event.catalog.Catalog(events=good), obspy.core.event.catalog.Catalog(events=bad) #inside, outside
+        else:
+            return obspy.core.event.catalog.Catalog(events=good)
 
 def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log=None,minlikelyhood=None):
 
@@ -529,7 +963,7 @@ def plot_Mfirst_hist(self=obspy.core.event.catalog.Catalog(),agency_id=['*'],log
     print('set set_xlim([1,100]) and [-1.1,1.1]')
     return f
 
-def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=None,minlikelyhood=None):
+def eewtlines(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=None,minlikelyhood=None):
     
     solutions_first = Solutions(catalog=self,last=0, arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
     solutions_all = Solutions(catalog=self,last='*', arrivals=0, agency_id=agency_id,minlikelyhood=minlikelyhood)
@@ -568,8 +1002,9 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
         line_segments2.set_array(numpy.asarray([solutions_all.origins_errorsdelays_mags[l] for l in solutions_all.origins_errorsdelays]))
         
         
-        ax1.add_collection(line_segments1)
-        ax2.add_collection(line_segments2)
+        
+        
+        
         markers = {'MVS':'o','Mfd':'^'}
         for k in solutions_first.origins_delays:
             
@@ -581,7 +1016,11 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
             ax1.scatter([solutions_first.origins_delays[k][i] for i in i_first],
                         [solutions_first.origins_errors[k][i] for i in i_first],
                         sizes,
-                        marker=markers[k],edgecolors='k')
+                        marker=markers[k],edgecolors='k',facecolor='None')
+            ax1.scatter([solutions_first.origins_delays[k][i] for i in i_first],
+                        [solutions_first.origins_errors[k][i] for i in i_first],
+                        sizes,
+                        marker=markers[k],edgecolors='None',facecolor='w')
             sc1 = ax1.scatter([solutions_first.origins_delays[k][i] for i in i_first],
                               [solutions_first.origins_errors[k][i] for i in i_first],
                               sizes,
@@ -589,7 +1028,7 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
                               marker=markers[k],
                               norm=mag_norm([2,5]),#solutions_all.mags),#label=e.short_str(),
                               linewidths=0,zorder=2,
-                              alpha=.9,edgecolors='None')
+                              alpha=.8,edgecolors='None')
 
 
             sizes = nsta2msize([solutions_first.origins_mag_station_counts[k][i] for i in i_first],
@@ -598,7 +1037,11 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
             ax2.scatter([solutions_first.origins_mag_delays[k][i] for i in i_first],
                         [solutions_first.origins_mag_errors[k][i] for i in i_first],
                         sizes,
-                        marker=markers[k],edgecolors='k')
+                        marker=markers[k],edgecolors='k',facecolor='None')
+            ax2.scatter([solutions_first.origins_mag_delays[k][i] for i in i_first],
+                        [solutions_first.origins_mag_errors[k][i] for i in i_first],
+                        sizes,
+                        marker=markers[k],edgecolors='None',facecolor='w')
             sc2 = ax2.scatter([solutions_first.origins_mag_delays[k][i] for i in i_first],
                               [solutions_first.origins_mag_errors[k][i] for i in i_first],
                               sizes,
@@ -606,10 +1049,11 @@ def plot_eew(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log=
                               marker=markers[k],
                               norm=mag_norm([2,5]),#solutions_all.mags),
                               linewidths=0,zorder=2,
-                              alpha=.9,edgecolors='None')
+                              alpha=.8,edgecolors='None')
+    
+        ax1.add_collection(line_segments1)
+        ax2.add_collection(line_segments2)
         
-        
-                    
         cb=matplotlib.pyplot.colorbar(line_segments1, ax=[ax1,ax2])#ax1, ax=[ax1,ax2])
         cb.set_label('Reference magnitude')
         ob2 = ax2.scatter(20,0,10,marker='o',alpha=0.1,color='b', edgecolors='none',zorder=-999)
@@ -1141,7 +1585,7 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['P
             ax2.set_ylabel(r'PGV error [$m.s^{-1}$] ')
             ax3.set_ylabel(r'Location error [km]')
             ax3r.set_ylabel(r'Magnitude error')
-            ax2.set_ylim([-.021,-.008])
+            #ax2.set_ylim([-.021,-.008])
             ax3.set_yscale('log')
             ax3.set_ylim([1,100])
             ax3.set_xlim([0,30])
@@ -1163,7 +1607,7 @@ def cuaheaton2007(R=[100],
                   magnitudes=[5.],
                   types=['rock'],
                   outputs=['velocity'],
-                  phases=['P-wave'],
+                  phases=['S-wave'],
                   components=['Vertical amplitudes'],
                   corrections=[0]):
     """
@@ -1306,5 +1750,11 @@ def depth_norm(depths):
     return n
 
 
-
+obspy.core.event.catalog.Catalog.plot_eventsections = plot_eventsections
+obspy.core.inventory.Inventory.hasdata = hasdata
+obspy.core.event.catalog.Catalog.evfind = evfind
+obspy.core.event.catalog.Catalog.plot_Mfirst = plot_Mfirst
+obspy.core.event.catalog.Catalog.eewtlines = eewtlines
+obspy.core.event.catalog.Catalog.get = get
+obspy.core.event.catalog.Catalog.plot_map = plot_map
 
