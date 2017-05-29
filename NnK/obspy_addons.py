@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-source - Addon module for obspy catalog.
+source - Addon module for obspy.
 
-This module provides additionnal functionnalities for event catalogs.
+This module provides additionnal functionnalities for obspy.
 ______________________________________________________________________
 
 .. note::
@@ -21,6 +21,82 @@ import os
 import glob
 #import datetime
 from obspy import UTCDateTime
+
+
+def rolling(a, window):
+    a = numpy.asarray(a)
+    shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
+    strides = a.strides + (a.strides[-1],)
+    return numpy.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
+
+def search(self,
+           fields=['longitude','latitude','elevation'],
+           levels=['networks','stations']):
+    
+    out = list()
+    for i in fields:
+        out.append(list())
+    
+    if not levels:
+        for i,a in enumerate(fields):
+            if hasattr(self,a):
+                out[i].append(getattr(self,a))
+    else:
+        for level0 in getattr(self,levels[0]) :
+            if len(levels)>1 and hasattr(level0,levels[1]):
+                
+                for level1 in getattr(level0,levels[1]):
+                    if len(levels)>2 and hasattr(level1,levels[2]):
+                        
+                        for level2 in getattr(level1,levels[2]):
+                            if len(levels)>3 and hasattr(level2,levels[3]):
+                            
+                                for level3 in getattr(level2,levels[3]):
+                                    if len(levels)>4 and hasattr(level3,levels[4]):
+                                        print('Cannot go further than level 4')
+                            
+                                    elif len(levels)>4 and not hasattr(level3,levels[4]):
+                                        for i,a in enumerate(fields):
+                                            out[i].append(numpy.nan)
+                                    else:
+                                        for i,a in enumerate(fields):
+                                            if hasattr(level3,a):
+                                                out[i].append(getattr(level3,a))
+                                            else:
+                                                out[i].append(numpy.nan)
+                        
+                            elif len(levels)>3 and not hasattr(level2,levels[3]):
+                                for i,a in enumerate(fields):
+                                    out[i].append(numpy.nan)
+                            else:
+                                for i,a in enumerate(fields):
+                                    if hasattr(level2,a):
+                                        out[i].append(getattr(level2,a))
+                                    else:
+                                        out[i].append(numpy.nan)
+                    
+                    elif len(levels)>2 and not hasattr(level1,levels[2]):
+                        for i,a in enumerate(fields):
+                            out[i].append(numpy.nan)
+                    else:
+                        for i,a in enumerate(fields):
+                            if hasattr(level1,a):
+                                out[i].append(getattr(level1,a))
+                            else:
+                                out[i].append(numpy.nan)
+        
+            elif len(levels)>1 and not hasattr(level0,levels[1]):
+                for i,a in enumerate(fields):
+                    out[i].append(numpy.nan)
+            else:
+                for i,a in enumerate(fields):
+                    if hasattr(level0,a):
+                        out[i].append(getattr(level0,a))
+                    else:
+                        out[i].append(numpy.nan)
+
+    return out
+
 
 
 def get(self, lst, att=None, types=[] , full=False, pref=False, last=False, first=False, nan=True):
@@ -652,11 +728,11 @@ def sticker(t,a,x=0,y=0,ha='left',va='bottom'):
         
     return o
 
-def nicemap(self=obspy.core.event.catalog.Catalog(),aspectratio=2):
+def nicemap(self=obspy.core.event.catalog.Catalog(),aspectratio=2,f=None):
     
     
-    
-    f=matplotlib.pyplot.figure()
+    if not f:
+        f=matplotlib.pyplot.figure()
 
     lats = get(self, 'origins','latitude', types=['p'])
     lons = get(self, 'origins','longitude', types=['p'])
