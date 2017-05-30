@@ -9,10 +9,10 @@ _________
 
 	Functions and classes are ordered from general to specific.
 
-	For more details on the work related to this module see 
-	Massin & Malcolm, 2016: A better automatic body-wave picker with 
+	For more details on the work related to this module see
+	Massin & Malcolm, 2016: A better automatic body-wave picker with
 	broad applicability. SEG Technical Program.
-    
+
 """
 
 
@@ -31,7 +31,7 @@ from source import spherical_to_cartesian
 
 def streamdatadim(a):
 	"""
-	Given a stream (obspy.core.stream) calculate the minimum  
+	Given a stream (obspy.core.stream) calculate the minimum
 	dimensions of the array that contents all data from all traces.
 	______
 	:type: ObsPy :class:`~obspy.core.stream`
@@ -50,14 +50,14 @@ def streamdatadim(a):
 
 def trace2stream(trace_or_stream_or_nparray):
 	"""
-	Given a stream (obspy.core.stream) calculate the minimum  
+	Given a stream (obspy.core.stream) calculate the minimum
 	dimensions of the array that contents all data from all traces.
 	______
 	:type: ObsPy :class:`~obspy.core.stream` or
 		`~obspy.core.trace` or NumPy :class:`~numpy.ndarray`.
 	:param: input data .
 	_______
-	:rtype: 
+	:rtype:
 		- ObsPy :class:`~obspy.core.stream`.
 		- same as input
 	:return:
@@ -76,45 +76,45 @@ def trace2stream(trace_or_stream_or_nparray):
 			if len(dims) == 3:
 				newstream = trace_or_stream_or_nparray
 			elif len(dims) == 2  :
-				newstream = np.zeros(( 1, dims[0], dims[1] )) 
+				newstream = np.zeros(( 1, dims[0], dims[1] ))
 				newstream[0] = trace_or_stream_or_nparray
 		except:
 			raise Exception('I/O dimensions: only obspy.Stream or obspy.Trace input supported.')
 
-	return newstream, trace_or_stream_or_nparray 
+	return newstream, trace_or_stream_or_nparray
 
 
 def stream_indexes(data, delta=None, id=None, network=None, station=None, location=None, channel=None, starttime=None, endtime=None, npts=None, maxendtime=None, minstarttime=None, reftime=None):
 	"""
-	Return the indexes of Stream object with these traces that match the 
-	given stats criteria (e.g. all traces with ``channel="EHZ"``) as well 
+	Return the indexes of Stream object with these traces that match the
+	given stats criteria (e.g. all traces with ``channel="EHZ"``) as well
 	as the corresponding indexes of data attributes if requested.
 	______
-	:type: 
-		- identical to the attributes of 
+	:type:
+		- identical to the attributes of
 			ObsPy:class:`~obspy.core.trace.Stats`.
-		- maxendtime, minstarttime, reftime: 
-			ObsPy:class:`~obspy.core.utcdatetime.UTCDateTime` 
+		- maxendtime, minstarttime, reftime:
+			ObsPy:class:`~obspy.core.utcdatetime.UTCDateTime`
 			(optional).
-	:param: 
-		- identical to the attributes of 
+	:param:
+		- identical to the attributes of
 			ObsPy:class:`~obspy.core.trace.Stats`
-		- maxendtime: optional, latest date and time of the first 
+		- maxendtime: optional, latest date and time of the first
 			sample NumPy:ndarray:`~obspy.core.trace.data` given in UTC.
-		- minstarttime: optional, earliest date and time of the first 
+		- minstarttime: optional, earliest date and time of the first
 			sample in trace.data given in UTC.
-		- reftime: optional, reference date and time to compare to the 
+		- reftime: optional, reference date and time to compare to the
 			first sample in NumPy:ndarray:`~obspy.core.trace.data`
 			given in UTC.
 	_______
-	:rtype: 
+	:rtype:
 		- NumPy:class:`~numpy.ndarray` type int
 		- NumPy:class:`~numpy.ndarray` type int
-	:return: 
+	:return:
 		- indexes of selected traces in stream
-		- time difference (in samples) of selected 
-			NumPy:ndarray:`~obspy.core.trace.data` in stream: if 
-			return[1][i]>0 selected stream[i].data starts  
+		- time difference (in samples) of selected
+			NumPy:ndarray:`~obspy.core.trace.data` in stream: if
+			return[1][i]>0 selected stream[i].data starts
 			after reftime ; else, before.
 	_________
 	.. note::
@@ -128,9 +128,9 @@ def stream_indexes(data, delta=None, id=None, network=None, station=None, locati
 
 	# Initiates
 	trace_indexes = np.asarray([])
-	data_indexes = np.asarray([]) 
+	data_indexes = np.asarray([])
 
-	# Loops over traces 
+	# Loops over traces
 	for station_j in range(tmax):
 
 		# Testing inputs one by one
@@ -161,7 +161,7 @@ def stream_indexes(data, delta=None, id=None, network=None, station=None, locati
 		if channel is not None:
 			if not fnmatch.fnmatch((data[station_j]).stats.channel, channel) :
 				continue
-		
+
 		# Testing optional inputs
 		if maxendtime is not None:
 			if maxendtime < (data[station_j]).stats.starttime :
@@ -169,7 +169,7 @@ def stream_indexes(data, delta=None, id=None, network=None, station=None, locati
 		if minstarttime is not None:
 			if minstarttime > (data[station_j]).stats.endtime :
 				continue
-		
+
 		# If all tests passed
 		## Selects trace
 		trace_indexes = np.append(trace_indexes, station_j)
@@ -184,17 +184,17 @@ def stream_indexes(data, delta=None, id=None, network=None, station=None, locati
 def recursive(a, scales=None, operation=None, maxscale=None):
 	"""
 	_
-	Performs multi-scale calculation by 
-	creating series of operations of different subsets of 
-	the full data set. This is also called rolling 
+	Performs multi-scale calculation by
+	creating series of operations of different subsets of
+	the full data set. This is also called rolling
 	operation.
 	______
-	:type: 
+	:type:
 		- ObsPy:class:`~obspy.core.stream`
 		- scales: vector (optional).
 		- operation: string (optional).
 		- maxscale: int (optional).
-	:param: 
+	:param:
 		- data-stream of e.g. seismograms.
 		- scales: scale(s) of time-series operation (in samples).
 		- operation: type of operation:
@@ -205,26 +205,26 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 			averageabs: average of absolute values over time scales.
 		- maxscale: maximum allowed scale (in samples).
 	_______
-	:rtype: 
+	:rtype:
 		- NumPy:class:`~numpy.ndarray` (channel, scales, samples).
 		- NumPy:class:`~numpy.ndarray` vector.
-	:return: 
-		- multi-scale array of root mean square time series, 
+	:return:
+		- multi-scale array of root mean square time series,
 		- calculation scales (samples scale unit).
 	_________
 	.. note::
 
-		High-pass filtering over 1/(scale/fs) is performed before 
+		High-pass filtering over 1/(scale/fs) is performed before
 		calculation using ObsPy:class:`~obspy.core.stream.filter`.
 
 	"""
 	# 1) Iterate on channels
 	# 2) Pre calculate the common part of all scales
-	# 3) Iterate on scales 
-	# 4) Perform filter, channel/scale calculation 
+	# 3) Iterate on scales
+	# 4) Perform filter, channel/scale calculation
 
 	a, input_a = trace2stream(a)
-	
+
 	# Initialize multiscale if undefined
 	if operation is None:
 		operation = 'rms'
@@ -235,27 +235,27 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 
 	if scales is None:
 		scales = [2**i for i in range(5,10) if ((2**i <= (maxscale)) and (2**i <= (nmax - 2**i)))]
-		scales = np.require(scales, dtype=np.int) 
+		scales = np.require(scales, dtype=np.int)
 
 	# Initialize results at the minimal size
-	timeseries = np.zeros(( tmax, len(scales), nmax )) 
-	bandpass_timeseries = np.zeros(( tmax, len(scales), nmax )) 
+	timeseries = np.zeros(( tmax, len(scales), nmax ))
+	bandpass_timeseries = np.zeros(( tmax, len(scales), nmax ))
 
 	a.detrend('linear')
-	a.taper(.05, type='triang', max_length=10) 
-	# a.filter("highpass", freq=1.)  
-	# a.taper(.05, type='triang', max_length=10) 
+	a.taper(.05, type='triang', max_length=10)
+	# a.filter("highpass", freq=1.)
+	# a.taper(.05, type='triang', max_length=10)
 	# a.detrend('linear')
-	# a.filter("highpass", freq=1.)  
-	# a.taper(.05, type='triang', max_length=10) 
+	# a.filter("highpass", freq=1.)
+	# a.taper(.05, type='triang', max_length=10)
 
-	for t, tr in enumerate(a) : # the channel-wise calculations      
+	for t, tr in enumerate(a) : # the channel-wise calculations
 
-		# Avoid clock channels 
+		# Avoid clock channels
 		if not tr.stats.channel == 'YH':
 
 			for n, s in reversed(list(enumerate(scales))) : # Avoid scales when too wide for the current channel
-				
+
 				npts = tr.stats.npts
 				dt = np.zeros((tr.data).shape)
 				dt[1:] = np.abs(tr.data[:-1]-tr.data[1:])
@@ -269,29 +269,29 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 				data *= dt < (np.median(dt)+2.*np.std(dt))
 				data = detrend(data)
 
-				if operation[0:1] in ('d-'):  
-					data = np.gradient(data) 
+				if operation[0:1] in ('d-'):
+					data = np.gradient(data)
 
 				data[data==0] = np.nan
-				
-				# The cumulative sum can be exploited to calculate a 
+
+				# The cumulative sum can be exploited to calculate a
 				# moving average (the cumsum function is quite efficient)
-				if operation in ('rms', 'sumsquare', 'd-sumsquare'):                  
+				if operation in ('rms', 'sumsquare', 'd-sumsquare'):
 					csqr = np.nan_to_num(data**2).cumsum() #np.nancumsum( data ** 2 ) #
-				elif operation in ('averageabs', 'sumabs'):  
-					csqr = np.nan_to_num(np.abs(data)).cumsum() # np.nancumsum(np.abs( data )) 
-				elif operation in ('average', 'sum'):  
-					csqr = np.nan_to_num(data).cumsum() #np.nancumsum( data )  
-				
+				elif operation in ('averageabs', 'sumabs'):
+					csqr = np.nan_to_num(np.abs(data)).cumsum() # np.nancumsum(np.abs( data ))
+				elif operation in ('average', 'sum'):
+					csqr = np.nan_to_num(data).cumsum() #np.nancumsum( data )
+
 				# Convert to float
 				csqr = np.require(csqr, dtype=np.float)
 
-				if (s < (npts - s)) :    
+				if (s < (npts - s)) :
 					# Compute the sliding window
 					timeseries[t][n][s:npts] = csqr[s:] - csqr[:npts-s]
-					# for average and rms only 
+					# for average and rms only
 					if operation not in ('sum', 'sumabs', 'sumsquare', 'd-sumsquare'):
-						timeseries[t][n][:] /= s     
+						timeseries[t][n][:] /= s
 					# Pad with modified scale definitions(vectorization ###################################### TODO)
 					timeseries[t][n][1:s] = csqr[1:s] - csqr[0]
 					# for average and rms only
@@ -302,31 +302,31 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 					# filtering
 					f = np.cumsum(timeseries[t][n][:])
 					timeseries[t][n][0:s] = (f[s+1]-f[0:s])/np.asarray(range(s+1,1,-1), dtype=np.float32)
-				
+
 					# Avoid division by zero by setting zero values to tiny float
 					dtiny = np.finfo(0.0).tiny
 					idx = timeseries[t][n] < dtiny
-					timeseries[t][n][idx] = dtiny 
-					timeseries[t][n][12000:] = dtiny 
+					timeseries[t][n][idx] = dtiny
+					timeseries[t][n][12000:] = dtiny
 					# finish rms case
 					if (operation is 'rms') :
 						timeseries[t][n][:npts] = timeseries[t][n][:npts]**.5
-	
-	return timeseries, scales 
+
+	return timeseries, scales
 
 
 def correlationcoef(a, b, scales=None, maxscale=None):
 	"""
-	Calculate moving cross-correlation coefficients by 
-	creating series of operations of different subsets of 
+	Calculate moving cross-correlation coefficients by
+	creating series of operations of different subsets of
 	the full data set.
 	______
-	:type: 
+	:type:
 		- NumPy:class:`~numpy.ndarray` (samples).
 		- NumPy:class:`~numpy.ndarray` (samples).
 		- scales: vector (optional).
 		- maxscale: int (optional).
-	:param: 
+	:param:
 		- data of e.g. seismograms.
 		- data of e.g. seismograms.
 		- scales: scale(s) of cross-correlation (in samples).
@@ -337,7 +337,7 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 	_________
 	.. note::
 
-		The signal windows considered for calculation are truncated 
+		The signal windows considered for calculation are truncated
 		for sample indexes below time scale.
 
 	"""
@@ -348,11 +348,11 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 
 	if scales is None:
 		scales = [2**i for i in range(4,999) if ((2**i <= (maxscale)) and (2**i <= (na - 2**i)))]
-	
-	scales = np.require(scales, dtype=np.int) 
+
+	scales = np.require(scales, dtype=np.int)
 	scales = np.asarray(scales)
 	nscale = len(scales)
-	if nscale == 0 : 
+	if nscale == 0 :
 		scales = [max([4, maxscale/10.])]
 		nscale = 1
 
@@ -385,10 +385,10 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 
 def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, shift = 0, f=None, rescale=None):
 	"""
-	Plots the body-wave characteristic functions resulting of 
+	Plots the body-wave characteristic functions resulting of
 	`~trigger.Ratio.output` and `~trigger.Correlate.output` classes.
 	______
-	:type: 
+	:type:
 		- ObsPy:class:`~obspy.core.stream`.
 		- NumPy:class:`~numpy.ndarray` [channel, samples].
 		- cfcolor: string (optional).
@@ -397,23 +397,23 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 		- shift: int  (optional).
 		- f: int (optional).
 		- rescale: int (optional).
-	:param: 
+	:param:
 		- data of e.g. seismograms.
-		- characteristic functions associated to data, as given by 
+		- characteristic functions associated to data, as given by
 			`~trigger.Ratio.output` and `~trigger.Correlate.output`.
 		- cfcolor: color of the over-layed characteristic functions.
 		- ax: axis to use for the plot.
-		- label: label to use in legend for the characteristic 
+		- label: label to use in legend for the characteristic
 			functions.
 		- shift: Y-value to start the bottom of the plot.
 		- f: flag to deactivate data plotting (any value but None).
-		- rescale: flag to deactivate the normalization of 
+		- rescale: flag to deactivate the normalization of
 			characteristic functions (any value but None).
 	_______
-	:rtype: 
-		- matplotlib:class:`~matplotlib.axes.Axes` 
+	:rtype:
+		- matplotlib:class:`~matplotlib.axes.Axes`
 		- int
-	:return: 
+	:return:
 		- axis to use for the plot.
 		- Y-value of the top of the plot.
 	___________
@@ -426,8 +426,8 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 		>>> ax.legend()
 
 	"""
-	
-	if ax is None : 
+
+	if ax is None :
 		ax = (plt.figure( figsize=(8, 5) )).gca()
 		(ax.get_figure()).tight_layout()
 
@@ -463,15 +463,15 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 		anots[t] =  ' %3.1e' % (np.nanmax(np.abs(cf)) - np.nanmin(np.abs(cf)) )
 		#ax.text(0, t, anots[t] , verticalalignment='bottom', horizontalalignment='left', color='green')
 		cf[t][:200]=0.0
-		cf[t][-200:]=0.0 
-		if f is None : 
+		cf[t][-200:]=0.0
+		if f is None :
 			d = -1*abs(trace.data.copy())
 			ax.plot(time, shift+t-0.25+trace.data/(2.*np.max(np.abs(trace.data))), color, zorder=1)
 		if rescale is None :
-			ax.plot(time, shift+t+0.+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(2.*(np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])))))**1., cfcolor, label=label, zorder=2)         
-		else : 
-			ax.plot(time, shift+t+0.+cf[t][:npts], cfcolor, label=label, zorder=2)         
-		
+			ax.plot(time, shift+t+0.+ ((cf[t][:npts] - np.nanmin(np.abs(cf[t][:npts])) )/(2.*(np.nanmax(np.abs(cf[t][:npts])) - np.nanmin(np.abs(cf[t][:npts])))))**1., cfcolor, label=label, zorder=2)
+		else :
+			ax.plot(time, shift+t+0.+cf[t][:npts], cfcolor, label=label, zorder=2)
+
 		if not label is None :
 			ax.legend()
 
@@ -483,9 +483,9 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 	ax.set_xlabel('Time (s)')
 	ax.set_ylabel('Channel')
 	ax.axis('tight')
-	# plt.ylim( 10.5, 13.5) 
+	# plt.ylim( 10.5, 13.5)
 	plt.tight_layout()
-	ax.set_xlim( 0, min([120, max(time)])) 
+	ax.set_xlim( 0, min([120, max(time)]))
 
 	return ax, shift+t+1
 
@@ -493,23 +493,23 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 def stream_multiplexor_plot(stream,cf):
 	"""
 	Plots the multi-scale time-series resulting from the multiplexors
-	used in `~trigger` for characteristic function calculation 
-	(from `~trigger.ShortLongTerms` or `~trigger.leftRightTerms` or 
+	used in `~trigger` for characteristic function calculation
+	(from `~trigger.ShortLongTerms` or `~trigger.leftRightTerms` or
 	`~trigger.Component` classes).
 	______
-	:type: 
+	:type:
 		- ObsPy:class:`~obspy.core.stream`.
 		- NumPy:class:`~numpy.ndarray` [data-stream, channel, sample].
-	:param: 
+	:param:
 		- data of e.g. seismograms.
-		- multi-scale time-series associated to data, as given by 
-			`~trigger.ShortLongTerms.output` or 
-			`~trigger.leftRightTerms.output` or 
+		- multi-scale time-series associated to data, as given by
+			`~trigger.ShortLongTerms.output` or
+			`~trigger.leftRightTerms.output` or
 			`~trigger.Component.output`.
 	_______
-	:rtype: 
-		- matplotlib:class:`~matplotlib.axes.Axes` 
-	:return: 
+	:rtype:
+		- matplotlib:class:`~matplotlib.axes.Axes`
+	:return:
 		- axis to use for the plot.
 	___________
 	.. rubric:: Example
@@ -520,7 +520,7 @@ def stream_multiplexor_plot(stream,cf):
 
 	"""
 	fig = plt.figure()#figsize=plt.figaspect(1.2))
-	ax = fig.gca() 
+	ax = fig.gca()
 	(tmax,nmax) = streamdatadim(stream)
 	labels = ["" for x in range(tmax)]
 	for t, trace in enumerate(stream):
@@ -533,11 +533,11 @@ def stream_multiplexor_plot(stream,cf):
 		for c, channel in enumerate(cf[0][t]):
 			if np.sum(cf[1][t][c][0:npts]) != 0 :
 				if len(cf) > 0 :
-					ax.plot(time, t-.5+cf[0][t][c][0:npts]/(np.nanmax(np.abs(cf[0][t][c][0:npts]))), 'r')        
+					ax.plot(time, t-.5+cf[0][t][c][0:npts]/(np.nanmax(np.abs(cf[0][t][c][0:npts]))), 'r')
 				if len(cf) > 1 :
-					ax.plot(time, t-.5+cf[1][t][c][0:npts]/(np.nanmax(np.abs(cf[1][t][c][0:npts]))), 'b')        
+					ax.plot(time, t-.5+cf[1][t][c][0:npts]/(np.nanmax(np.abs(cf[1][t][c][0:npts]))), 'b')
 				if len(cf) > 2 :
-					ax.plot(time, t-.5+cf[2][t][c][0:npts]/(np.nanmax(np.abs(cf[1][t][c][0:npts]))), 'g')        
+					ax.plot(time, t-.5+cf[2][t][c][0:npts]/(np.nanmax(np.abs(cf[1][t][c][0:npts]))), 'g')
 
 	plt.yticks(np.arange(0, tmax, 1.0))
 	ax.set_yticklabels(labels)
@@ -549,28 +549,28 @@ def stream_multiplexor_plot(stream,cf):
 	return ax
 
 
-def artificial_stream(npts=1000., noise=1., P=[10., 15., 3.**.5], S=[17., 15., 3.**.5]) : 
+def artificial_stream(npts=1000., noise=1., P=[10., 15., 3.**.5], S=[17., 15., 3.**.5]) :
 	"""
 	Generate artificial data for testing purposes.
 	______
-	:type: 
+	:type:
 		- npts: int (optional).
 		- noise: float (optional).
 		- P: list (1x3 type float [optional]).
 		- S: list (1x3 type float [optional]).
-	:param: 
+	:param:
 		- npts: data length in samples.
 		- noise: amplitude of noise.
 		- P: P-wave properties [amplitude, frequency, H/Z ratio]
-		- S: S-wave properties [amplitude, frequency, Z/H ratio]	
+		- S: S-wave properties [amplitude, frequency, Z/H ratio]
 	_______
 	:rtype: ObsPy :class:`~obspy.core.stream`
-	:return: artificial noisy data with [noise only, frequency change, 
+	:return: artificial noisy data with [noise only, frequency change,
 		amplitude change, polarization change].
 	_________
 	.. note::
 
-		The noise is a random 3d motion projection on 3 cartesian 
+		The noise is a random 3d motion projection on 3 cartesian
 		components.
 
 		The amplitude decays are linear and the body-wave span a third
@@ -616,8 +616,8 @@ def artificial_stream(npts=1000., noise=1., P=[10., 15., 3.**.5], S=[17., 15., 3
 	stats0_e = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
 	stats0_n = Stats({'network':"Test", 'station':"Ns", 'location':"", 'channel':"N", 'npts':npts, 'delta':1/Fs})
 
-	noise_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
-		np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. , 
+	noise_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. ,
+		np.random.random_integers(-np.pi*1000, np.pi*1000, npts)/1000. ,
 		np.random.random_integers(-noise*500, noise*500, npts)/1000. ] )
 
 	noise_signal = np.asarray(spherical_to_cartesian(noise_signal))
@@ -627,18 +627,18 @@ def artificial_stream(npts=1000., noise=1., P=[10., 15., 3.**.5], S=[17., 15., 3
 	## onde P
 	common = np.random.random_integers(-50., 50., len(Pspot)+2)/100.
 
-	p_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Pspot))/1000. , 
-		np.random.random_integers(np.pi*1000/1.3, np.pi*1000/0.7, len(Pspot))/1000. , 
-		np.random.random_integers(-noise*500, noise*500, len(Pspot))/1000. ] ) 
+	p_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Pspot))/1000. ,
+		np.random.random_integers(np.pi*1000/1.3, np.pi*1000/0.7, len(Pspot))/1000. ,
+		np.random.random_integers(-noise*500, noise*500, len(Pspot))/1000. ] )
 	p_signal = np.asarray(spherical_to_cartesian(p_signal))
-	s_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Sspot))/1000. , 
-		np.random.random_integers(np.pi*1000/2.3, np.pi*1000/1.7, len(Sspot))/1000. , 
+	s_signal = np.asarray([ np.random.random_integers(-np.pi*1000, np.pi*1000, len(Sspot))/1000. ,
+		np.random.random_integers(np.pi*1000/2.3, np.pi*1000/1.7, len(Sspot))/1000. ,
 		np.random.random_integers(-noise*500, noise*500, len(Sspot))/1000. ] )
 	s_signal = np.asarray(spherical_to_cartesian(s_signal))
 
-	pola[0][Pspot] += p_signal[2]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	pola[1][Pspot] += p_signal[1]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	pola[2][Pspot] += p_signal[0]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
+	pola[0][Pspot] += p_signal[2]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.)
+	pola[1][Pspot] += p_signal[1]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.)
+	pola[2][Pspot] += p_signal[0]* P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.)
 	## onde S
 	pola[0][Sspot] += s_signal[2]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
 	pola[1][Sspot] += s_signal[1]* S[0] * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
@@ -647,47 +647,47 @@ def artificial_stream(npts=1000., noise=1., P=[10., 15., 3.**.5], S=[17., 15., 3
 	# roughly change amplitudes at P and S wave amplitudes
 	ampl = np.copy(noise_signal)
 
-	ampl[0][Pspot] += ampl[0][Pspot] * P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	ampl[0][Pspot] /= np.max(np.abs( ampl[0][Pspot] )) 
+	ampl[0][Pspot] += ampl[0][Pspot] * P[0] * (npts/6 - np.arange(len(Pspot)))/(npts/6.)
+	ampl[0][Pspot] /= np.max(np.abs( ampl[0][Pspot] ))
 	ampl[0][Pspot] *= P[0]/2.
-	ampl[1][Pspot] += ampl[1][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	ampl[1][Pspot] /= np.max(np.abs( ampl[1][Pspot] )) 
+	ampl[1][Pspot] += ampl[1][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.)
+	ampl[1][Pspot] /= np.max(np.abs( ampl[1][Pspot] ))
 	ampl[1][Pspot] *= P[0]*1/P[2]/2.
-	ampl[2][Pspot] += ampl[2][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.) 
-	ampl[2][Pspot] /= np.max(np.abs( ampl[2][Pspot] )) 
+	ampl[2][Pspot] += ampl[2][Pspot] * P[0]*1./P[2] * (npts/6 - np.arange(len(Pspot)))/(npts/6.)
+	ampl[2][Pspot] /= np.max(np.abs( ampl[2][Pspot] ))
 	ampl[2][Pspot] *= P[0]*1/P[2]/2.
 
 	ampl[0][Sspot] += ampl[0][Sspot] * S[0]*1./S[2]  * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	ampl[0][Sspot] /= np.max(np.abs( ampl[0][Sspot]  )) 
+	ampl[0][Sspot] /= np.max(np.abs( ampl[0][Sspot]  ))
 	ampl[0][Sspot] *= S[0]*1/S[2]/2.
 	ampl[1][Sspot] += ampl[1][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	ampl[1][Sspot] /= np.max(np.abs( ampl[1][Sspot]  )) 
+	ampl[1][Sspot] /= np.max(np.abs( ampl[1][Sspot]  ))
 	ampl[1][Sspot] *= S[0]/2.
 	ampl[2][Sspot] += ampl[2][Sspot] * S[0]   * (npts/6 - np.arange(len(Sspot)))/(npts/6.)
-	ampl[2][Sspot] /= np.max(np.abs( ampl[2][Sspot]  )) 
+	ampl[2][Sspot] /= np.max(np.abs( ampl[2][Sspot]  ))
 	ampl[2][Sspot] *= S[0]/2.
 
 
 	# roughly remap frequencies at P and S wave frequencies
 	freq = np.copy(noise_signal)
 	freq[0][Pspot] += P[0] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
-	freq[0][Pspot] /= np.max(np.abs( freq[0][Pspot] )) 
+	freq[0][Pspot] /= np.max(np.abs( freq[0][Pspot] ))
 	freq[0][Pspot] *= noise/2.
 	freq[1][Pspot] += P[0]*1./P[2] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
-	freq[1][Pspot] /= np.max(np.abs( freq[1][Pspot] )) 
+	freq[1][Pspot] /= np.max(np.abs( freq[1][Pspot] ))
 	freq[1][Pspot] *= noise/2.
 	freq[2][Pspot] += P[0]*1/P[2] * np.sin(2 * np.pi * P[1] * np.arange(len(Pspot)) / Fs)
-	freq[2][Pspot] /= np.max(np.abs( freq[2][Pspot] )) 
+	freq[2][Pspot] /= np.max(np.abs( freq[2][Pspot] ))
 	freq[2][Pspot] *= noise/2.
 
 	freq[0][Sspot] += S[0]*1./S[2] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
-	freq[0][Sspot] /= np.max(np.abs( freq[0][Sspot] )) 
+	freq[0][Sspot] /= np.max(np.abs( freq[0][Sspot] ))
 	freq[0][Sspot] *= noise/2.
 	freq[1][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
-	freq[1][Sspot] /= np.max(np.abs( freq[1][Sspot] )) 
+	freq[1][Sspot] /= np.max(np.abs( freq[1][Sspot] ))
 	freq[1][Sspot] *= noise/2.
 	freq[2][Sspot] += S[0] * np.sin(2 * np.pi * S[1] * np.arange(len(Sspot)) / Fs)
-	freq[2][Sspot] /= np.max(np.abs( freq[2][Sspot] )) 
+	freq[2][Sspot] /= np.max(np.abs( freq[2][Sspot] ))
 	freq[2][Sspot] *= noise/2.
 
 	a = Stream(traces=[Trace(data=noise_signal[0], header=stats0_z), \
@@ -705,35 +705,35 @@ def artificial_stream(npts=1000., noise=1., P=[10., 15., 3.**.5], S=[17., 15., 3
 class ShortLongTerms(object):
 
 	"""
-	Produces an estimation/proxy of the probability of seismic 
+	Produces an estimation/proxy of the probability of seismic
 	body-wave arrival in continuous seismic records.
 
-	In practice, it sets an instance of ShortLongTerms that can be 
-	used to form a matrix in which the data-stream of cell [0, c, n] 
-	has to be compared with cells [1, c, n]. For the data of a given 
-	channel (c) there are n pairs of time-series to compare. 
+	In practice, it sets an instance of ShortLongTerms that can be
+	used to form a matrix in which the data-stream of cell [0, c, n]
+	has to be compared with cells [1, c, n]. For the data of a given
+	channel (c) there are n pairs of time-series to compare.
 	______
-	:type: 
+	:type:
 		- ObsPy:class:`~obspy.core.stream`.
 		- scale: list (multi-scaling by default, optional).
 		- statistic: string (default 'averageabs', optional).
 		- maxscale: int (default 'None', optional).
-	:param: 
+	:param:
 		- data of e.g. seismograms.
 		- scales: or length of the window used for pre-processing with
 			`~trigger.recursive`.
 		- statistic: operation parameter in pre-processing with
 			`~trigger.recursive`.
-		- maxscale: maximum scale the window used for pre-processing 
+		- maxscale: maximum scale the window used for pre-processing
 			with `~trigger.recursive`.
 	___________
 	.. rubric:: _`Default Attributes`
 		- `~trigger.ShortLongTerms.output`: returns the results.
-		- `~trigger.ShortLongTerms.plot`: displays the output with 
+		- `~trigger.ShortLongTerms.plot`: displays the output with
 			`~trigger.stream_multiplexor_plot`.
-		- `~trigger.ShortLongTerms.correlate`: uses the 
+		- `~trigger.ShortLongTerms.correlate`: uses the
 			`~trigger.Correlate` class to compare data-streams.
-		- `~trigger.ShortLongTerms.ratio`: uses the 
+		- `~trigger.ShortLongTerms.ratio`: uses the
 			`~trigger.Ratio` class to compare data-streams.
 	___________
 	.. rubric:: Example
@@ -742,13 +742,13 @@ class ShortLongTerms(object):
 		>>> import trigger
 		>>> cf = trigger.ShortLongTerms(trigger.artificial_stream(npts=5000), statistic='rms')
 		>>> cf.plot()
-		
+
 		Plot the characteristic function:
 		>>> cf.correlate.plot()
 
 	"""
 
-	def __init__(self, data, preprocessor='averageabs', scales=None, maxscale=None): 
+	def __init__(self, data, preprocessor='averageabs', scales=None, maxscale=None):
 
 		# stores input parameters
 		self.preprocessor = preprocessor
@@ -759,20 +759,20 @@ class ShortLongTerms(object):
 		self.data, self.original_data = trace2stream(data.copy())
 
 	def output(self):
-		# Multiplex the pre-processed data	
+		# Multiplex the pre-processed data
 
 		# pre_processed: array of pre-processed data
 		# preprocessor: sum|average|rms
 		# scales: list
-		self.pre_processed, self.scales = recursive(self.data, self.scales, self.preprocessor, self.maxscale) 
+		self.pre_processed, self.scales = recursive(self.data, self.scales, self.preprocessor, self.maxscale)
 
 		# Initialize results at the minimal size
 		(tmax,nmax) = streamdatadim(self.data)
 		nscale = len(self.scales)
-		channels = np.ones(( 2, tmax, nscale**2, nmax ))  
-		l_windows = np.zeros(( 2, nscale**2 ))  
+		channels = np.ones(( 2, tmax, nscale**2, nmax ))
+		l_windows = np.zeros(( 2, nscale**2 ))
 		dtiny = np.finfo(0.0).tiny
-		
+
 		# along stations
 		for station_i, station_data in enumerate(self.pre_processed):
 			n_enhancements = -1
@@ -810,35 +810,35 @@ class ShortLongTerms(object):
 class LeftRightTerms(object):
 
 	"""
-	Produces an estimation/proxy of the probability of seismic 
-	body-wave arrival in continuous seismic records. 
+	Produces an estimation/proxy of the probability of seismic
+	body-wave arrival in continuous seismic records.
 
-	In practice, it sets an instance of leftRightTerms that can be 
-	used to form a matrix in which the data-stream in cell [0, c, n] 
-	has to be compared with cells [1, c, n]. For the data of a given 
+	In practice, it sets an instance of leftRightTerms that can be
+	used to form a matrix in which the data-stream in cell [0, c, n]
+	has to be compared with cells [1, c, n]. For the data of a given
 	channel (c) there are n pairs of time-series to compare.
 	______
-	:type: 
+	:type:
 		- ObsPy:class:`~obspy.core.stream`.
 		- scale: list (multi-scaling by default, optional).
 		- statistic: string (default 'averageabs', optional).
 		- maxscale: int (default 'None', optional).
-	:param: 
+	:param:
 		- data of e.g. seismograms.
 		- scales: or length of the window used for pre-processing with
 			`~trigger.recursive`.
 		- statistic: operation parameter in pre-processing with
 			`~trigger.recursive`.
-		- maxscale: maximum scale the window used for pre-processing 
+		- maxscale: maximum scale the window used for pre-processing
 			with `~trigger.recursive`.
 	___________
 	.. rubric:: _`Default Attributes`
 		- `~trigger.LeftRightTerms.output`: returns the results.
-		- `~trigger.LeftRightTerms.plot`: displays the output with 
+		- `~trigger.LeftRightTerms.plot`: displays the output with
 			`~trigger.stream_multiplexor_plot`.
-		- `~trigger.LeftRightTerms.correlate`: uses the 
+		- `~trigger.LeftRightTerms.correlate`: uses the
 			`~trigger.Correlate` class to compare data-streams.
-		- `~trigger.LeftRightTerms.ratio`: uses the 
+		- `~trigger.LeftRightTerms.ratio`: uses the
 			`~trigger.Ratio` class to compare data-streams.
 	___________
 	.. rubric:: Example
@@ -847,13 +847,13 @@ class LeftRightTerms(object):
 		>>> import trigger
 		>>> cf = trigger.LeftRightTerms(trigger.artificial_stream(npts=5000), statistic='rms')
 		>>> cf.plot()
-		
+
 		Plot the characteristic function:
 		>>> cf.correlate.plot()
 
 	"""
 
-	def __init__(self, data, preprocessor='averageabs', scales=None, maxscale=None): 
+	def __init__(self, data, preprocessor='averageabs', scales=None, maxscale=None):
 
 		# stores input parameters
 		self.preprocessor = preprocessor
@@ -864,20 +864,20 @@ class LeftRightTerms(object):
 		self.data, self.original_data = trace2stream(data.copy())
 
 	def output(self):
-		# Multiplex the pre-processed data	
+		# Multiplex the pre-processed data
 
 		# pre_processed: array of pre-processed data
 		# preprocessor: sum|average|rms
 		# scales: list
-		self.pre_processed, self.scales = recursive(self.data, self.scales, self.preprocessor, self.maxscale) 
+		self.pre_processed, self.scales = recursive(self.data, self.scales, self.preprocessor, self.maxscale)
 
 		# Initialize results at the minimal size
 		(tmax,nmax) = streamdatadim(self.data)
 		nscale = len(self.scales)
-		channels = np.zeros(( 2, tmax, nscale**2, nmax ))  ################################################ todo gen as nan 
-		l_windows = np.zeros(( 2, nscale**2 ))  
+		channels = np.zeros(( 2, tmax, nscale**2, nmax ))  ################################################ todo gen as nan
+		l_windows = np.zeros(( 2, nscale**2 ))
 		dtiny = np.finfo(0.0).tiny
-		
+
 		# along stations
 		for station_i, station_data in enumerate(self.pre_processed):
 			n_enhancements = -1
@@ -915,45 +915,45 @@ class LeftRightTerms(object):
 		return channels, n_enhancements+1, l_windows
 
 	def plot(self):
-		channels, n, l = self.output() 
+		channels, n, l = self.output()
 		return stream_multiplexor_plot( self.data, channels )
 
 
 class Components(object):
 
 	"""
-	Produces an estimation/proxy of the probability of seismic 
-	body-wave arrival in continuous seismic records. 
+	Produces an estimation/proxy of the probability of seismic
+	body-wave arrival in continuous seismic records.
 
-	In practice, it sets an instance of leftRightTerms that can be 
-	used to form a matrix in which the data-stream in cell [0, c, n] 
+	In practice, it sets an instance of leftRightTerms that can be
+	used to form a matrix in which the data-stream in cell [0, c, n]
 	has to be compared with cells [1, c, n], [2, c, n], etc. For the data
-	of a given channel (c), with Nc component of the same channel, 
-	there are Nc*n pairs of time-series to compare. 
+	of a given channel (c), with Nc component of the same channel,
+	there are Nc*n pairs of time-series to compare.
 	______
-	:type: 
+	:type:
 		- ObsPy:class:`~obspy.core.stream`.
 		- scale: list (multi-scaling by default, optional).
 		- statistic: string (default 'averageabs', optional).
 		- maxscale: int (default 'None', optional).
-	:param: 
+	:param:
 		- data of e.g. seismograms.
 		- scales: or length of the window used for pre-processing with
 			`~trigger.recursive`.
 		- statistic: operation parameter in pre-processing with
 			`~trigger.recursive`.
-		- maxscale: maximum scale the window used for pre-processing 
+		- maxscale: maximum scale the window used for pre-processing
 			with `~trigger.recursive`.
 	___________
 	.. rubric:: _`Default Attributes`
 	___________
 	.. rubric:: _`Default Methods`
 		- `~trigger.Component.output`: returns the results.
-		- `~trigger.Component.plot`: displays the output with 
+		- `~trigger.Component.plot`: displays the output with
 			`~trigger.stream_multiplexor_plot`.
-		- `~trigger.Component.correlate`: uses the 
+		- `~trigger.Component.correlate`: uses the
 			`~trigger.Correlate` class to compare data-streams.
-		- `~trigger.Component.ratio`: uses the 
+		- `~trigger.Component.ratio`: uses the
 			`~trigger.Ratio` class to compare data-streams.
 	___________
 	.. rubric:: Example
@@ -968,7 +968,7 @@ class Components(object):
 
 	"""
 
-	def __init__(self, data, preprocessor='rms', scales=None, maxscale=None): 
+	def __init__(self, data, preprocessor='rms', scales=None, maxscale=None):
 
 		# stores input parameters
 		self.preprocessor = preprocessor
@@ -979,20 +979,20 @@ class Components(object):
 		self.data, self.original_data = trace2stream(data.copy())
 
 	def output(self):
-		# Multiplex the pre-processed data	
+		# Multiplex the pre-processed data
 
 		# pre_processed: array of pre-processed data
 		# preprocessor: sum|average|rms
 		# scales: list
-		self.pre_processed, self.scales = recursive(self.data, self.scales, self.preprocessor, self.maxscale) 
+		self.pre_processed, self.scales = recursive(self.data, self.scales, self.preprocessor, self.maxscale)
 
 		# Initialize results at the minimal size
 		(tmax,nmax) = streamdatadim(self.data)
 		nscale = len(self.scales)
-		channels = np.zeros(( 3, tmax, nscale**2, nmax )) 
-		l_windows = np.zeros(( 3, nscale**2 ))  
+		channels = np.zeros(( 3, tmax, nscale**2, nmax ))
+		l_windows = np.zeros(( 3, nscale**2 ))
 		dtiny = np.finfo(0.0).tiny
-		
+
 		# along stations
 		for station_i in range(tmax):
 			delta = (self.data[station_i]).stats.delta
@@ -1064,7 +1064,7 @@ class Components(object):
 				elif ZNE_di[i] < 0 :
 					s = [-1*ZNE_di[i], 0]
 					e = [nmax, nmax+ZNE_di[i]]
-						
+
 				for scale_i in range(nscale):
 					l_windows[i][scale_i] = self.scales[scale_i]
 					channels[i][station_i][scale_i][s[0]:e[0]] = self.pre_processed[ZNE_i[i]][scale_i][s[1]:e[1]]
@@ -1074,31 +1074,31 @@ class Components(object):
 		return channels, nscale+1, l_windows
 
 	def plot(self):
-		channels, n, l = self.output() 
+		channels, n, l = self.output()
 		return stream_multiplexor_plot( self.data, channels )
 
 
 class Ratio(object):
 	"""
-	Produces a not-to-scale proxy of the probability of seismic 
-	body-wave arrival in continuous seismic records. 
-	
-	In practice, it sets an instance of Ratio that can be used to 
-	apply division between the first and all other time-series of the 
+	Produces a not-to-scale proxy of the probability of seismic
+	body-wave arrival in continuous seismic records.
+
+	In practice, it sets an instance of Ratio that can be used to
+	apply division between the first and all other time-series of the
 	same channel given in a multi-scale data-stream.
 	______
-	:type: 
+	:type:
 		- NumPy:class:`~numpy.ndarray` (channel, scales, samples).
 		- data: ObsPy:class:`~obspy.core.stream` (optional).
-	:param: 
-		- multi-scale data-stream, pre-processed with 
+	:param:
+		- multi-scale data-stream, pre-processed with
 			`~trigger.ShortLongTerms` or `~trigger.leftRightTerms` or
 			`~trigger.Component`
-		- data of e.g. seismograms. 
+		- data of e.g. seismograms.
 	___________
 	.. rubric:: _`Default Attributes`
 		- `~trigger.Ratio.output`: returns the results.
-		- `~trigger.Ratio.plot`: displays the output with 
+		- `~trigger.Ratio.plot`: displays the output with
 			`~trigger.stream_processor_plot`.
 	___________
 	.. rubric:: Example
@@ -1107,7 +1107,7 @@ class Ratio(object):
 		>>> import trigger
 		>>> data = trigger.artificial_stream(npts=5000)
 		>>> data_streams = (trigger.ShortLongTerms(data)).output()
-		
+
 		Get the operator instance and plot:
 		>>> cf = trigger.Ratio(data_streams, data)
 		>>> cf.plot()
@@ -1118,7 +1118,7 @@ class Ratio(object):
 		self.data = data
 		self.multiplexor = multiplexor
 		self.preprocessor = preprocessor
-		
+
 		self.shortlongterms = ShortLongTerms(data, preprocessor=self.preprocessor, **kwargs)
 		self.leftrightterms = LeftRightTerms(data, preprocessor=self.preprocessor, **kwargs)
 		self.components = Components(data, **kwargs)
@@ -1131,21 +1131,21 @@ class Ratio(object):
 			pre_processed_data = self.leftrightterms.output()
 		elif self.multiplexor in ('components', 'comp'):
 			pre_processed_data = self.components.output()
-		
+
 		self.pre_processed_data = pre_processed_data[0]
 		self.enhancement_factor = pre_processed_data[1]
 		self.l_windows = pre_processed_data[2]
 
 		dtiny = np.finfo(0.0).tiny
 		(tmax,nmax) = streamdatadim(self.data)
-		cf = np.ones(( tmax, nmax ))  
+		cf = np.ones(( tmax, nmax ))
 
 		for station_i, station_data in enumerate(self.pre_processed_data[0]):
 			for enhancement_i, enhancement_data in enumerate(self.pre_processed_data[0][station_i]):
 
 				for channel_i in range(1,len(self.pre_processed_data)) :
 
-					buf = self.pre_processed_data[0][station_i][enhancement_i] 
+					buf = self.pre_processed_data[0][station_i][enhancement_i]
 					buf /= self.pre_processed_data[channel_i][station_i][enhancement_i]
 					# no ~zeros
 					buf[buf < dtiny] = dtiny
@@ -1153,15 +1153,15 @@ class Ratio(object):
 					# product enhancement (no nans, no infs)
 					cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
 
-			# rescaling 
-			#cf[station_i] **= (1./self.enhancement_factor) 
+			# rescaling
+			#cf[station_i] **= (1./self.enhancement_factor)
 
 		# # no ~zeros
 		# ratio[ ratio < dtiny ] = dtiny
 		# # no nans, no infs
 		# ratio[ ~np.isfinite(ratio) ] = 1.
 
-		# returns product # enhanced and rescaled		
+		# returns product # enhanced and rescaled
 		return cf         # cf = (np.prod(ratio, axis=1))**(1/self.enhancement_factor)
 
 	def plot(self, **kwargs):
@@ -1170,19 +1170,19 @@ class Ratio(object):
 
 class Correlate(object):
 	"""
-	Produces an estimation of the normalized probability of seismic 
-	body-wave arrival in continuous seismic records. 
+	Produces an estimation of the normalized probability of seismic
+	body-wave arrival in continuous seismic records.
 
 	In practice, it sets an instance of Correlate that can be used to
 	apply correlation between the first and all other time-series of
 	the same channel given in a multi-scale data-streams.
 	______
-	:type: 
+	:type:
 		- NumPy:class:`~numpy.ndarray` (channel, scales, samples).
 		- data: ObsPy:class:`~obspy.core.stream` (optional).
 		- scale: list (multi-scaling by default, optional).
-	:param: 
-		- multi-scale data-stream, pre-processed with 
+	:param:
+		- multi-scale data-stream, pre-processed with
 			`~trigger.ShortLongTerms` or `~trigger.leftRightTerms` or
 			`~trigger.Component`.
 		- data: of e.g. seismograms.
@@ -1190,7 +1190,7 @@ class Correlate(object):
 	___________
 	.. rubric:: _`Default Attributes`
 		- `~trigger.Correlate.output`: returns the results.
-		- `~trigger.Correlate.plot`: displays the output with 
+		- `~trigger.Correlate.plot`: displays the output with
 			`~trigger.stream_processor_plot`.
 	___________
 	.. rubric:: Example
@@ -1199,7 +1199,7 @@ class Correlate(object):
 		>>> import trigger
 		>>> data = trigger.artificial_stream(npts=5000)
 		>>> data_streams = (trigger.ShortLongTerms(data)).output()
-		
+
 		Get the operator instance and plot:
 		>>> cf = trigger.Correlate(data_streams, data, scales=[10])
 		>>> cf.plot()
@@ -1215,7 +1215,7 @@ class Correlate(object):
 		self.multiplexor = multiplexor
 		self.preprocessor = preprocessor
 		self.procscales = procscales
-		
+
 		self.shortlongterms = ShortLongTerms(data, preprocessor=self.preprocessor, **kwargs)
 		self.leftrightterms = LeftRightTerms(data, preprocessor=self.preprocessor, **kwargs)
 		self.components = Components(data, preprocessor=self.preprocessor, **kwargs)
@@ -1228,14 +1228,14 @@ class Correlate(object):
 			pre_processed_data = self.leftrightterms.output()
 		elif self.multiplexor in ('components', 'comp'):
 			pre_processed_data = self.components.output()
-		
+
 		self.pre_processed_data = pre_processed_data[0]
 		self.enhancement_factor = pre_processed_data[1]
 		self.l_windows = pre_processed_data[2]
 
 		dtiny = np.finfo(0.0).tiny
 		(tmax,nmax) = streamdatadim(self.data)
-		cf = np.ones(( tmax, nmax ))  
+		cf = np.ones(( tmax, nmax ))
 
 		for station_i, station_data in enumerate(self.pre_processed_data[0]):
 			for enhancement_i, enhancement_data in enumerate(self.pre_processed_data[0][station_i]):
@@ -1244,9 +1244,9 @@ class Correlate(object):
 
 					if np.nansum(np.abs( self.pre_processed_data[channel_i][station_i][enhancement_i] )) > 0:
 
-						a = self.pre_processed_data[0][station_i][enhancement_i] 
+						a = self.pre_processed_data[0][station_i][enhancement_i]
 						b = self.pre_processed_data[channel_i][station_i][enhancement_i]
-						
+
 						buf = correlationcoef( a = a, b = b, \
 							maxscale = int(self.l_windows[0][enhancement_i]/3.), scales=self.procscales)
 							#scales = [ int(self.l_windows[0][enhancement_i]/8.) ] )
@@ -1255,7 +1255,7 @@ class Correlate(object):
 						buf[buf < dtiny] = dtiny
 
 						# product enhancement (no nans, no infs)
-						cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)] 
+						cf[station_i][np.isfinite(buf)] *= buf[np.isfinite(buf)]
 
 						# if no signal
 						cf[station_i][ np.isnan(self.pre_processed_data[0][station_i][enhancement_i]) ] = np.nan
@@ -1266,7 +1266,7 @@ class Correlate(object):
 
 		return cf
 
-	def plot(self, **kwargs):        
+	def plot(self, **kwargs):
 		return stream_processor_plot( self.data, self.output(), **kwargs)
 
 
@@ -1274,32 +1274,32 @@ class Correlate(object):
 class predom_period(object):
 
 	"""
-	Produces an estimation/proxy of the pre-dominant period in 
-	continuous seismic records. 
+	Produces an estimation/proxy of the pre-dominant period in
+	continuous seismic records.
 	______
-	:type: 
+	:type:
 		- ObsPy:class:`~obspy.core.stream`.
 		- scale: list (multi-scaling by default, optional).
 		- statistic: string (default 'averageabs', optional).
 		- maxscale: int (default 'None', optional).
-	:param: 
+	:param:
 		- data of e.g. seismograms.
 		- scales: or length of the window used for pre-processing with
 			`~trigger.recursive`.
 		- statistic: operation parameter in pre-processing with
 			`~trigger.recursive`.
-		- maxscale: maximum scale the window used for pre-processing 
+		- maxscale: maximum scale the window used for pre-processing
 			with `~trigger.recursive`.
 	___________
 	.. rubric:: _`Default Attributes`
 	___________
 	.. rubric:: _`Default Methods`
 		- `~trigger.predom_period.output`: returns the results.
-		- `~trigger.predom_period.plot`: displays the output with 
+		- `~trigger.predom_period.plot`: displays the output with
 			`~trigger.stream_multiplexor_plot`.
-		- `~trigger.predom_period.correlate`: uses the 
+		- `~trigger.predom_period.correlate`: uses the
 			`~trigger.Correlate` class to compare data-streams.
-		- `~trigger.predom_period.ratio`: uses the 
+		- `~trigger.predom_period.ratio`: uses the
 			`~trigger.Ratio` class to compare data-streams.
 	___________
 	.. rubric:: Example
@@ -1310,7 +1310,7 @@ class predom_period(object):
 
 	"""
 
-	def __init__(self, data, preprocessor='sumsquare', scales=[800], maxscale=1000 ): 
+	def __init__(self, data, preprocessor='sumsquare', scales=[800], maxscale=1000 ):
 
 		# stores input parameters
 		self.preprocessor = preprocessor
@@ -1322,16 +1322,16 @@ class predom_period(object):
 
 	def output(self):
 		# Multiplex the pre-processed data
-		
+
 		from obspy.signal.tf_misfit import cwt
 
 		(tmax,nmax) = streamdatadim(self.data)
 		nscale = len(self.scales)
-		channels = np.zeros(( 2, tmax, nscale**2, nmax )) 
-		l_windows = np.zeros(( 2, nscale**2 ))  
+		channels = np.zeros(( 2, tmax, nscale**2, nmax ))
+		l_windows = np.zeros(( 2, nscale**2 ))
 
-		timeseries, scales = recursive(self.data, operation=self.preprocessor, scales=self.scales, maxscale=self.maxscale) 
-		d_timeseries, scales = recursive(self.data, operation='d-sumsquare', scales=self.scales, maxscale=self.maxscale)  
+		timeseries, scales = recursive(self.data, operation=self.preprocessor, scales=self.scales, maxscale=self.maxscale)
+		d_timeseries, scales = recursive(self.data, operation='d-sumsquare', scales=self.scales, maxscale=self.maxscale)
 
 		for trace_i, trace in enumerate(self.data):
 
@@ -1349,7 +1349,7 @@ class predom_period(object):
 		return channels, nscale+1, l_windows
 
 	def plot(self):
-		channels, n, l = self.output() 
+		channels, n, l = self.output()
 		return stream_multiplexor_plot( self.data, channels )
 
 
@@ -1400,7 +1400,7 @@ def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=T
 
 	from collections import deque
 	from obspy.signal.tf_misfit import cwt
-	
+
 	if thr_off is None:
 		thr_off = thr_on/2.
 
@@ -1424,22 +1424,22 @@ def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=T
 
 	if len(ind1) == 0:
 	    return []
-	
+
 	on = deque([ind1[0]])
 
 	# last occurence is missed by the diff, add it manually
 	on.extend(ind1[np.where(np.diff(ind1) > 1)[0] + 1].tolist())
 
-	# shift where each onset begins 
+	# shift where each onset begins
 	if onset_refine:
 		of = deque([])
-		for e in range(len(on)): 
+		for e in range(len(on)):
 			#print on[e]
 			tmax =  on[e] + np.argmax( dcharfct[on[e]:]<0 )
 			onset_period =  on[e] + 5*np.argmax( dcharfct[on[e]:]<0 )
 			on[e] = on[e] - (np.argmax( np.fliplr(np.atleast_2d(dcharfct[np.max([0,on[e]-10]):on[e]]))[0]<0 ) )
-			# for t in range(on[e]-1,0,-1): 
-			# 	if np.max(dcharfct[np.max([0,t-10]):t]) >= 0. : 
+			# for t in range(on[e]-1,0,-1):
+			# 	if np.max(dcharfct[np.max([0,t-10]):t]) >= 0. :
 			# 		on[e] = t
 			# 		if dcharfct[np.max([0,t-1])] < 0. or np.min(charfct[np.max([0,t-10]):t-1]) >= charfct[t+1] : #np.sum(dcharfct[np.max([0,t-10]):tmax]) >= np.sum(dcharfct[t:tmax])*.85:  #or np.sum(dtrace[np.max([0,t-10]):tmax]) >= np.sum(dtrace[t:tmax]):
 			# 			break
@@ -1463,8 +1463,8 @@ def trigger_onset(charfct, thr_on=.1, trace=None, thr_off=None, max_len_delete=T
 
 	pick = []
 
-	for e in range(len(on)): 
-		#print 'on[e], of[e]:',on[e], of[e] 
+	for e in range(len(on)):
+		#print 'on[e], of[e]:',on[e], of[e]
 		# while on[0] <= of[0]:
 		# 	print '   on[0] <= of[0] : poped',on[0]
 		# 	on.popleft()
@@ -1549,22 +1549,22 @@ def row_kurtosis(cf, window=100, **kwargs):
 
 def stream_trim_cf(stream, cf, threshold=.2):
 	"""
-	Extract wavelets of seismic body-wave arrival from continuous 
-	seismic records. 
+	Extract wavelets of seismic body-wave arrival from continuous
+	seismic records.
 
-	In practice, it detects the onset of local maximum in the 
-	characteristic functions using `~trigger` and trims the related 
-	data.  
+	In practice, it detects the onset of local maximum in the
+	characteristic functions using `~trigger` and trims the related
+	data.
 	______
-	:type: 
+	:type:
 		- ObsPy:class:`~obspy.core.stream`.
-	:param: 
+	:param:
 		- data of e.g. seismograms.
 	_______
-	:rtype: 
-		- 
-	:return: 
-		- 
+	:rtype:
+		-
+	:return:
+		-
 	___________
 	.. rubric:: Example
 
@@ -1574,7 +1574,7 @@ def stream_trim_cf(stream, cf, threshold=.2):
 	l = 0.25 # dominant period
 
 	(tmax,nmax) = streamdatadim(stream)
-	cflets = np.zeros(( tmax, 2+(stream[0]).stats.sampling_rate*2 ))  
+	cflets = np.zeros(( tmax, 2+(stream[0]).stats.sampling_rate*2 ))
 	cflets[:] = np.nan
 
 	wavelets = stream.copy()
@@ -1605,7 +1605,7 @@ def stream_trim_cf(stream, cf, threshold=.2):
 	# 	wlstart = trace.stats.starttime + pick*trace.stats.delta - l
 	# 	wlend = trace.stats.starttime + pick*trace.stats.delta  + l
 	# 	trace.trim(wlstart, wlend)
-		
+
 	# 	test = cf[t][pick - l/trace.stats.delta : pick + l/trace.stats.delta ]
 	# 	cflets[t][:len(test)] = test
 
@@ -1617,10 +1617,10 @@ def stream_trim_cf(stream, cf, threshold=.2):
 	# # spec = np.zeros((tmax, nfft // 2 + 1), dtype=np.complex)
 
 	# # fig = plt.figure()
-	# # ax = fig.gca() 
+	# # ax = fig.gca()
 	# # f_lin = np.linspace(0, 0.5 / (wavelets[0]).stats.delta, nfft // 2 + 1)
 
-	# # for t, trace in enumerate(wavelets): 
+	# # for t, trace in enumerate(wavelets):
 	# # 	spec[t] = np.abs( np.fft.rfft(trace.data, n=int(nfft)) * trace.stats.delta ) ** 2
 	# # 	ax.semilogx(f_lin, spec[t])
 
@@ -1629,13 +1629,13 @@ def stream_trim_cf(stream, cf, threshold=.2):
 
 # def ggg(...):
 # 	"""
-# 	Plot the given seismic wave radiation pattern as a color-coded surface 
+# 	Plot the given seismic wave radiation pattern as a color-coded surface
 # 	or focal sphere (not exactly as a beach ball diagram).
 # 	_______
-# 	:param: 
+# 	:param:
 #		- (type) String that specifies which trigger is applied (e.g.
 # 	    	``'recstalta'``).
-# 	:param: 
+# 	:param:
 #		- (option) Necessary keyword arguments for the respective
 # 		trigger.
 #	_________

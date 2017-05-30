@@ -20,7 +20,6 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import obspy_addons
 
 
-
 def traveltimes(tmax=20.,
                 depth=10,
                 model='iasp91',
@@ -203,6 +202,16 @@ def plot_traveltimes(self,
 
     if not fig:
         fig = self.plot(size=0,projection='local')
+
+        fig = self.select(channel='BH*').plot(fig=fig,size=30,marker='.', color='k',label=False)
+        fig = self.select(channel='BH*').plot(fig=fig,size=20,marker='.', color='gray',label=False)
+        fig = self.select(channel='EH*').plot(fig=fig,size=30,marker='s', color='k',label=False)
+        fig = self.select(channel='EH*').plot(fig=fig,size=20,marker='s', color='gray',label=False)
+        fig = self.select(channel='HH*').plot(fig=fig,size=30,marker='o', color='k',label=False)
+        fig = self.select(channel='HH*').plot(fig=fig,size=20,marker='o', color='gray',label=False)
+        fig = self.select(channel='HN*').plot(fig=fig,size=30,marker='^', color='k',label=False)
+        fig = self.select(channel='HN*').plot(fig=fig,size=20,marker='^', color='gray',label=False)
+
         axcb = fig.bmap.ax
     else:
         fig = self.plot(fig=fig, size=0,projection='local')
@@ -250,10 +259,6 @@ def plot_traveltimes(self,
         levels -= numpy.nanmin(abs(levels))
         fig.cb.ax.set_xticks(levels)
         fig.cb.ax.axvline((numpy.around(reflevel)-min(fig.cb.get_clim()))/numpy.diff(fig.cb.get_clim()),zorder=999,color='k',linewidth=2)
-
-    fig = self.plot(fig=fig,size=30, color='k')
-    fig = self.plot(fig=fig,size=20, color='gray')
-
 
     fig.inset = inset_axes(fig.axes[0],
                            width="30%",  # width = 30% of parent_bbox

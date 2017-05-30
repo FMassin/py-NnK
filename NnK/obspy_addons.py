@@ -22,6 +22,7 @@ import glob
 #import datetime
 from obspy import UTCDateTime
 
+gold= (1 + 5 ** 0.5) / 2.
 
 def rolling(a, window):
     a = numpy.asarray(a)
@@ -728,14 +729,23 @@ def sticker(t,a,x=0,y=0,ha='left',va='bottom'):
         
     return o
 
-def nicemap(self=obspy.core.event.catalog.Catalog(),aspectratio=2,f=None):
+def nicemap(catalog=obspy.core.event.catalog.Catalog(),
+            inventory=obspy.core.inventory.inventory.Inventory([],''),
+            aspectratio=gold,
+            f=None,
+            alpha=1.,
+            xpixels=900,
+            resolution='h'):
     
     
     if not f:
         f=matplotlib.pyplot.figure()
 
-    lats = get(self, 'origins','latitude', types=['p'])
-    lons = get(self, 'origins','longitude', types=['p'])
+    lons, lats = search(inventory, fields=['longitude','latitude'], levels=['networks','stations'])
+    for x in get(catalog, 'origins','latitude', types=['p']):
+        lats.append(x)
+    for x in get(catalog, 'origins','longitude', types=['p']):
+        lons.append(x)
     
     y = lats.copy()
     x = lons.copy()
@@ -758,19 +768,20 @@ def nicemap(self=obspy.core.event.catalog.Catalog(),aspectratio=2,f=None):
                  urcrnrlon=max(lons)+(max(lons)-min(lons))*.1,
                  urcrnrlat=max(lats)+(max(lats)-min(lats))*.1,
                  epsg=4326,
-                 resolution='h')
+                 resolution=resolution)
 
     steps=numpy.asarray([ 0.01,0.025,0.05,0.1,0.25,.5,1,2.5,5,10,25,50,100])
     step = steps[numpy.argmin(abs((max(lons)-min(lons))/5 - steps))]
     
-    im1 = f.bmap.arcgisimage(service='World_Physical_Map',xpixels=900)
-    im2 = f.bmap.arcgisimage(service='ESRI_Imagery_World_2D',xpixels=900)
-    im2.set_alpha(0.5)
+    im1 = f.bmap.arcgisimage(service='World_Physical_Map',xpixels=xpixels)
+    im2 = f.bmap.arcgisimage(service='ESRI_Imagery_World_2D',xpixels=xpixels)
+    im1.set_alpha(1.*alpha)
+    im2.set_alpha(0.5*alpha)
 
     steps=numpy.asarray([ 0.01,0.025,0.05,0.1,0.25,.5,1,2.5,5,10,25,50,100])
     step = steps[numpy.argmin(abs((max(lons)-min(lons))/5 - steps))]
 
-    f.bmap.resolution='h'
+    f.bmap.resolution=resolution
     f.bmap.drawmeridians(meridians=numpy.arange(int(min(lons))-1,int(max(lons))+1,step),labels=[0,0,0,1],linewidth=.5, color = 'w')
     f.bmap.drawparallels(circles=numpy.arange(int(min(lats))-1,int(max(lats))+1,step),labels=[1,0,0,0],linewidth=.5, color = 'w')
     f.bmap.drawcoastlines(linewidth=.5, color = 'w')
@@ -781,6 +792,121 @@ def nicemap(self=obspy.core.event.catalog.Catalog(),aspectratio=2,f=None):
     f.bmap.readshapefile('/Users/fmassin/Documents/Data/misc/tectonicplates/PB2002_plates', name='PB2002_plates', drawbounds=True, color='r')
     
     return f
+
+def channelmarker(s,
+                  instruments={'HN':'^','HH':'s','EH':'P'},#,'BH':'*'},
+                  instruments_captions={'HN':'Ac.','HH':'Bb.','EH':'Sp.'}):#,'BH':'Long p.'}):
+    
+    chanlist=[ c.split('.')[-1][:2] for c in s.get_contents()['channels']]
+    
+    for instrument_type in instruments.keys():
+        if instrument_type in chanlist:
+            return instruments[instrument_type], instruments_captions[instrument_type]
+
+    return '*','etc'
+
+def eventsize(mags):
+    
+    min_size = 2
+    max_size = 30
+    
+    steps=numpy.asarray([0.01,0.02,0.05,0.1,0.2,.5,1.,2.,5.])
+    s = steps[numpy.argmin(abs((max(mags)-min(mags))/3-steps))+1]
+    min_size_ = min(mags) - 1
+    max_size_ = max(mags) + 1
+
+    magsscale=[_i for _i in numpy.arange(-2,10,s) if _i>=min_size_ and _i<=max_size_]
+    frac = [(0.2 + (_i - min_size_)) / (max_size_ - min_size_) for _i in magsscale]
+    size_plot = [(_i * (max_size - min_size)) ** 2 for _i in frac]
+    
+    frac = [(0.2 + (_i - min_size_)) / (max_size_ - min_size_) for _i in mags]
+    size = [(_i * (max_size - min_size)) ** 2 for _i in frac]
+    
+    x = (numpy.asarray(magsscale)-min(magsscale))/(max(magsscale)-min(magsscale))*.6+.2
+    
+    return size,size_plot,magsscale,x
+
+def map(self=None,
+        inventory=obspy.core.inventory.inventory.Inventory([],''),
+        catalog=obspy.core.event.catalog.Catalog(),
+        label=False,
+        xpixels=900,
+        resolution='h',
+        **kwargs):
+    #Inventory.plot(self, projection='global', resolution='l',continent_fill_color='0.9', water_fill_color='1.0', marker="v",s ize=15**2, label=True, color='#b15928', color_per_network=False, colormap="Paired", legend="upper left", time=None, show=True, outfile=None, method=None, fig=None, **kwargs)
+    
+    fig = nicemap(catalog=catalog,
+                  inventory=inventory,
+                  alpha=.8,
+                  xpixels=xpixels,
+                  resolution=resolution)
+    #fig = obspy_addons.plot_map(catalog, color='depth',label=label,**kwargs)
+    #self.plot(color_per_network=True,fig=fig, size=0, label=label)
+    
+    networks='bgrcmykw'
+    networks+=networks+networks+networks+networks
+    for i,n in enumerate(inventory.networks):
+        for s in n.stations:
+            chanmarker, chancaption = channelmarker(s)
+            if True:#chanmarker != 'None':
+                fig.bmap.scatter(s.longitude, s.latitude,
+                                 marker=chanmarker,
+                                 facecolor='None',
+                                 edgecolor='w',
+                                 lw=2)
+    plotted=list()
+    for i,n in enumerate(inventory.networks):
+        for s in n.stations:
+            chanmarker, chancaption = channelmarker(s)
+            if True:#chanmarker != 'None' :
+                label=None
+                if chanmarker not in plotted:
+                    label = chancaption
+                    plotted.append(chanmarker)
+                fig.bmap.scatter(s.longitude, s.latitude,
+                                 marker=chanmarker,
+                                 facecolor=networks[i],
+                                 edgecolor='None',
+                                 label=label)
+    for i,n in enumerate(inventory.networks):
+        for s in n.stations:
+            chanmarker, chancaption = channelmarker(s)
+            if True:#chanmarker == '^':
+                if networks[i] not in plotted:
+                    label = n.code
+                    plotted.append(networks[i])
+                fig.bmap.scatter(s.longitude, s.latitude,
+                                 marker=chanmarker,
+                                 facecolor=networks[i],
+                                 edgecolor='None',
+                                 label=label)
+            break
+
+
+    mags = get(catalog,'magnitudes','mag',['b'] )
+    reordered = numpy.argsort(mags)
+    catalog = obspy.core.event.catalog.Catalog([ catalog.events[i] for i in reversed(reordered)])
+
+    longitudes = get(catalog, 'origins','longitude', types=['b'])
+    latitudes = get(catalog, 'origins','latitude', types=['b'])
+    depths = get(catalog, 'origins','depth', types=['b'])
+
+    sizes, sizesscale, magsscale, x = eventsize( mags = get(catalog,'magnitudes','mag',['b'] ))
+    depthscale  = numpy.linspace(min(depths),max(depths),len(magsscale))
+
+    fig.bmap.scatter(longitudes,
+                     latitudes,
+                     sizes,
+                     edgecolor='w',
+                     lw=2)
+    fig.bmap.scatter(longitudes,
+                     latitudes,
+                     sizes,
+                     depths,
+                     edgecolor='None')
+
+
+    fig.legend = matplotlib.pyplot.legend()#ncol=2)
 
 def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',color='delay',minlikelyhood=None,**kwargs):
 
@@ -834,13 +960,13 @@ def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',color='delay
             for i in range(10):
                 catalogcopy.events.insert(0,nane.copy())
 
-    f = nicemap(self)
-    f = catalogcopy.plot(fig=f, color=color, **kwargs)
+    f = nicemap(self,aspectratio=1.5)
+    f = catalogcopy.plot(fig=f, color=color,edgecolor='k',title="", **kwargs)
 
-    f.texts[0].set_text(f.texts[0].get_text().replace(' - ', '\n'))
+    #f.texts[0].set_text(f.texts[0].get_text().replace(' - ', '\n'))
     if color in [ 'delay']:
-        f.texts[0].set_text(f.texts[0].get_text().replace(str(len(catalogcopy.events))+' ', str(len(catalogcopy.events)-12)+' '))
-        f.texts[0].set_text(f.texts[0].get_text().replace('depth', t+' '+color))
+        #f.texts[0].set_text(f.texts[0].get_text().replace(str(len(catalogcopy.events))+' ', str(len(catalogcopy.events)-12)+' '))
+        #f.texts[0].set_text(f.texts[0].get_text().replace('depth', t+' '+color))
     
         for i,e in enumerate(self.events):
             for o in e.origins:
@@ -868,7 +994,8 @@ def plot_map(self=obspy.core.event.catalog.Catalog(),t='MVS',a='Pb',color='delay
     for i,v in enumerate(magsscale):
         f.axes[1].text(x[i],1.2,'M'+str(v), ha='center')
 
-
+    #f.axes[1].set_xlabel(f.texts[0].get_text())
+    #f.texts.remove(f.texts[0])
     return f
 
 
