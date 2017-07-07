@@ -20,6 +20,7 @@ import numpy
 from math import radians, cos, sin, asin, sqrt
 import os
 import glob
+import re
 #import datetime
 from obspy import UTCDateTime
 
@@ -36,14 +37,302 @@ except:
 
 gold= (1 + 5 ** 0.5) / 2.
 
+def num2roman(num):
+    
+    if isinstance(num,list):
+        return [num2roman(n) for n in num]
+    
+    conv = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+            [ 100, 'C'], [ 90, 'XC'], [ 50, 'L'], [ 40, 'XL'],
+            [  10, 'X'], [  9, 'IX'], [  5, 'V'], [  4, 'IV'],
+            [   1, 'I']]
+    roman = ''
+    i = 0 #initiate i = 0
+    while num > 0:
+        while conv[i][0] > num: i+=1 #increments i to largest value greater than current num
+        roman += conv[i][1] #adds the roman numeral equivalent to string
+        num -= conv[i][0] #decrements your num
+    return roman
 
-def codes2nums(data):
+
+
+def eew(Rsp=1.8,
+        vp=6,
+        depth=5,
+        magnitudes=[3,9.5],
+        distances=[0,300],
+        events = [],
+        eventwidths=[],
+        eventlabels = [],
+        targets = [],
+        targetwidths=[],
+        targetlabels=[],
+        title_addons=None,
+        a = 2.085,#3.9,#5.57,
+        b = 1.428,#.913,#1.06,
+        c = -1.402,#-1.107,#-0.0010,
+        d = 0.078,#.813,#-3.37,
+        s = 1,
+        m1=-0.209,
+        m2=2.042):
+    
+    
+    r,m=numpy.meshgrid(numpy.logspace(numpy.log10(depth),
+                                      numpy.log10(numpy.sqrt((depth+distances[0])**2+distances[1]**2)),
+                                      100),
+                       numpy.linspace(magnitudes[0],magnitudes[1],100))
+    
+    
+    # Allen 1012 IPE hyp
+    rm = m1+m2*numpy.exp(m-5)
+    I = a + b*m + c*numpy.log(numpy.sqrt(r**2 + rm**2))+s
+    for i,ri in enumerate(r):
+        for j,rj in enumerate(ri):
+            if rj<50:
+                I[i,j] = a + b*m[i,j] + c*numpy.log(numpy.sqrt(r[i,j]**2 + rm[i,j]**2))+d*numpy.log(r[i,j]/50)+s
+    
+    # Allen 1012 IPE rup
+    #I = a + b*m + c*numpy.log(numpy.sqrt(r**2 + (1 + d*numpy.exp(m-5))**2))+s
+    
+    # india paper
+    #I = a + b*m + c*r + d*numpy.log10(r)
+    
+    
+    fig = matplotlib.pyplot.figure()
+    ax=fig.add_subplot(111,
+                       xscale='log',
+                       xlabel='Blind distance (hyp. km, depth: %s km)'%(depth),
+                       ylabel='Magnitude',
+                       yticks=range(-2,10))
+    biga=ax.twiny()
+    biga.axis('off')
+   
+    I[numpy.isnan(I)] = numpy.nanmin(I[I>.5])
+    I[I<.5] =  numpy.nanmin(I[I>.5])
+    
+    hc=ax.pcolor(r,
+                 m,
+                 I,
+                 label='S-wave I',
+                 norm=matplotlib.colors.LogNorm())
+    hl=ax.contour(r,m,I,
+                  range(1,15),
+                  colors='w',
+                  linewidth=1,
+                  alpha=0.8)
+    ax.grid(color='w',
+            linestyle='dotted')
+    
+    cb = matplotlib.pyplot.colorbar(hc,
+                                    ax=ax,
+                                    label='Intensity (Allen et al., 2012)',
+                                    ticks=list(range(1,15)),
+                                    )
+    cb.ax.set_yticklabels(num2roman(list(range(1,15))))
+    
+    cl = matplotlib.pyplot.clabel(hl,
+                                  fmt='%1.f',
+                                  colors='w')
+    for l in cl:
+        l.set_text(num2roman(int(l.get_text())) )
+    
+    for i,e in enumerate(events):
+        eventwidths.append(None)
+        ax.axhline(e,
+                   color='gray',
+                   alpha=.5,
+                   linewidth=eventwidths[i])
+    for i,e in enumerate(eventlabels):
+        sticker(e,
+                ax,
+                x=ax.get_xlim()[0],
+                y=events[i],#-ax.get_ylim()[0])/(ax.get_ylim()[1]-ax.get_ylim()[0]),
+                ha='left',
+                va='center',
+                transform=ax.transData)
+    for i,t in enumerate(targets):
+        targetwidths.append(None)
+        ax.axvline(t,
+                   color='gray',
+                   alpha=.5,
+                   linewidth=targetwidths[i])
+    for i,t in enumerate(targetlabels):
+        sticker(t,
+                ax,
+                y=ax.get_ylim()[0],
+                x=targets[i],#-ax.get_xlim()[0])/(ax.get_xlim()[1]-ax.get_xlim()[0]),
+                ha='right',
+                va='bottom',
+                rotation=90,
+                transform=ax.transData)
+    
+    pos1 = ax.get_position() # get the original position
+    pos2 = [pos1.x0 , pos1.y0,  pos1.width, pos1.height*.85]
+    ax.set_position(pos2)
+    pos1 = cb.ax.get_position() # get the original position
+    pos2 = [pos1.x0 , pos1.y0,  pos1.width, pos1.height*.85]
+    cb.ax.set_position(pos2)
+    
+    
+    #pos1 = ax.get_position() # get the original position
+    ax1 = ax.twiny()
+    ax1.xaxis.set_label_position('top')
+    ax1.xaxis.tick_top()
+    pos1 = ax.get_position() # get the original position
+    pos2 = [pos1.x0 , pos1.y0,  pos1.width, pos1.height]
+    ax1.set_position(pos2)
+    ax1.set_xscale('log')
+    ax1.set_xticks(ax.get_xticks())
+    ax1.set_xlim(ax.get_xlim())
+    ax1.set_xticklabels(numpy.round(numpy.asarray(ax.get_xticks())/(vp/Rsp), decimals=1))
+    ax1.set_xlabel('Alert time (s, V$_P$: %s km/s, V$_{S/P}$: %s)'%(vp,Rsp))
+
+
+    if False:
+        
+        ax1.spines['bottom'].set_visible(False)
+        ax1.spines['right'].set_visible(False)
+        ax1.spines['left'].set_visible(False)
+        ax1.xaxis.set_label_position('top')
+        ax1.xaxis.tick_top()
+        
+        ax2 = ax.twiny()
+        ax2.set_position(pos2) # set a new position
+        ax2.xaxis.set_label_position('bottom')
+        ax2.xaxis.tick_bottom()
+        ax2.set_xscale('log')
+        ax2.set_xlim(numpy.asarray(ax.get_xlim()))
+        ax2.set_xticklabels([])
+
+    biga.set_title('Intensities as a function of alert time%s'%(title_addons))
+    return fig
+
+def teew(Rsp=1.75):
+    
+    fig = matplotlib.pyplot.figure()
+    ax=fig.add_subplot(111)
+    d,vp=numpy.meshgrid(numpy.logspace(-1,2,100),numpy.linspace(2,8,100))
+
+
+    teew=d*(Rsp-1)/(Rsp*vp)
+
+    hc=ax.pcolor(d,
+                 vp,
+                 teew,
+                 label='t$_{EEW}$',
+                 norm=matplotlib.colors.LogNorm())
+    hl=ax.contour(d,
+                  vp,
+                  teew,
+                  numpy.logspace(-1,1,6),
+                  colors='w')
+    matplotlib.pyplot.clabel(hl,  
+                             fmt='%1.1f s',
+                            colors='w')
+    ax.set_xlabel('Distance (km)')
+    ax.set_ylabel('Vp (km/s)')
+    ax.set_title('Time before S arrival (t$_{EEW}$)\nassuming $V_P/V_S=%s$'%(Rsp))
+    ax.set_xscale('log')
+    ax.grid(color='w',linestyle='dotted')
+    cb = matplotlib.pyplot.colorbar(hc,
+                                    ax=ax,
+                                    label='t$_{EEW}$ (in seconds)')
+
+def plot_arrivals_chronologies(ax,
+                               n,
+                               data,
+                               tmax=40,
+                               PorS='P',
+                               upordown=1,
+                               labels={'P': 'P$_{tt}$',
+                                       'S': 'S$_{tt}$',
+                                       'Ps1': '$\sigma1$',
+                                       'Ps2': '$\sigma2$',
+                                       'Ps3': '$\sigma3$',
+                                       'Pm': '$\widetilde{tt}$',
+                                       'Ss1': None,
+                                       'Ss2': None,
+                                       'Ss3': None,
+                                       'Sm': None},
+                               colors={'P': 'k',
+                                       'S': 'gray',
+                                       'Ps1': 'b',
+                                       'Ps2': 'g',
+                                       'Ps3': 'r',
+                                       'Pm': 'k',
+                                       'Ss1': 'gray',
+                                       'Ss2': 'gray',
+                                       'Ss3': 'gray',
+                                       'Sm': 'k'}):
+
+
+    currentdata = numpy.sort(data[data < tmax])
+    if len(currentdata)>0:
+        currenthandles, currentlabels = ax.get_legend_handles_labels()
+        print(currentlabels)
+        for k in list(labels.keys()):
+            if labels[k]:
+                if labels[k] in currentlabels:
+                    labels[k] = None
+        cum = numpy.linspace(0, 1, len(currentdata))
+        cum[cum > .5] = 0.5 - (cum[cum > .5] - 0.5)
+        cum -= numpy.nanmin(cum)
+        cum /= numpy.nanmax(cum)
+
+        yerr_s2 = cum[cum > .136 * 2]
+        yerr_s3 = cum[cum < .136 * 2]
+        yerr_s1 = cum[cum > .341 * 2]
+
+        ax.errorbar(currentdata[cum < .136 * 2],
+                        numpy.repeat(n, len(currentdata[cum < .136 * 2])),
+                        yerr=[yerr_s3 * 0, upordown * yerr_s3 / 2.],
+                        color=colors[PorS+'s3'],
+                        linewidth=0,
+                        elinewidth=1,
+                        zorder=2,
+                        label=labels[PorS+'s3'])
+        ax.errorbar(currentdata[cum > .136 * 2],
+                        numpy.repeat(n, len(currentdata[cum > .136 * 2])),
+                        yerr=[yerr_s2 * 0, upordown * yerr_s2 / 2.],
+                        color=colors[PorS+'s2'],
+                        linewidth=0,
+                        elinewidth=1,
+                        zorder=3,
+                        label=labels[PorS+'s2'])
+        ax.errorbar(currentdata[cum > .341 * 2],
+                        numpy.repeat(n, len(currentdata[cum > .341 * 2])),
+                        yerr=[yerr_s1 * 0, upordown * yerr_s1 / 2.],
+                        color=colors[PorS+'s1'],
+                        linewidth=0,
+                        elinewidth=1,
+                        zorder=4,
+                        label=labels[PorS+'s1'])
+
+        ax.plot(currentdata,
+                    n + upordown * cum / 2,
+                    color=colors[PorS],
+                    zorder=5,
+                    label=labels[PorS])
+
+        median = numpy.nanmedian(data[data < tmax])
+        ax.errorbar(median,
+                        n,
+                    yerr=[[max([0.,-1*upordown*.5])], [max([0.,upordown*.5])]],
+                        color=colors[PorS+'m'],
+                        linewidth=0,
+                        elinewidth=1,
+                        zorder=6,
+                        label=labels[PorS+'m'])
+
+
+
+def codes2nums(data,
+               used=list()):
     #print(data)
     try :
         data[0]*1.
         nums = data
     except:
-        used=list()
         nums=list()
         for code in data:
             if code not in used:
@@ -416,8 +705,17 @@ def adjust_spines(ax, spines):
         ax.xaxis.set_ticks([])
 
 
-def sticker(t,a,x=0,y=0,ha='left',va='bottom'):
+def sticker(t,
+            a,
+            x=0,
+            y=0,
+            ha='left',
+            va='bottom',
+            transform=None,
+            **kwargs):
     
+    if not transform:
+        transform=a.transAxes
     o = list()
     colorin=['None','None']
     for i,c in enumerate(['w','k']):
@@ -426,41 +724,56 @@ def sticker(t,a,x=0,y=0,ha='left',va='bottom'):
             zorder=999,#            alpha=0.4,
             color=colorin[i],
             ha=ha,va=va,
-            fontsize='large',
-            transform=a.transAxes,
-            path_effects=[matplotlib.patheffects.withStroke(linewidth=1.5-i, foreground=c)]))
+            #fontsize='large',
+            transform=transform,
+            path_effects=[matplotlib.patheffects.withStroke(linewidth=1.5-i, foreground=c)],
+            **kwargs))
         
     return o
 
 def nicecolorbar(self,
-                 axcb=matplotlib.pyplot.gca(),
+                 axcb=None,
                  reflevel=None,
                  label=None,
-                 cmax=numpy.nan,
+                 vmax=None,
+                 vmin=None,
                  data=None,
                  loc='head right',
-                 fontsize=8):
-    
+                 fontsize=8,
+                 ticks = None):
+    if not axcb:
+        axcb = matplotlib.pyplot.gca()
     divider = make_axes_locatable(axcb)
     # this code is from
     # http://matplotlib.org/mpl_toolkits/axes_grid/users/overview.html#axes-grid1
     cax = divider.append_axes("right", size="3%", pad=0.15)
+
+
+    levels = numpy.asarray([0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,25,50,100,250,500,1000])
+    if vmax and not vmin:
+        level = levels[numpy.nanargmin(abs((vmax - numpy.nanmin(data))/5 - levels))]
+        ticks = numpy.arange(numpy.nanmin(data), vmax, level)
+    elif vmax and vmin:
+        level = levels[numpy.nanargmin(abs(vmax - vmin)/5 - levels)]
+        ticks = numpy.arange(vmin, vmax, level)
+    elif data is not None:
+        level = levels[numpy.nanargmin(abs((numpy.nanmin([cmax,numpy.nanmax(data)]) - numpy.nanmin(data))/5 - levels))]
+        ticks = numpy.arange(numpy.nanmin(data), numpy.nanmin([cmax,numpy.nanmax(data)]), level)
+        ticks -= numpy.nanmin(abs(levels))
+
     cb = matplotlib.pyplot.colorbar(self,
                                     cax=cax,
                                     label=label,
                                     orientation='vertical',
                                     extend='both',
-                                    spacing='uniform')
+                                    spacing='uniform',
+                                    ticks=ticks,
+                                    vmin=vmin, vmax=vmax)
         
     cb.ax.yaxis.set_ticks_position('right')
     cb.ax.yaxis.set_label_position('right')
-    if data is not None:
-        levels = numpy.asarray([0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,25,50,100,250,500,1000])
-        level = levels[numpy.nanargmin(abs((numpy.nanmin([cmax,numpy.nanmax(data)]) - numpy.nanmin(data))/5 - levels))]
-        levels = numpy.arange(numpy.nanmin(data), numpy.nanmin([cmax,numpy.nanmax(data)]), level)
-        levels -= numpy.nanmin(abs(levels))
-        cb.ax.set_yticks(levels)
-        cb.ax.set_yticklabels(cb.ax.get_yticklabels(), rotation='vertical',fontsize=fontsize)
+    cb.ax.set_yticklabels(cb.ax.get_yticklabels(), rotation='vertical',fontsize=fontsize)
+
     if reflevel:
         cb.ax.axhline((numpy.around(reflevel)-min(cb.get_clim()))/numpy.diff(cb.get_clim()),zorder=999,color='k',linewidth=2)
     return cb
@@ -496,29 +809,34 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
             fontsize=10,
             figsize=4,
             labels=[1,0,0,1],
-            shift=0.):
+            shift=0.,
+            mapbounds=None):
     
     
-    aspectratio, lons, lats, figsize = get_aspectratio(catalog=catalog,
-                    inventory=inventory,
-                    aspectratio=aspectratio,
-                    figsize=figsize)
-                    
-    y = lats.copy()
-    x = lons.copy()
-    
-    if max(lons)-min(lons) > aspectratio*(max(lats)-min(lats)):
-        # Too large
-        m = sum(y)/len(y)
-        d = max(x)-min(x)
-        lats.append(m + d/(2*aspectratio))
-        lats.append(m - d/(2*aspectratio))
+    if mapbounds:
+        lons = mapbounds[0]
+        lats = mapbounds[1]
     else:
-        # Too high
-        m = sum(x)/len(x)
-        d = max(y)-min(y)
-        lons.append(m + d*aspectratio/2)
-        lons.append(m - d*aspectratio/2)
+        aspectratio, lons, lats, figsize = get_aspectratio(catalog=catalog,
+                        inventory=inventory,
+                        aspectratio=aspectratio,
+                        figsize=figsize)
+                        
+        y = lats.copy()
+        x = lons.copy()
+        
+        if max(lons)-min(lons) > aspectratio*(max(lats)-min(lats)):
+            # Too large
+            m = sum(y)/len(y)
+            d = max(x)-min(x)
+            lats.append(m + d/(2*aspectratio))
+            lats.append(m - d/(2*aspectratio))
+        else:
+            # Too high
+            m = sum(x)/len(x)
+            d = max(y)-min(y)
+            lons.append(m + d*aspectratio/2)
+            lons.append(m - d*aspectratio/2)
 
     if ax:
         f = ax.get_figure()
@@ -528,13 +846,14 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
         f = matplotlib.pyplot.figure(figsize=figsize)
         ax = f.add_subplot(111)
 
+
     bmap = Basemap(llcrnrlon=min(lons)-(max(lons)-min(lons))*.1,
-                 llcrnrlat=min(lats)-(max(lats)-min(lats))*.1,
-                 urcrnrlon=max(lons)+(max(lons)-min(lons))*.1,
-                 urcrnrlat=max(lats)+(max(lats)-min(lats))*.1,
-                 epsg=4326,
-                 resolution=resolution,
-                     ax=ax)
+                   llcrnrlat=min(lats)-(max(lats)-min(lats))*.1,
+                   urcrnrlon=max(lons)+(max(lons)-min(lons))*.1,
+                   urcrnrlat=max(lats)+(max(lats)-min(lats))*.1,
+                   epsg=4326,
+                   resolution=resolution,
+                   ax=ax)
     try:
         #im1 = bmap.arcgisimage(service='World_Physical_Map',xpixels=xpixels)
         im2 = bmap.arcgisimage(service='ESRI_Imagery_World_2D',xpixels=xpixels)
@@ -560,19 +879,23 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
                          linewidth=.5,
                          color = 'w',
                          fontsize=fontsize)
-    bmap.drawcoastlines(linewidth=.5,
+    l = bmap.drawcoastlines(linewidth=.5,
                           color = 'w')
-    bmap.drawstates(linewidth=1.,
+    l.set_alpha(alpha)
+    l=bmap.drawstates(linewidth=1.,
                       color = 'w')
-    bmap.drawcountries(linewidth=2,
+    l.set_alpha(alpha)
+    l=bmap.drawcountries(linewidth=2,
                          color='w')
-    bmap.drawstates(linewidth=.5)
-    bmap.drawcountries(linewidth=1)
+    l.set_alpha(alpha)
+    l=bmap.drawstates(linewidth=.5)
+    l.set_alpha(alpha)
+    l=bmap.drawcountries(linewidth=1)
+    l.set_alpha(alpha)
     bmap.readshapefile('/Users/fmassin/Documents/Data/misc/tectonicplates/PB2002_plates',
                          name='PB2002_plates',
                          drawbounds=True,
-                         color='r')
-
+                         color='gray')
     return f,ax,bmap
 
 
@@ -581,7 +904,7 @@ def mapall(self=None,
            xpixels=900,
            resolution='h',
            fontsize=8,
-           alpha=.8,
+           alpha=.6,
            aspectratio=gold,
            markers='none',#networks',
            colors='instruments',
@@ -590,10 +913,11 @@ def mapall(self=None,
            colorbar=True,
            title=True,
            labels=[1,0,0,1],
-           titleaddons=None,
+           titleaddons='',
            insetfilter=None,
            fig=None,
            ax=None,
+           mapbounds=None,
            **kwargs):
     #Inventory.plot(self, projection='global', resolution='l',continent_fill_color='0.9', water_fill_color='1.0', marker="v",s ize=15**2, label=True, color='#b15928', color_per_network=False, colormap="Paired", legend="upper left", time=None, show=True, outfile=None, method=None, fig=None, **kwargs)
     
@@ -618,15 +942,14 @@ def mapall(self=None,
                   f=fig,
                   ax=ax,
                   labels=labels,
-                  shift=1/4.)
-    
-    titletext=''
+                  shift=1/4.,
+                  mapbounds=mapbounds)
 
-    titletext += catalog_addons.mapevents(catalog,
+    titletext = catalog_addons.mapevents(catalog,
                            bmap=bmap,
                            fig=fig,
                            eqcolorfield = 'depth',
-                           titletext=titletext,
+                           titletext=titleaddons,
                            colorbar=colorbar,
                            fontsize=fontsize)
 
@@ -639,19 +962,16 @@ def mapall(self=None,
                              fontsize=fontsize)
 
 
-
-
-    if titleaddons:
-        titletext = titleaddons+'\n'+titletext
     
     if title:
+        #sticker(titletext, bmap.ax, x=0, y=1, ha='left', va='bottom')
         bmap.ax.annotate(titletext,
                          xy=(0, 1),
                          xycoords='axes fraction',
                          horizontalalignment='left',
                          verticalalignment='bottom')
     if showlegend:
-        fig.legend = bmap.ax.legend(prop={'size':fontsize},ncol=2, loc=3)
+        fig.legend = bmap.ax.legend(prop={'size':fontsize}, loc=3)#,ncol=2
 
 
     if insetfilter:
@@ -704,31 +1024,30 @@ def mapall(self=None,
         axinset = fig.add_subplot(gs[pos])
         fig, fig.axinset, fig.bmapinset = mapall(others=[insetinventory,
                                                          insetcatalog],
-                                                           label=label,
-                                                           xpixels=xpixels,
-                                                           resolution=resolution,
-                                                           fontsize=5,
-                                                             labels=[0,0,0,0],#[0,1,1,0],
-                                                             markers=markers,
-                                                             colors=colors,
-                                                           alpha=alpha,
-                                                           showlegend=False,
-                                                           aspectratio=aspectratio,
-                                                           ax=axinset,
-                                                           title=False,
-                                                           colorbar=False,
-                                                           **kwargs)
+                                                 label=label,
+                                                 xpixels=xpixels,
+                                                 resolution=resolution,
+                                                 fontsize=5,
+                                                 labels=[0,0,0,0],#[0,1,1,0],
+                                                 markers=markers,
+                                                 colors=colors,
+                                                 alpha=alpha,
+                                                 showlegend=False,
+                                                 aspectratio=aspectratio,
+                                                 ax=axinset,
+                                                 title=False,
+                                                 colorbar=False,
+                                                 **kwargs)
         insetbounds = [fig.bmapinset.boundarylons,
                        fig.bmapinset.boundarylats]
         insetbounds[0].append(fig.bmapinset.boundarylons[0])
         insetbounds[1].append(fig.bmapinset.boundarylats[0])
         bmap.plot(insetbounds[0],
                   insetbounds[1],
-                  'r')
-        fig.bmapinset.plot(insetbounds[0],
-                           insetbounds[1],
-                           'r',
-                           linewidth=3)
+                  'red')
+        for spine in fig.bmapinset.ax.spines.values():
+            spine.set_edgecolor('red')
+
     fig.bmap=bmap
     return fig, ax, bmap
 
@@ -1310,7 +1629,14 @@ def get_event_waveform(self=obspy.core.event.event.Event(), client_eq=None, afte
 
     return self
 
-def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['*'],nminpgv=0):
+def plot_eventsections(self,
+                       client_wf,
+                       afterpick = 30,
+                       file = None,
+                       agencies=['*'],
+                       nminpgv=0,
+                       nmaxpgv=-1,
+                       emax=999999):
 
     fig = list()
     for ie,e in enumerate(self.events):
@@ -1353,63 +1679,68 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['*
                 if str(a.pick_id) == str(p.resource_id):
                     picks.append(p)
                     arrivals.append(a)
-
-        distances = [ a.distance for a in arrivals ]
+        distances=list()
+        for a in arrivals:
+            if a.distance:
+                distances.append(a.distance)
+            else:
+                distances.append(numpy.nan)
 
         for indexp in numpy.argsort(distances) :
-            p = picks[indexp]
-            a = arrivals[indexp]
-            
-            if ( a.distance*110. < 30.*3.):
+            if distances[indexp] >0:
+                p = picks[indexp]
+                a = arrivals[indexp]
+                
+                if ( a.distance*110. < 30.*3.):
 
-                if not p.waveform_id.location_code:
-                    p.waveform_id.location_code =''
-                
-                if not fileok:
-                    try:
-                        toadd = client_wf.get_waveforms(p.waveform_id.network_code,
-                                                        p.waveform_id.station_code,
-                                                        p.waveform_id.location_code,
-                                                        p.waveform_id.channel_code,
-                                                        starttime = o.time,
-                                                        endtime = numpy.min([o.time+30,pmax+afterpick]) )
-                    except:
-                        toadd = obspy.core.stream.Stream()
-                else:
-                    toadd = fst.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.'+p.waveform_id.location_code+'.'+p.waveform_id.channel_code)
-                
-                for tr in toadd:
-                    if (sum(abs(tr.data)) < .1 or
-                        sum(abs(numpy.diff(tr.data))) < .1):
-                        toadd.remove(tr)
-                        print('no signal removing '+tr.stats.network+tr.stats.station+tr.stats.location+tr.stats.channel)
+                    if not p.waveform_id.location_code:
+                        p.waveform_id.location_code =''
+                    
+                    if not fileok:
+                        try:
+                            toadd = client_wf.get_waveforms(p.waveform_id.network_code,
+                                                            p.waveform_id.station_code,
+                                                            p.waveform_id.location_code,
+                                                            p.waveform_id.channel_code,
+                                                            starttime = o.time,
+                                                            endtime = numpy.min([o.time+30,pmax+afterpick]) )
+                        except:
+                            toadd = obspy.core.stream.Stream()
                     else:
-                        ifile = 'data/'+tr.stats.network+tr.stats.station+tr.stats.location+tr.stats.channel+str(o.time)+'.xml'
-                        if not os.path.isfile(ifile):
-                            try:
-                                inv=client_wf.get_stations(startbefore = o.time,
-                                                           endafter = numpy.min([o.time+30,pmax+afterpick]),
-                                                           network=tr.stats.network,
-                                                           station=tr.stats.station,
-                                                           location=tr.stats.location,
-                                                           channel=tr.stats.channel,
-                                                           level="response")
-                                inv.write(ifile, format='STATIONXML')
-                                toadd.attach_response(inv)
-                            except:
-                                print('no response removing '+tr.stats.network+tr.stats.station+tr.stats.location+tr.stats.channel)
-                                toadd.remove(tr)
+                        toadd = fst.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.'+p.waveform_id.location_code+'.'+p.waveform_id.channel_code)
+                    
+                    for tr in toadd:
+                        if (sum(abs(tr.data)) < .1 or
+                            sum(abs(numpy.diff(tr.data))) < .1):
+                            toadd.remove(tr)
+                            print('no signal removing '+tr.stats.network+tr.stats.station+tr.stats.location+tr.stats.channel)
                         else:
-                            inv = obspy.read_inventory(ifile)
-                            toadd.attach_response(inv)
-                        
-                st += toadd
-                        
-                for t in st.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.'+p.waveform_id.location_code+'.'+p.waveform_id.channel_code):
-                    t.stats.distance = sqrt((a.distance*110000.)**2+o.depth**2)
-                
-                if len(st)>20 :
-                    break
+                            ifile = 'data/'+tr.stats.network+tr.stats.station+tr.stats.location+tr.stats.channel+str(o.time)+'.xml'
+                            if not os.path.isfile(ifile):
+                                try:
+                                    inv=client_wf.get_stations(startbefore = o.time,
+                                                               endafter = numpy.min([o.time+30,pmax+afterpick]),
+                                                               network=tr.stats.network,
+                                                               station=tr.stats.station,
+                                                               location=tr.stats.location,
+                                                               channel=tr.stats.channel,
+                                                               level="response")
+                                    inv.write(ifile, format='STATIONXML')
+                                    toadd.attach_response(inv)
+                                except:
+                                    print('no response removing '+tr.stats.network+tr.stats.station+tr.stats.location+tr.stats.channel)
+                                    toadd.remove(tr)
+                            else:
+                                inv = obspy.read_inventory(ifile)
+                                toadd.attach_response(inv)
+                            
+                    st += toadd
+                            
+                    for t in st.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.'+p.waveform_id.location_code+'.'+p.waveform_id.channel_code):
+                        t.stats.distance = sqrt((a.distance*110000.)**2+o.depth**2)
+                    
+                    if len(st)>20 :
+                        break
         
         if not fileok:
             if not os.path.exists('data'):
@@ -1421,22 +1752,27 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['*
         if len(st)>0:
 
             st.remove_response(output="VEL")
-            st.detrend()
+            st.detrend('linear')
+
+            st.taper(.1)
+            st.filter("highpass", freq=.5)
+            st.detrend('linear')
+            st.taper(.1)
+            st.filter("lowpass", freq=45)
+            
             tmp=st.slice(starttime=o.time, endtime=o.time+30)
             tmp.merge(method=1)
-            #tmp.filter("highpass", freq=.5)
-            #tmp.filter("lowpass", freq=25)
             
             fig.append( matplotlib.pyplot.figure() )
             
-            tmp.plot(type='section', # starttime=o.time-10,
+            tmp.select(channel='*Z').plot(type='section', # starttime=o.time-10,
                      reftime=o.time,
                      time_down=True,
                      linewidth=.75,
                      #grid_linewidth=0.,
                      show=False,
                      fig=fig[-1],
-                     color='network',
+                     #color='network',
                      orientation='horizontal',
                      scale=3)
             ax = matplotlib.pyplot.gca()
@@ -1454,24 +1790,25 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['*
             colors = {'P':'g','S':'k','Pg':'g','Sg':'k'}
             textdone = list()
             for i,p in enumerate(picks):
-                if arrivals[i].distance*110 < st[-1].stats.distance/ 1e3:
-                    ax.plot(picks[i].time - o.time,
-                            arrivals[i].distance*110,
-                            marker=markers[str(arrivals[i].phase)],
-                            color=colors[str(arrivals[i].phase)],
-                            zorder=-20)
-                    if str(arrivals[i].phase) not in textdone:
-                        textdone.append(str(arrivals[i].phase))
-                        ax.text(picks[i].time - o.time,
+                if arrivals[i].distance:
+                    if arrivals[i].distance*110 < st[-1].stats.distance/ 1e3:
+                        ax.plot(picks[i].time - o.time,
                                 arrivals[i].distance*110,
-                                str(arrivals[i].phase),
-                                weight="heavy",
+                                marker=markers[str(arrivals[i].phase)],
                                 color=colors[str(arrivals[i].phase)],
-                                horizontalalignment='right',
-                                verticalalignment='bottom',
-                                zorder=-10,alpha=.3,
-                                path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
-                                                                            foreground="white")])
+                                zorder=-20)
+                        if str(arrivals[i].phase) not in textdone:
+                            textdone.append(str(arrivals[i].phase))
+                            ax.text(picks[i].time - o.time,
+                                    arrivals[i].distance*110,
+                                    str(arrivals[i].phase),
+                                    weight="heavy",
+                                    color=colors[str(arrivals[i].phase)],
+                                    horizontalalignment='right',
+                                    verticalalignment='bottom',
+                                    zorder=-10,alpha=.3,
+                                    path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
+                                                                                foreground="white")])
 
 
             ax2 = fig[-1].add_subplot(311)
@@ -1483,97 +1820,125 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['*
 
             markers = {'MVS':'o','Mfd':'^'}
             colors = {'MVS':'b','Mfd':'r'}
+            alphas = {'Pb':.1,'SED':.5}
             plotted=list()
             plottedr=list()
             plottedl=list()
             plottedrl=list()
             plottedm=list()
-            for cm in e.magnitudes:
-                for co in e.origins:
-                    if str(cm.origin_id) == str(co.resource_id):
-                        
-                        OK_pipeline=1
-                        if cm.magnitude_type in ['Mfd']:
-                            if ('forel' in cm.creation_info.author or
-                                'alp' in cm.creation_info.author):
-                                OK_pipeline=0
-                                if ((0.39 * co.longitude + 44) < co.latitude and
-                                    'forel' in cm.creation_info.author):
-                                    OK_pipeline=1
-                                elif ((0.39 * co.longitude + 44) >= co.latitude and
-                                      'alp' in cm.creation_info.author):
-                                    OK_pipeline=1
-                            else:
-                                OK_pipeline=1
 
-                        elif (cm.magnitude_type in ['MVS'] and
-                              ('NLoT_auloc' in co.creation_info.author or
-                               'NLoT_reloc' in co.creation_info.author or
-                               'autoloc' in co.creation_info.author)):
+            if False:
+                for cm in e.magnitudes:
+                    testm = re.sub('.*rigin.','', str(cm.origin_id))
+                    print('M origin:',testm,str(cm.origin_id))
+                    f=0
+                    for co in e.origins:
+                        testo = re.sub('.*rigin.','', str(co.resource_id))
+                        if testm == testo:
+                            print('>>>origin:',testo,str(co.resource_id))
+                            f=1
+                    if f==0:
+                        print('NOT FOUND')
+
+            for alpha in ['SED','Pb']:
+                for cm in e.magnitudes:
+                    testm = re.sub('.*rigin.','', str(cm.origin_id))
+                    for co in e.origins:
+                        testo = re.sub('.*rigin.','', str(co.resource_id))
+                        if testm == testo and alpha == str(cm.creation_info.agency_id):
+                            
+                            
                             OK_pipeline=1
-                        else:
-                            OK_pipeline=0
-                            if False:#cm.creation_info.agency_id in ['Pb']:
-                                print('rejected:')
-                                print(cm)
-                                print(co)
-                        
-
-                        if (cm.magnitude_type in ['MVS', 'Mfd'] and
-                            ('*' in agencies or cm.creation_info.agency_id in agencies) and
-                            OK_pipeline) :
-                            
-                            
-                            ct = max([cm.creation_info.creation_time, co.creation_info.creation_time ])
-                            ax.axvline(ct - o.time, linewidth=.1, linestyle=':', color=colors[cm.magnitude_type])
-                            
-                            tmp=st.slice(starttime=o.time, endtime= ct )
-                            phases = list()
-                            for tr in tmp:
-                                if tr.stats.distance/1000/3 < ct - o.time:
-                                    phases.append('S-wave')
-                                    #print(ct - o.time,str(tr.stats.distance/1000),': S')
+                            if cm.magnitude_type in ['Mfd']:
+                                if ('forel' in cm.creation_info.author or
+                                    'alp' in cm.creation_info.author):
+                                    OK_pipeline=0
+                                    if ((0.39 * co.longitude + 44) < co.latitude and
+                                        'forel' in cm.creation_info.author):
+                                        OK_pipeline=1
+                                    elif ((0.39 * co.longitude + 44) >= co.latitude and
+                                          'alp' in cm.creation_info.author):
+                                        OK_pipeline=1
                                 else:
-                                    phases.append('P-wave')
-                                #print(ct - o.time,str(tr.stats.distance/1000),': P')
-                            
-                            R = [(tr.stats.distance/1000)                     for tr in tmp if tr.stats.distance/1000/3<ct - o.time]
-                            PGV = numpy.asarray([numpy.max(abs(tr.data)) for tr in tmp if tr.stats.distance/1000/3<ct - o.time ])
-                            PGVm = cuaheaton2007(magnitudes=[cm.mag], R = R, phases=phases)
-                            PGVerror = abs(PGV - PGVm)/PGV
-                            PGVerror=PGVerror[numpy.argsort(R)]
-                            print(PGVerror,PGV,PGVm)
-                            
-                            LOCerror = haversine(o.longitude, o.latitude, co.longitude, co.latitude)/1000
-                            try:
-                                LOCerror = numpy.sqrt(LOCerror**2 + ((o.depth-co.depth)/1000)**2)
-                            except:
-                                print('no depth error in ')
-                                print(co)
-                            
-                            ax2.scatter(numpy.tile(ct - o.time, PGV[nminpgv:].shape),
-                                     PGVerror[nminpgv:],
-                                        R[nminpgv:],
-                                     marker=markers[cm.magnitude_type],
-                                     alpha=.1,
-                                     color=colors[cm.magnitude_type])
+                                    OK_pipeline=1
 
-                            obl,=ax3.plot(ct - o.time,
-                                         LOCerror,
-                                         markers[cm.magnitude_type],
-                                         color=colors[cm.magnitude_type])
-                            obm,=ax3r.plot(ct - o.time,
-                                           pm.mag - cm.mag,
-                                           markers[cm.magnitude_type],
-                                           markeredgecolor=colors[cm.magnitude_type],
-                                           color='None')
+                            elif (str(cm.magnitude_type) in ['MVS'] ):#and
+                                  #('NLoT' in str(co.creation_info.author) or
+                                  # 'autoloc' in str(co.creation_info.author))):
+                                OK_pipeline=1
+                            else:
+                                OK_pipeline=0
+                                if False:#cm.creation_info.agency_id in ['Pb']:
+                                    print('rejected:')
+                                    print(cm)
+                                    print(co)
+
+                            if (str(cm.magnitude_type) in ['MVS', 'Mfd'] and
+                                ('*' in agencies or str(cm.creation_info.agency_id) in agencies) and
+                                OK_pipeline) :
+
+                                #print(str(co.creation_info))
+                                #print('Selected:')
+                                #print(cm)
+                                #print(co)
                                 
-                            if (cm.magnitude_type not in plottedm ):
-                                plottedm.append(cm.magnitude_type)
-                                plotted.append(obl)
-                                plottedr.append(obm)
-                                plottedl.append(r'Loc$_{'+cm.magnitude_type[1:]+'}$')
-                                plottedrl.append(r'Mag$_{'+cm.magnitude_type[1:]+'}$')
+                                ct = max([cm.creation_info.creation_time, co.creation_info.creation_time ])
+                                ax.axvline(ct - o.time, linewidth=.1, linestyle=':', color=colors[cm.magnitude_type])
+                                
+                                tmp=st.slice(starttime=o.time, endtime= ct )
+                                phases = list()
+                                for tr in tmp:
+                                    if tr.stats.distance/1000/3 < ct - o.time:
+                                        phases.append('S-wave')
+                                        #print(ct - o.time,str(tr.stats.distance/1000),': S')
+                                    else:
+                                        phases.append('P-wave')
+                                    #print(ct - o.time,str(tr.stats.distance/1000),': P')
+                                
+                                R = [(tr.stats.distance/1000)                     for tr in tmp if tr.stats.distance/1000/3<ct - o.time]
+                                PGV = numpy.asarray([numpy.max(abs(tr.data)) for tr in tmp if tr.stats.distance/1000/3<ct - o.time ])
+                                PGVm = cuaheaton2007(magnitudes=[cm.mag], R = R, phases=phases)
+                                PGVerror = abs(PGV - PGVm/100)/PGV
+                                PGVerror=PGVerror[numpy.argsort(R)]
+                                R = numpy.sort(R)
+                                
+                                
+                                LOCerror = haversine(o.longitude, o.latitude, co.longitude, co.latitude)/1000
+                                try:
+                                    LOCerror = numpy.sqrt(LOCerror**2 + ((o.depth-co.depth)/1000)**2)
+                                except:
+                                    print('no depth error in ')
+                                    print(co)
+                                
+                                PGV = PGV[PGVerror<emax]
+                                R=R[PGVerror<emax]
+                                PGVerror=PGVerror[PGVerror<emax]
+                                
+                                ax2.scatter(numpy.tile(ct - o.time, PGV[nminpgv:nmaxpgv].shape),
+                                         PGVerror[nminpgv:nmaxpgv],
+                                            R[nminpgv:nmaxpgv],
+                                         marker=markers[cm.magnitude_type],
+                                         alpha=alphas[alpha],
+                                         color=colors[cm.magnitude_type])
+
+                                obl,=ax3.plot(ct - o.time,
+                                             LOCerror,
+                                             markers[cm.magnitude_type],
+                                             color=colors[cm.magnitude_type],
+                                              alpha=alphas[alpha],)
+                                obm,=ax3r.plot(ct - o.time,
+                                               pm.mag - cm.mag,
+                                               markers[cm.magnitude_type],
+                                               markeredgecolor=colors[cm.magnitude_type],
+                                               color='None',
+                                               alpha=alphas[alpha])
+                                    
+                                if (cm.magnitude_type not in plottedm ):
+                                    plottedm.append(cm.magnitude_type)
+                                    plotted.append(obl)
+                                    plottedr.append(obm)
+                                    plottedl.append(r'Loc$_{'+cm.magnitude_type[1:]+'}$')
+                                    plottedrl.append(r'M$_{'+cm.magnitude_type[1:]+'}$')
 
 
 
@@ -1588,15 +1953,17 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['*
             ax3.xaxis.set_major_locator(majorLocator)
             ax2.xaxis.set_major_locator(majorLocator)
             ax2.set_xlim([0,30])
-            l = ax.get_legend()
-            if len(l.get_texts())>1:
+
+            try:
+                l = ax.get_legend()
                 la = [ text.get_text() for text in l.get_texts()]
                 [line.set_linewidth(3) for line in l.get_lines()]
                 li = l.get_lines()
-            else:
+                l.remove()
+            except:
                 li=[]
                 la=[]
-            l.remove()
+
             l = ax.legend(li,la, loc='lower right', ncol=7,prop={'size':6},title=e.short_str()+' \n '+str(e.resource_id))
             l.get_title().set_fontsize('6')
             ax.set_xlabel('Time after origin [s]')
@@ -1608,7 +1975,7 @@ def plot_eventsections(self, client_wf, afterpick = 30, file = None,agencies=['*
             ax3r.set_ylabel(r'Magnitude error')
             #ax2.set_ylim([-.021,-.008])
             ax3.set_yscale('log')
-            ax3.set_ylim([1,100])
+            ax3.set_ylim([.1,100])
             ax3.set_xlim([0,30])
             ax3r.set_ylim([-1.1,1.1])
 
@@ -1771,11 +2138,11 @@ def depth_norm(depths):
     return n
 
 
-obspy.core.event.catalog.Catalog.plot_eventsections = plot_eventsections
-obspy.core.inventory.Inventory.hasdata = hasdata
-obspy.core.event.catalog.Catalog.evfind = evfind
-obspy.core.event.catalog.Catalog.plot_Mfirst = plot_Mfirst
-obspy.core.event.catalog.Catalog.eewtlines = eewtlines
-obspy.core.event.catalog.Catalog.get = get
-obspy.core.event.catalog.Catalog.plot_map = plot_map
+#obspy.core.event.catalog.Catalog.plot_eventsections = plot_eventsections
+#obspy.core.inventory.Inventory.hasdata = hasdata
+#obspy.core.event.catalog.Catalog.evfind = evfind
+#obspy.core.event.catalog.Catalog.plot_Mfirst = plot_Mfirst
+#obspy.core.event.catalog.Catalog.eewtlines = eewtlines
+#obspy.core.event.catalog.Catalog.get = get
+#obspy.core.event.catalog.Catalog.plot_map = plot_map
 

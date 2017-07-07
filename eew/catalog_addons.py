@@ -100,12 +100,12 @@ def get(self, lst, att=None, types=[] , full=False, pref=False, last=False, firs
 def eventsize(mags):
     
     min_size = 2
-    max_size = 30
+    max_size = 15
     
     steps=numpy.asarray([0.01,0.02,0.05,0.1,0.2,.5,1.,2.,5.])
-    s = steps[numpy.argmin(abs((max(mags)-min(mags))/3-steps))+1]
-    min_size_ = min(mags) - 1
-    max_size_ = max(mags) + 1
+    s = steps[numpy.argmin(abs((max(mags)-min(mags))/3-steps))]
+    min_size_ = min(mags) - .1
+    max_size_ = max(mags) + .1
 
     magsscale=[_i for _i in numpy.arange(-2,10,s) if _i>=min_size_ and _i<=max_size_]
     frac = [(0.2 + (_i - min_size_)) / (max_size_ - min_size_) for _i in magsscale]
@@ -229,51 +229,67 @@ def plot_traveltime(self=obspy.core.event.catalog.Catalog(),
                     ax=None,
                     plots=True,
                     style='c',
-                    iplot=None):
+                    iplot=None,
+                    sticker_addons=None):
 
     if isinstance(self, list):
-        b=0
-        for i,c in enumerate(self):
-            b = numpy.nanmax([b,plot_traveltime(c,NumbersofP,NumbersofS,1,plots=False)[1]])
-    
-        if style in ['cum','c','cumulate']:
-            kw={'xlim':[0,b*1.1]}
-            x=len(self)
-            y=1
-        else:
-            y=len(self)
-            x=1
-            kw={'xlim':[0,b*1.1],'ylim':[0,b*1.1]}
+        letters = 'ABCDEFGH'
+        f, (ax) = matplotlib.pyplot.subplots(len(self),1)
+        # make a big axe so we have one ylabel for all subplots
+        biga = f.add_subplot(111, frameon=False)
+        # turn every element off the big axe so we don't see it
+        biga.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
 
-        f, (ax) = matplotlib.pyplot.subplots(x,y,subplot_kw=kw)
-        
         for i,c in enumerate(self):
+
+            if sticker_addons:
+                if isinstance(sticker_addons, list):
+                    sa = sticker_addons[i]
+                else:
+                    sa = letters[i] + '. ' + sticker_addons
+            else:
+                sa = letters[i] + '. '
             
-            
-            plot_traveltime(c,NumbersofP,NumbersofS,ax[i],iplot=len(self)-i-1,style=style)
+            plot_traveltime(self=c,
+                            NumbersofP=NumbersofP,
+                            NumbersofS=NumbersofS,
+                            ax=ax[i],
+                            iplot=len(self)-i-1,
+                            style=style,
+                            sticker_addons=sa)
             #ax[i].grid()
             if i==0:
                 if style in ['cum','c','cumulate']:
-                    ax[i].set_ylabel('Number of phases')
-                    ax[i].set_xlabel('Observed travel Time')
+                    # add common labels
+                    biga.set_ylabel(ax[i].get_ylabel())#'Number of phases')
+                    ax[i].set_ylabel('')
+                    #ax[i].set_xlabel('Observed travel Time')
                     obspy_addons.adjust_spines(ax[i], ['left', 'top'])
                 else:
-                    ax[i].set_title('Observed travel times')
-                    ax[i].set_xlabel('Observed P travel time')
-                    ax[i].set_ylabel('Observed S travel time')
+                    #ax[i].set_title('Observed travel times')
+                    #ax[i].set_xlabel('Observed P travel time')
+                    ax[i].set_ylabel('')#ax[i].set_ylabel('Observed S travel time')
                     obspy_addons.adjust_spines(ax[i], ['left', 'bottom'])
                 
             elif i==len(self)-1:
                 if style in ['cum','c','cumulate']:
+                    ax[i].set_ylabel('')
                     obspy_addons.adjust_spines(ax[i], ['left', 'bottom'])
                 else:
                     obspy_addons.adjust_spines(ax[i], ['right', 'bottom'])
             else:
                 if style in ['cum','c','cumulate']:
+                    ax[i].set_ylabel('')
                     obspy_addons.adjust_spines(ax[i], ['left'])
                 else:
                     obspy_addons.adjust_spines(ax[i], ['bottom'])
-            
+
+            if style in ['cum','c','cumulate']:
+                xmax=0
+                for a in ax:
+                    xmax = max([xmax, max(a.get_xlim())])
+                for a in ax:
+                    a.set_xlim([0, xmax])
 
         return ax
     maxarr=0
@@ -330,17 +346,16 @@ def plot_traveltime(self=obspy.core.event.catalog.Catalog(),
     if not ax:
         f, (ax) = matplotlib.pyplot.subplots(1, 1)
         obspy_addons.adjust_spines(ax, ['left', 'bottom'])
-        if style in ['vs','v','versus']:
-            ax.set_ylabel('Observed S travel time')
-            ax.set_xlabel('Observed P travel time')
-            ax.set_title('Observed travel times')
-            ax.grid()
-            ax.set_aspect('equal')
-        elif style in  ['cum','c','cumulate']:
-            ax.set_ylabel('Number of phases')
-            ax.set_xlabel('Observed travel Time')
-            x.set_title('Observed travel times')
-            ax.grid()
+    if style in ['vs','v','versus']:
+        ax.set_ylabel('Observed S travel time')
+        ax.set_xlabel('Observed P travel time')
+        ax.set_aspect('equal')
+    elif style in  ['cum','c','cumulate']:
+        ax.set_ylabel('Number of phases')
+        ax.set_xlabel('Observed travel Time')
+    ax.grid()
+    if sticker_addons:
+        obspy_addons.sticker(sticker_addons, ax, x=0, y=1, ha='left', va='top')  # ,fontsize='xx-small')
 
     b=0
     if style in ['vs','v','versus']:
@@ -353,12 +368,28 @@ def plot_traveltime(self=obspy.core.event.catalog.Catalog(),
                                marker='.',
                                alpha=0.25,
                                label=str(p)+'P || '+str(s)+'S')
+
     elif style in ['cum','c','cumulate']:
+
         l=['P','S']
         p=max(NumbersofP)+2
         b = max([b,numpy.nanmax(n[p])])
         b = max([b,numpy.nanmax(N[p])])
-        if plots:
+
+        for i in range(max(NumbersofP)):
+            obspy_addons.plot_arrivals_chronologies(ax,
+                                                    i,
+                                                    n[i],
+                                                    PorS='P',
+                                                    upordown=1)
+            
+            obspy_addons.plot_arrivals_chronologies(ax,
+                                                    i,
+                                                    n[i],
+                                                    PorS='P',
+                                                    upordown=-1)
+        ax.legend(ncol=2)
+        if False:
             for e in range(len(n[p])):
                 #n[0,e]=0
                 ax.errorbar(n[:p,e],
