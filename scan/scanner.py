@@ -15,6 +15,7 @@ import os
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as PathEffects
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from obspy import read, Trace, Stream
@@ -645,13 +646,12 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
     if style in ('f', 'w', 'frame', 'wireframe') :
 
         ax.plot_wireframe(X*amplitudes_surf, Y*amplitudes_surf, Z*amplitudes_surf, rstride=1, cstride=1, linewidth=0.5, alpha=alpha)
-
+            
     ## For focal sphere, with amplitude sign (~not a beach ball diagram) on unit sphere
     if style in ('*', 'p', 'polarities'):
 
         if style is '*':
             alpha =0.1
-
         polarity_area = amplitudes.copy()
         polarity_area[amplitudes > 0] = np.nan
         polarity_area[amplitudes <= 0] = 1
@@ -667,7 +667,13 @@ def plot_seismicsourcemodel(disp, xyz, style='*', mt=None, comp=None, ax=None, a
         polarity_area = amplitudes.copy()
         polarity_area[amplitudes >= 0] = 1
         polarity_area[amplitudes < 0] = -1
-        ax.plot_surface(X, Y, Z, linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(polarity_area))
+        Z[Z>0]=np.nan
+        
+        ax.plot_surface(X*1.1, Y*1.1, Z-2, linewidth=5, rstride=1, cstride=1, edgecolor='w', facecolor='w', color='w')
+        ax.plot_surface(X, Y, Z, alpha=.5, linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(polarity_area))
+        ax.view_init(elev=90., azim=-90)
+        ax.axis('off')
+
 
 	## For focal sphere, with amplitude colorcoded on unit sphere
     if style in ('x'):
@@ -1448,6 +1454,13 @@ class SeismicSource(object):
                             'clvd': {'definition':clvd, 'name':'Compensated linear vector'},
                             'dc': {'definition':dc, 'name':'Double couple'} }
 
+        dc_0 = np.array([0.,0.,0.,np.sqrt(c),0.,0.]) * 1./np.sqrt(2.)
+        dc_1 = np.array([0.,0.,0.,0.,np.sqrt(c),0.]) * 1./np.sqrt(2.)
+        dc_2 = np.array([0.,0.,0.,0.,0.,np.sqrt(c)]) * 1./np.sqrt(2.)
+        self.simple_models_dc={ 0: {'definition':dc_0, 'name':'Double couple'},
+                                1: {'definition':dc_1, 'name':'Double couple'},
+                                2: {'definition':dc_2, 'name':'Double couple'} }
+
     def demo(self):
 
         # Axes Plots
@@ -1459,6 +1472,20 @@ class SeismicSource(object):
             example = SeismicSource(self.simple_models[v]['definition'])
             example.Aki_Richards.plot(wave='P', style='*', ax=ax, cbarxlabel='P-wave amplitudes', cb=cb[i])
             ax.set_title(self.simple_models[v]['name'])
+
+        plt.tight_layout()
+
+    def demodc(self):
+
+        # Axes Plots
+        fig = plt.figure(figsize=plt.figaspect(2.))
+        p = ((0,0), (1,0), (2,0))
+        cb=[0,0,1]
+        for i,v in enumerate(self.simple_models_dc.keys()):
+            ax = plt.subplot2grid((3,1), p[i], projection='3d', aspect='equal', ylim=[-1,1], xlim=[-1,1], zlim=[-1,1])
+            example = SeismicSource(self.simple_models_dc[v]['definition'])
+            example.Aki_Richards.plot(wave='P', style='*', ax=ax, cbarxlabel='P-wave amplitudes', cb=cb[i])
+            ax.set_title(self.simple_models_dc[v]['name'])
 
         plt.tight_layout()
 
@@ -1487,7 +1514,12 @@ def degrade(wavelets, shift = [-.1, .1], snr = [.5, 5.]):
 
     return wavelets
 
-def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
+def plot_wavelet(bodywavelet,
+                 style = 's',
+                 ax=None,
+                 detail_level = 1,
+                 lim=200,
+                 scale=1):
 
     ## Initializing the plot
     if ax == None:
@@ -1495,17 +1527,17 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
 
     axins = inset_axes(ax,
                        axes_kwargs={'zorder':-9},
-                       width="180%", # width = 30% of parent_bbox
-                       height="180%",
+                       width=str(280/scale)+"%", # width = 30% of parent_bbox
+                       height=str(280/scale)+"%",
                        loc=1)
 
 
     ax.patch.set_color('none')
     cbar = []
     if hasattr(bodywavelet, 'SeismicSource'):
-        ax, cbar = bodywavelet.SeismicSource.Aki_Richards.plot(wave='P', style='s', ax=ax, insert_title=" and "+bodywavelet.title)
+        ax, cbar = bodywavelet.SeismicSource.Aki_Richards.plot(wave='P', style=style, ax=ax, insert_title=" and "+bodywavelet.title)
         pos1 = ax.get_position() # get the original position
-        pos2 = [pos1.x0 + pos1.width*0.5, pos1.y0 + pos1.height*0.5,  pos1.width / 2.0, pos1.height / 2.0]
+        pos2 = [pos1.x0 + pos1.width-pos1.width/3.*scale, pos1.y0 + pos1.height-pos1.height/3.*scale,  pos1.width/3.*1.*scale, pos1.height/3.*scale]
         ax.set_position(pos2) #
         
         axins.set_title(ax.get_title())
@@ -1518,12 +1550,18 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
     for i,w in enumerate(bodywavelet.Stream):
         #print bodywavelet.Stream[i].data.shape
         wavelets.append(w.data)
-        ws.append( np.sum( w.data[:int(len(w.data)/2.)]) )
-        lmax = np.max([ lmax , len(w.data) ])
-        axins.plot(w.data+i*4./len(bodywavelet.Stream) )#,
+        if i<lim:
+            ws.append( np.sum( w.data[:int(len(w.data)/2.)]) )
+            lmax = np.max([ lmax , len(w.data) ])
+            axins.plot(w.data+i*4./(min([lim,len(bodywavelet.Stream)])))#,
                    #alpha=1.-(bodywavelet.observations['sph'][2, i]/(1.1*np.nanmax(bodywavelet.observations['sph'][2, :]))))
+    if i>lim:
+        print('Only %s wavelets shown over %s available.'%(lim,len(bodywavelet.Stream)))
+    
 
-    axins.set_xlim([0 , lmax-1])
+    axins.autoscale(enable=True, axis='both', tight=True)
+    axins.set_ylim(top=axins.get_ylim()[1]*1.4)
+    #axins.set_xlim([0 , lmax-1])
     axins.yaxis.set_ticks_position('left')
     axins.yaxis.set_label_position('left')#    axins.xaxis.set_label_position('top')
     axins.set_xlabel('Time samples')
@@ -1533,14 +1571,33 @@ def plot_wavelet(bodywavelet, style = '*', ax=None, detail_level = 1):
     wavelets = np.ascontiguousarray(wavelets)
     ws = np.ascontiguousarray(ws)
 
-    ax.scatter(bodywavelet.observations['cart'][0][ws>=0.],
-                bodywavelet.observations['cart'][1][ws>=0.],
-                bodywavelet.observations['cart'][2][ws>=0.],
-                marker='+', c='b')
-    ax.scatter(bodywavelet.observations['cart'][0][ws<0.],
-                bodywavelet.observations['cart'][1][ws<0.],
-                bodywavelet.observations['cart'][2][ws<0.],
-                marker='o', c= 'r')
+    if style not in ['b','bb','beachball']:
+        ax.scatter(bodywavelet.observations['cart'][0][ws>=0.],
+                    bodywavelet.observations['cart'][1][ws>=0.],
+                    bodywavelet.observations['cart'][2][ws>=0.],
+                    marker='+', c='b')
+        ax.scatter(bodywavelet.observations['cart'][0][ws<0.],
+                    bodywavelet.observations['cart'][1][ws<0.],
+                    bodywavelet.observations['cart'][2][ws<0.],
+                    marker='o', c= 'r')
+    else:
+        test=bodywavelet.observations['cart'][2]>0
+        bodywavelet.observations['cart'][0][test] *=-1
+        bodywavelet.observations['cart'][1][test] *=-1
+        bodywavelet.observations['cart'][2][test] *=-1
+        
+        ax.scatter(bodywavelet.observations['cart'][0][ws>=0.],
+                   bodywavelet.observations['cart'][1][ws>=0.],
+                   bodywavelet.observations['cart'][2][ws>=0.]+.1,
+                   marker='+', c='b')
+        ax.scatter(bodywavelet.observations['cart'][0][ws<0.],
+                   bodywavelet.observations['cart'][1][ws<0.],
+                   bodywavelet.observations['cart'][2][ws<0.]+.1,
+                    marker='o', c= 'r')
+
+        bodywavelet.observations['cart'][0][test] *=-1
+        bodywavelet.observations['cart'][1][test] *=-1
+        bodywavelet.observations['cart'][2][test] *=-1
 
 
 
@@ -1846,7 +1903,7 @@ class BodyWavelets(object):
                 if len(self.Stream) < n :
                     #print pick.waveform_id, pick.phase_hint, pick.time,
                     for a,arrival in enumerate(cat[0].origins[0].arrivals):
-                        if arrival.pick_id == pick.resource_id:
+                        if arrival.pick_id == pick.resource_id and np.deg2rad(arrival.takeoff_angle)!=0:
                             #print arrival.azimuth, arrival.takeoff_angle, arrival.distance
                             seismic_waveform_file = sacs+"*"+pick.waveform_id.station_code+"*Z*.sac.linux"
                             if len(glob.glob(seismic_waveform_file))>0:
@@ -1963,7 +2020,8 @@ class SourceScan(object):
                  waves = ['P', 'S'],
                  components = [['L'], ['T', 'Q'] ],
                  grids_rootdir='~/.config/seismic_source_grids',
-                 grid=''):
+                 grid='',
+                 goldenspiral=False):
         '''
             Sets model space
         '''
@@ -1983,24 +2041,30 @@ class SourceScan(object):
         ### Observations (in trigo convention)
         self.atr = cartesian_to_spherical(globe(n=n_obs))
         observations_atr_nparray = np.asarray(self.atr)
-#         # test plot ##################################################
-#         ax = (plt.figure()).gca(projection='3d')                     #
-#         ax.scatter(globe(n=500)[0], globe(n=500)[1], globe(n=500)[2])#
-#         ##############################################################
+        # test plot ##################################################
+        #ax = (plt.figure()).gca(projection='3d')                     #
+        #ax.scatter(globe(n=500)[0], globe(n=500)[1], globe(n=500)[2])#
+        ##############################################################
 
         if n_dims == 3 :
             # Scans : strike, dip, slip
 
-            ## DC exploration step
-            self.precision = ((180.**3.)/n_model)**(1/3.)
+            if goldenspiral:
+                atr = cartesian_to_spherical(globe(n=n_model))
+                # mopad: P/T axis in atr > strike dip rake
+                print('No yet implemented in public version')
+            
+            else:
+                ## DC exploration step
+                self.precision =  ((180.**3.)/n_model)**(1/3.) # if even points : 4*180.*(1./n_model)**.5
 
-            strikes = np.arange(0,180, self.precision)
-            dips = np.arange(0,90, self.precision)
-            slips = np.arange(-180,180, self.precision)
+                strikes = np.arange(0,180, self.precision)
+                dips = np.arange(0,90, self.precision)
+                slips = np.arange(-180,180, self.precision)
 
-            ## Sources (any convention of MoPad can be used)
-            source_mechanisms = np.asarray(  np.meshgrid(strikes, dips, slips)  )*1.  #, sparse=True
-            source_mechanisms = source_mechanisms.transpose( np.roll(range(len(source_mechanisms.shape)),-1) )
+                ## Sources (any convention of MoPad can be used)
+                source_mechanisms = np.asarray(  np.meshgrid(strikes, dips, slips)  )*1.  #, sparse=True
+                source_mechanisms = source_mechanisms.transpose( np.roll(range(len(source_mechanisms.shape)),-1) )
 
         elif n_dims == 4 :
             # Scans: strike, dip, slip, DC%
@@ -2208,7 +2272,7 @@ class SourceScan(object):
         #   - model's indexes for data #
         self._data_init(data)          #
         ################################
-
+        
         # Scans source ### how to make it linear ? #############
         for i in range(self.source_mechanisms['Mt'].shape[0]): #
 
@@ -2241,9 +2305,10 @@ class SourceScan(object):
         
         
         # a better definition of P(d)
-        print(self.source_mechanisms['P(d)'])        
-        self.source_mechanisms['P(d)']  = (np.nansum(np.abs(self.source_mechanisms['rms']))/        (4*self.power_synth_stack*len(self.source_mechanisms['rms'])))**2.
-        print(self.source_mechanisms['P(d)'])
+        #print(self.source_mechanisms['P(d)'])
+        #self.source_mechanisms['P(d)']  = 1-np.nanmedian(((np.nanmax(self.source_mechanisms['rms'])-np.abs(self.source_mechanisms['rms']))/np.nanmax(self.source_mechanisms['rms']))**.5)
+        #self.source_mechanisms['P(d)']  = (np.nansum(np.abs(self.source_mechanisms['rms']))/        (4*self.power_synth_stack*len(self.source_mechanisms['rms'])))**2.
+        #print(self.source_mechanisms['P(d)'])
         
         if info ==1:
             print "P(d), prelim",self.source_mechanisms['P(d)']
@@ -2295,7 +2360,7 @@ class SourceScan(object):
             print 'best likelyhood', self.best_likelyhood, '(full mt, P(Mt|d)%)'
             print 'centroid', self.centroid, '(full mt, P(Mt|d)%)'
 
-    def plot(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = '*'):
+    def plot(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = 'b'):
 
         if self.scanned == 0 or scanned == 0 :
             self.scan(data)
@@ -2309,29 +2374,34 @@ class SourceScan(object):
 
         ## plots data
         ax, axins, cbar = plot_wavelet(self.data, style, ax=ax1, detail_level = 0)
+        axins.set_ylabel(r'Observed'+'\n'+'amplitudes')
+        axins.set_title(r'A. '+axins.get_title())
         fig.delaxes(cbar.ax)
         #tmp = ax.get_position().bounds
         #ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
 
         ## P-T pdf
-        self.plot_PT(scanned=1, ax=ax4)
-
+        ax = self.plot_PT(scanned=1, ax=ax4)
+        ax.set_title(r'B. '+ax.get_title())
+                                        
         ## plots best result
         ax, axins, cbar = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data, title='best') , style, ax=ax2, detail_level = 0)
-        axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
+        axins.set_ylabel(r'Rectified'+'\n'+'amplitudes')
+        axins.set_title(r'C. '+axins.get_title())
         fig.delaxes(cbar.ax)
         #tmp = ax.get_position().bounds
         #ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
 
         ## plots best result
         ax, axins, cbar = plot_wavelet( self.corrected_data(self.centroid[0], self.data, title='cent.') , style, ax=ax3, detail_level = 0)
-        axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
+        axins.set_ylabel(r'Rectified'+'\n'+'amplitudes')
+        axins.set_title(r'D. '+axins.get_title())
         fig.delaxes(cbar.ax)
         #tmp = ax.get_position().bounds
         #ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
 
-#         ## plots PT result
-#         self.plot_PT(ax=ax3)
+#        ## plots PT result
+#        self.plot_PT(ax=ax3)
 
     def plot_PT(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = '*', ax=None, poles=0):
         '''
@@ -2470,8 +2540,15 @@ class SourceScan(object):
 #         G = np.asarray(spherical_to_cartesian([self.pdf['grid AIR'][0], self.pdf['grid AIR'][1], self.pdf['P/T axis'][:,:,1] ]))
 #         plot_seismicsourcemodel(G, XYZ, comp='r', style='x', ax=ax2, cbarxlabel='T-axis likelyhood', alpha=1.)
 #
+        return ax
 
-    def demo(self, scanned=0, data=SyntheticWavelets(n=10, mt=None), sol = None):
+    def demo(self,
+             scanned=0,
+             data=SyntheticWavelets(n=10, mt=None),
+             sol = None,
+             style='b',
+             lim=5,
+             scale=1):
 
         data.degrade(snr=[5.,10.], shift = [0.,0.])
         if self.scanned == 0 or scanned == 0 :
@@ -2481,30 +2558,45 @@ class SourceScan(object):
             sol = self.best_likelyhood[0]
 
 
-        fig = plt.figure(figsize=plt.figaspect(.85))
+        fig = plt.figure(figsize=plt.figaspect(1.3))
+        plotargs = { 'style':style, 'detail_level': 0, 'lim':lim,'scale':scale}
 
         # plots the model
-        ax = plt.subplot2grid((2,2), (0,0), projection='3d')
-        ax, axins, cbar = plot_wavelet(  self.data , style='s', ax=ax, detail_level = 0)
+        ax = plt.subplot2grid((3,2), (1,0), projection='3d')
+        ax, axins, cbar = plot_wavelet(  self.data , ax=ax, **plotargs)
         fig.delaxes(cbar.ax)
         #ax.set_title('')
-        axins.set_title(r'Synthetic model')
+        axins.set_title(r'B. Example')
+        axins.set_ylabel(r'Observed'+'\n'+'amplitudes')
+        ax.text(0,0,0.,'?',
+                fontsize=12,
+                ha='center',va='center',
+                path_effects=[PathEffects.withStroke(linewidth=3,foreground="w")])
         tmp = ax.get_position().bounds
-        ax.set_position([tmp[0] , tmp[1], tmp[2] , tmp[3]*1.2 ])
+        ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
 
         # plots the best of scan
-        ax = plt.subplot2grid((2,2), (0,1), projection='3d')
-        ax, axins, cbar = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data) , style='s', ax=ax, detail_level = 0)
+        ax = plt.subplot2grid((3,2), (1,1), projection='3d')
+        ax, axins, cbar = plot_wavelet( self.corrected_data(self.best_likelyhood[0], self.data) ,ax=ax, **plotargs)
         fig.delaxes(cbar.ax)
+        for k,w in enumerate(self.data.Stream):
+            if k<lim:
+                axins.plot(w.data+ .3 +k*4./min([lim,len(self.data.Stream)]),
+                       color='k',
+                       alpha=.1,
+                       zorder=-9)
         #ax.set_title('')
-        axins.set_title(r'Best solution')
-        axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
+        axins.set_title(r'D. Solution')
+        axins.set_ylabel(r'Rectified'+'\n'+'amplitudes')
+        #axins.yaxis.set_label_position('right')
         tmp = ax.get_position().bounds
-        ax.set_position([tmp[0] , tmp[1], tmp[2] , tmp[3]*1.2 ])
+        ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
 
         # plots some random trials
-        changes = np.asarray([90., 180., 270.])
+        changes = np.asarray([90., 90., 90.])
         pos = [[1,0],[1,1],[1,2]]
+        addtext=['$_{(mismatch)}$','$_{(opposite)}$','$_{(mismatch)}$']
+        n=['1','2','N']
         for i,change in enumerate(changes):
             ## make each trial orientation
             tmp = self.best_likelyhood[0]
@@ -2513,19 +2605,45 @@ class SourceScan(object):
                 tmp[0] -= 360.
 
             ## plots each trials
-            ax = plt.subplot2grid((2,len(changes)), (1,i), projection='3d')
-            ax, axins, cbar = plot_wavelet( self.corrected_data(tmp, self.data) , style='s', ax=ax, detail_level = 0)
+            ax = plt.subplot2grid((3,len(changes)), (0,i), projection='3d')
+            ax, axins, cbar = plot_wavelet( self.corrected_data(tmp, self.data, corrections=True) , ax=ax, **plotargs)
             fig.delaxes(cbar.ax)
             #ax.set_title('')
-            axins.set_title(r'Trial '+str(i+1))
+            axins.set_title(r'A$_{'+n[i]+'}$. Model '+n[i])#+addtext[i])
             axins.set_ylabel('')
-            tmp = ax.get_position().bounds
-            ax.set_position([tmp[0] , tmp[1], tmp[2]*1.2 , tmp[3] ])
+            pos = ax.get_position().bounds
+            ax.set_position([pos[0] , pos[1], pos[2]*1.1 , pos[3]*.8 ])
+            axins.set_xlabel('')
+            if i==0:
+                axins.set_ylabel(r'Polarities')
+
+
+
+            ## plots each trials
+            ax = plt.subplot2grid((3,len(changes)), (2,i), projection='3d')
+            ax, axins, cbar = plot_wavelet( self.corrected_data(tmp, self.data) ,ax=ax, **plotargs)
+            for k,w in enumerate(self.data.Stream):
+                if k<lim:
+                    axins.plot(w.data+ .3 +k*4./min([lim,len(self.data.Stream)]),
+                           color='k',
+                           alpha=.1,
+                           zorder=-9)
+                
+
+            fig.delaxes(cbar.ax)
+            #ax.set_title('')
+            axins.set_title(r'C$_{'+n[i]+'}$. Trial '+n[i])
+            axins.text(0,axins.get_ylim()[1],addtext[i],va='top')
+            axins.set_ylabel('')
+            pos = ax.get_position().bounds
+            ax.set_position([pos[0] , pos[1], pos[2]*1.1 , pos[3]*.8 ])
 
             if i==0:
-                axins.set_ylabel(r'Corrected'+'\n'+'amplitudes')
+                axins.set_ylabel(r'Rectified'+'\n'+'amplitudes')
+            else:
+                axins.set_xlabel('')
 
-    def corrected_data(self, mt, data, title=''):
+    def corrected_data(self, mt, data, title='',corrections=False):
 
         results = copy.deepcopy(data)
 
@@ -2545,6 +2663,17 @@ class SourceScan(object):
                 amplitudes[ w, c ], disp_projected = disp_component(results.observations['cart'], disp, c)
 
         forrms = np.zeros((9999))
+        if corrections:
+            for i in range(len(results.Stream)):
+                mid=int(len(results.Stream[i].data)/2)
+                results.Stream[i].data[:mid] = np.arange(mid)/(1.*mid)
+                results.Stream[i].data[mid:] = np.arange(mid,0,-1)/(1.*mid)
+                results.Stream[i].data *= np.sign(amplitudes[
+                                                         results.observations['types'][i,0],
+                                                         (results.Stream[i].stats.channel[-1]).replace("Z", "L") ][i])
+
+            return results
+            
         for i in range(len(results.Stream)):
             results.Stream[i].data *= np.sign(amplitudes[
                                                          results.observations['types'][i,0],
@@ -2708,11 +2837,23 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
                     error[i,k, 3,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)
 
 
-    labels[0].append( r'N, G0$^\circ$' )
-    for j,N in enumerate(N_tests):
-        labels[1].append( 'N'+str(int(N)) )
-        labels[2].append( 'N'+str(int(N)) )
 
+    for j,N in enumerate(N_tests):
+        
+        labels[2].append( r'n$_{%s}$'%(str(int(N))) )
+        for i,shift in enumerate(shift_range):
+            for k in range(N_bootstrap):
+                data = SyntheticWavelets(n=int(N), mt=None)
+                data.degrade(snr=[10.,10.], shift=[-shift,shift])
+                dcscanner.scan(data=data)
+                if sol is 'c':
+                    rms[i,k, 2,j] = dcscanner.centroid[1]
+                    error[i,k, 2,j] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor)
+                else:
+                    rms[i,k, 2,j] = dcscanner.best_likelyhood[1]
+                    error[i,k, 2,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)
+    
+        labels[1].append( r'n$_{%s}$'%(str(int(N))) )
         for i,snr in enumerate(snr_range):
             for k in range(N_bootstrap):
                 data = SyntheticWavelets(n=int(N), mt=None)
@@ -2725,20 +2866,8 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
                     rms[i,k, 1,j] = dcscanner.best_likelyhood[1]
                     error[i,k, 1,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)
 
-        for i,shift in enumerate(shift_range):
-            for k in range(N_bootstrap):
-                data = SyntheticWavelets(n=int(N), mt=None)
-                data.degrade(snr=[10.,10.], shift=[-shift,shift])
-                dcscanner.scan(data=data)
-                if sol is 'c':
-                    rms[i,k, 2,j] = dcscanner.centroid[1]
-                    error[i,k, 2,j] =  mt_diff( MomentTensor(dcscanner.centroid[0]), dcscanner.data.MomentTensor)
-                else:
-                    rms[i,k, 2,j] = dcscanner.best_likelyhood[1]
-                    error[i,k, 2,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)
-
         if N < N_tests[-1]:
-            labels[0].append( 'G, N' + str(int(N)) +'' )
+            labels[0].append( r'G (n$_{%s}$)'%(str(int(N))))
             for i,gap in enumerate(gap_range):
                 for k in range(N_bootstrap):
                     data = SyntheticWavelets(n=int(N), mt=None, gap=gap)
@@ -2751,7 +2880,7 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
                         error[i,k, 0,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)
 
 
-
+    labels[0].append( r'n (G$_{none}$)' )
     for i,N in enumerate(N_range):
         for k in range(N_bootstrap):
             data = SyntheticWavelets(n=int(N), mt=None)
@@ -2776,23 +2905,34 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
           plt.subplot2grid((2,2), (1, 1)) ]
 
     colors = ['r',  'b', 'c' , 'g', 'm']
+    
 
 
-    for i,name in enumerate([r'A. 2N & gap ($^\circ$).', r'B. SNR.', r'C. $\frac{\delta t}{T}$.', r'D. Non-DC component.']):
+    for i,name in enumerate([r'A. 2n & gap ($^\circ$).', r'B. SNR.', r'C. $\frac{\delta t}{T}$.', r'D. Non-DC component.']):
         for j,N in enumerate(labels[i]):
+            lw = 1
+            c = colors[j]
             if i==0 and j==len(labels[i])-1:
                 c = 'm'
-            else:
-                c= colors[j]
-            ax[i].plot(x[i], np.nanmean(rms[:,:,i,j], axis=1), label=labels[i][j], color=c)
-            ax[i].plot(x[i], np.nanmean(error[:,:,i,j]/90, axis=1), '--', color=c)
+                lw=2
+            
+            ax[i].plot(x[i],
+                       np.nanmean(rms[:,:,i,j], axis=1),
+                       label=labels[i][j],
+                       color=c,
+                       linewidth=lw)
+            ax[i].plot(x[i],
+                       np.nanmean(error[:,:,i,j]/90, axis=1),
+                       '--',
+                       color=c,
+                       linewidth=lw)
 
         leg = ax[i].legend(fancybox=True,loc=9, ncol=2,columnspacing=1)
         leg.get_frame().set_alpha(0.5)
 
         ax[i].set_xlabel(name)
         if i == 0 or i == 2:
-            ax[i].set_ylabel(r'P(Mt|d) and $\frac{\Delta^\circ}{90}$ (- & --)')
+            ax[i].set_ylabel(r'P(Mt|d) (solid) and $\frac{\Delta^\circ}{90}$ (dash)')
         #ax[i].set_title('Test '+str(i+1) )
         ax[i].grid(True)
 

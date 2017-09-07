@@ -26,7 +26,7 @@ from pandas import rolling_kurt
 from obspy import read, Trace, Stream
 from obspy.core.trace import Stats
 from obspy.signal.filter import highpass
-from source import spherical_to_cartesian
+from scanner import spherical_to_cartesian
 
 
 def streamdatadim(a):

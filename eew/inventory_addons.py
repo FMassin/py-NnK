@@ -18,7 +18,7 @@ from obspy.taup import TauPyModel
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 try:
-    import obspy_addons
+    from . import obspy_addons
 except:
     try:
         import eew.obspy_addons as obspy_addons
@@ -218,9 +218,11 @@ def scatter6d(self,
               captions_dim,
               **kwargs):
     
-    norm = matplotlib.colors.Normalize()
-    norm.autoscale(colors)
-    cm = matplotlib.pyplot.get_cmap('nipy_spectral')
+    if not isinstance(colors[0], str)  :
+        norm = matplotlib.colors.Normalize()
+        norm.autoscale(colors)
+        cm = matplotlib.pyplot.get_cmap('nipy_spectral')
+    
     used=list()
     for i,m in enumerate(markers):
         l=None
@@ -229,15 +231,24 @@ def scatter6d(self,
             l = '%s (%s)' % (captions[i], n)
             used.append(captions[i])
         
-        self.scatter(x=longitudes[i],
-                     y=latitudes[i],
-                     s=sizes[i],
-                     c=cm(norm(colors[i])),
-                     marker=markers[i],
-                     label=l,
-                     **kwargs)
+        if isinstance(colors[i], str)  :
+            self.scatter(x=longitudes[i],
+                         y=latitudes[i],
+                         s=sizes[i],
+                         c=colors[i],
+                         marker=markers[i],
+                         label=l,
+                         **kwargs)
+        else:
+            self.scatter(x=longitudes[i],
+                         y=latitudes[i],
+                         s=sizes[i],
+                         c=cm(norm(colors[i])),
+                         marker=markers[i],
+                         label=l,
+                         **kwargs)
 
-def mapstations(self=obspy.core.inventory.inventory.Inventory([],''),
+def map_stations(self=obspy.core.inventory.inventory.Inventory([],''),
                 bmap=None,
                 fig=None,
                 colors='instruments',
@@ -245,8 +256,8 @@ def mapstations(self=obspy.core.inventory.inventory.Inventory([],''),
                 sizes='none',
                 titletext='',
                 fontsize=8,
-                instruments_markers= {'HG':'^', 'HN':'^', 'HH':'s', 'BH':'s', 'EH':'P', 'none':'*'},
-                instruments_captions={'HG':'SM','HN':'SM','BH':'BB','HH':'BB','EH':'SP','none':'Other'},
+                instruments_markers= {'EH':'<', 'HH':'v', 'BH':'v', 'HG':'^', 'HN':'^', 'none':'*'},
+                instruments_captions={'EH':'SP','BH':'BB','HH':'BB','HG':'SM','HN':'SM','none':'Other'},
                 orientations_markers={'N':'^','2':'s','Z':'P','none':'*'},
                 orientations_captions={'N':'triax.','2':'hori.','Z':'vert.','none':'other'},
                 samplerates_markers={100:'^',40:'s','none':'*'},
@@ -314,10 +325,13 @@ def mapstations(self=obspy.core.inventory.inventory.Inventory([],''),
     if not stations_sizes:
         stations_sizes= obspy_addons.codes2nums(stations_sizedata)
     if not stations_colors:
-        stations_colors= obspy_addons.codes2nums(stations_colordata,
-                                                 used= [instruments_markers[k] for k in instruments_markers.keys()] )
+        stations_colors = obspy_addons.codes2nums(stations_colordata,
+                                                  used = [instruments_markers[k] for k in instruments_markers.keys()] )
+        stations_colors = ['C'+str(colorindex) for colorindex in stations_colors]
+
     if not stations_markers:
         stations_markers = [ filled_markers[min([d,len(filled_markers)])] for d in obspy_addons.codes2nums(stations_markerdata) ]
+
 
     scatter6d(bmap,
               stations_longitudes,
@@ -357,105 +371,210 @@ def mapstations(self=obspy.core.inventory.inventory.Inventory([],''),
 
     times, = obspy_addons.search(self, fields=['start_date'], levels=['networks','stations'])
     if len(times)>0:
-        titletext= '\n%s stations (%s to %s)' % (len(times), str(min(times))[:10], str(max(times))[:10])
+        titletext+= '\n%s stations (%s to %s)' % (len(times), str(min(times))[:10], str(max(times))[:10])
 
     return titletext
 
 def traveltimes(tmax=20.,
                 depth=10,
                 model='iasp91',
-                phase_list=['ttall']):
+                phase_list=['ttp']):
     # the first arrival at a range of distances
-
     model = TauPyModel(model=model)
     
-    for d in numpy.linspace(.002,tmax*8./110.,128):
-        arrivals = model.get_travel_times(depth, distance_in_degree=d, phase_list=['p'], receiver_depth_in_km=0.0)
-        if arrivals[0].time>tmax:
+    dmax=tmax*8./110.
+    d=tmax*8./110.
+    n=0
+    residual=999999999999
+    while residual>tmax*.001:
+        if n>0:
+            d += ((tmax-arrivals[0].time)*8./110.)
+        
+        arrivals = model.get_travel_times(depth,
+                                          distance_in_degree=d,
+                                          phase_list=['ttp'],
+                                          receiver_depth_in_km=0.0)
+        if abs(tmax-arrivals[0].time)<residual:
             dmax = d
-            tmax = arrivals[0].time
+            inversedtmax = arrivals[0].time
+        residual = abs(tmax-arrivals[0].time)
+        n +=1
+        if n>100:
             break
 
-    arrivals = model.get_travel_times(depth, distance_in_degree=.001, phase_list=phase_list, receiver_depth_in_km=0.0)
+
+    arrivals = model.get_travel_times(depth,
+                                      distance_in_degree=.001,
+                                      phase_list=phase_list,
+                                      receiver_depth_in_km=0.0)
     while len(arrivals)>1:
         for i,a in enumerate(arrivals):
             if i>0:
                 arrivals.remove(a)
-    
+
     for d in numpy.linspace(.002,dmax,16):
-        test=model.get_travel_times(depth, distance_in_degree=d, phase_list=phase_list, receiver_depth_in_km=0.0)
+        test=model.get_travel_times(depth,
+                                    distance_in_degree=d,
+                                    phase_list=phase_list,
+                                    receiver_depth_in_km=0.0)
         for a in test:
             if a.time>0.:
                 arrivals.append(a)
                 break
-    return arrivals,model,dmax,tmax
+    return arrivals,model,dmax,inversedtmax
 
 
 
-def traveltimesgrid(longitudes, latitudes,
-                    distances,
+def traveltimesgrid(longitudes,     # (lat,lon)
+                    latitudes,      # (lat,lon)
+                    distances,      # (stations,lat,lon,resampling)
+                    latencies=None, # (stations,lat,lon,resampling)
                     tmax=20.,
                     depth=10,
                     model='iasp91',
                     N=[6],
                     style='p',
                     plot='none',
-                    dt=None,
-                    reflevel=10.):
+                    #reflevel=10.,
+                    percentile=84):
 
-
+    
+    print('grids')
+    #avsgrids = numpy.zeros([len(N), 2, longitudes.shape[0],longitudes.shape[1]])
+    #avpgrids = numpy.zeros([len(N), 2, longitudes.shape[0],longitudes.shape[1]])
+    #dgrids = numpy.zeros([len(N), 2, longitudes.shape[0],longitudes.shape[1]])
+    #tgrids = numpy.zeros([len(N), 2, longitudes.shape[0],longitudes.shape[1]])
+    
+    if latencies is None:
+        latencies = numpy.zeros([len(N), longitudes.shape[0],longitudes.shape[1]])
+    
+    print('travel times pre-processing')
     arrivals,taupmodel,dmax,tmax = traveltimes(tmax=tmax,
                                                depth=depth,
                                                model=model)
-        
-    darrivals = numpy.asarray([a.distance for a in arrivals])
-    tarrivals = numpy.asarray([a.time for a in arrivals])
+    print('travel times grids')
+    darrivals = numpy.zeros(distances.shape)
+    tarrivals = numpy.zeros(distances.shape)
+    dSarrivals = numpy.zeros(distances.shape)
+    tSarrivals = numpy.zeros(distances.shape)
+    tSarrivals_ttonly = numpy.zeros(distances.shape)
+    wsum = numpy.zeros(distances.shape)
+
+    for a in arrivals:
+        w=1./((distances-a.distance)**2.)
+        darrivals += a.distance * w    # numpy.asarray([a.distance for a in arrivals])
+        tarrivals += a.time * w        # numpy.asarray([a.time for a in arrivals])
+        wsum += w
+    darrivals /=wsum
+    tarrivals /=wsum
+    test=(distances-darrivals>arrivals[-1].distance-arrivals[-2].distance)
+    tarrivals[test]=numpy.nan
+    darrivals[test]=numpy.nan
+    tarrivals_ttonly = numpy.tile(tarrivals,(latencies.shape[0],1,1,1))
+    tarrivals = numpy.tile(tarrivals,(latencies.shape[0],1,1,1))
+    darrivals = numpy.tile(darrivals,(latencies.shape[0],1,1,1))
+    tarrivals += latencies
+    
+    print('argsort travel times grids ')
+    sort_indices = numpy.argsort(tarrivals, axis=1)[:,:max(N),:,:]  # this is the slow step
+    print('indexes travel times grids ')
+    static_indices = numpy.indices(tarrivals.shape*numpy.asarray([1,0,1,1])+numpy.asarray([0,max(N),0,0]))
+    darrivals=darrivals[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
+    tarrivals_ttonly=tarrivals_ttonly[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
+    tarrivals =tarrivals[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
+    print('grids done')
 
     if style[0] in ['d','b'] or plot in ['c','chron','h', 'hodo','hodochrone', 's', 'sect', 'section']:
+        print('S travel times pre-processing')
         Sarrivals,taupmodel,dmax,tmax = traveltimes(tmax=tmax,
                                                depth=depth,
                                                model=model,
-                                               phase_list=['s'])
+                                               phase_list=['tts'])
+        print('S travel times grids')
+        wsum = numpy.zeros(distances.shape)
         
-        dSarrivals = numpy.asarray([a.distance for a in Sarrivals])
-        tSarrivals = numpy.asarray([a.time for a in Sarrivals])
+        for a in Sarrivals:
+            w=1./((distances-a.distance)**2.)
+            dSarrivals += a.distance * w    # numpy.asarray([a.distance for a in Sarrivals])
+            tSarrivals += a.time * w        # numpy.asarray([a.time for a in Sarrivals])
+            wsum += w
+        dSarrivals /=wsum
+        tSarrivals /=wsum
+        test=(distances-dSarrivals>Sarrivals[-1].distance-Sarrivals[-2].distance)
+        tSarrivals[test]=numpy.nan
+        dSarrivals[test]=numpy.nan
+        tSarrivals_ttonly = numpy.tile(tSarrivals,(latencies.shape[0],1,1,1))
+        tSarrivals = numpy.tile(tSarrivals,(latencies.shape[0],1,1,1))
+        dSarrivals = numpy.tile(darrivals,(latencies.shape[0],1,1,1))
+        tSarrivals += latencies
 
-    avsgrids = numpy.zeros([len(N), longitudes.shape[0],longitudes.shape[1]])
-    avpgrids = numpy.zeros([len(N), longitudes.shape[0],longitudes.shape[1]])
-    dgrids = numpy.zeros([len(N), longitudes.shape[0],longitudes.shape[1]])
-    tgrids = numpy.zeros([len(N), longitudes.shape[0],longitudes.shape[1]])
-    if dt is None:
-        dt = numpy.zeros([len(N), longitudes.shape[0],longitudes.shape[1]])
-    
+        print('sort S travel times grids ')
+        sort_indices = numpy.argsort(tSarrivals, axis=1)[:,:max(N),:,:]  # this is the slow step
+        static_indices = numpy.indices(tSarrivals.shape*numpy.asarray([1,0,1,1])+numpy.asarray([0,max(N),0,0]))
+        dSarrivals = dSarrivals[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
+        tSarrivals_ttonly = tSarrivals_ttonly[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
+        tSarrivals = tSarrivals[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
+
+    return tarrivals,darrivals,tarrivals_ttonly,tSarrivals,dSarrivals,tSarrivals_ttonly
+
+    print('grids processing')
     for col, lon in enumerate(longitudes[0,:]):
         for line, lat in enumerate(latitudes[:,0]):
             for i,n in enumerate(N):
                 
-                closest = 1./(distances[n-1,line,col] - darrivals)**2.
-                closest = closest/numpy.nansum(closest)
-                avp = (numpy.nansum(darrivals*closest/tarrivals))
                 
-                avpgrids[i,line,col] = avp
                 
-                tgrids[i,line,col] = distances[n-1,line,col]/avp+ dt[i,line,col]
-                dgrids[i,line,col] = distances[n-1,line,col] + avp*dt[i,line,col]
+                tmp = [ tarrivals[:,n-1,lat,lon][int(tarrivals.shape[0]*.5),:], ]
+                if percentile:
+                    tmp.append( tarrivals[:,n-1,lat,lon][int(tarrivals.shape[0]*percentile/100.),:] )
+                
+                #mediantarrivals = numpy.nanmedian(tmp, OK
+                #                              axis=0)
+                #percentiletarrivals = numpy.nanpercentile(tmp, SLOOOOOOOOWWWWWWWW
+                #                                      percentile,
+                #                                      axis=0,
+                #                                      interpolation='nearest')
+                
+                for s,statistic in enumerate(tmp) :
 
-                if style[0] in ['d','b'] or plot in ['c','chron','h', 'hodo','hodochrone', 's', 'sect', 'section']:
-                    closest = 1./(distances[n-1,line,col] - dSarrivals)**2.
-                    closest = closest/numpy.nansum(closest)
-                    avs = (numpy.nansum(dSarrivals*closest/tSarrivals))
+                    order = numpy.argsort(statistic)
                     
-                    avsgrids[i,line,col] = avs
-                    if style[0] in ['d','b']:
-                        dgrids[i,line,col] = avs*tgrids[i,line,col]
-                        tgrids[i,line,col] = (reflevel*avp - tgrids[i,line,col]*avs)/avs
+                    avp = (numpy.nansum(darrivals[order[n-1],line,col]/statistic[order[n-1]]))#tarrivals[order[n-1],line,col]))
+                    avpgrids[i,s,line,col] = avp
+                    
+                    tgrids[i,s,line,col] = statistic[order[n-1]] #+ latencies[i,line,col]
+                    dgrids[i,s,line,col] = darrivals[order[n-1],line,col]  #+ avp*latencies[i,line,col]
+
+            if style[0] in ['d','b'] :#or plot in ['c','chron','h', 'hodo','hodochrone', 's', 'sect', 'section']:
+                    
+                    Stmp = numpy.asarray([ tSarrivals[:,line,col]+latencies[:,line,col,l] for l in range(latencies.shape[3]) ])
+                    Stmp[Stmp==0]=numpy.nan
+                    Stmp = numpy.sort(Stmp,
+                                      axis=0)
+                    
+                    Stmp = [
+                            Stmp[int(latencies.shape[3]*.5),:],
+                            ]
+                    if percentile:
+                        Stmp.append( Stmp[int(latencies.shape[3]*percentile/100.),:] )
+                           
+                    for s,statistic in enumerate(Stmp) :
+                        
+                        order = numpy.argsort(statistic)
+                        
+                        avs = (numpy.nansum(dSarrivals[order[n-1],line,col]/statistic[order[n-1]]))#tSarrivals))
+                        
+                        avsgrids[i,0,line,col] = avs
+                        if style[0] in ['d','b']:
+                            dgrids[i,s,line,col] = avs*tgrids[i,s,line,col]
+                            tgrids[i,s,line,col] = (reflevel*avp - tgrids[i,s,line,col]*avs)/avs
 
     return tgrids,dgrids,dmax,tmax,avpgrids,avsgrids
 
 
 def plot_traveltimes(self,
                      tmax=20.,
-                     depth=15,
+                     depth=5,
                      model='iasp91',
                      N=range(1,7),
                      fig=None,
@@ -465,6 +584,7 @@ def plot_traveltimes(self,
                      bits=1024,
                      reflevel=7,
                      latencies=None,
+                     flat_latency=0.,
                      xpixels=900,
                      resolution='h',
                      fontsize=8,
@@ -473,6 +593,8 @@ def plot_traveltimes(self,
                      event=None,
                      mapbounds=None,
                      clims=None,
+                     resampling=100,#0,
+                     percentile=84,
                      **kwargs):
     
     if isinstance(dmin[0], list):
@@ -510,6 +632,8 @@ def plot_traveltimes(self,
                      dmin=d,
                      sticker_addons=sa,
                              mapbounds=mapbounds,
+                             resampling=resampling,
+                             percentile=percentile,
                      **kwargs)
 
             if i==0:
@@ -543,18 +667,17 @@ def plot_traveltimes(self,
                 for a in ax:
                     a.set_xlim([0, xmax])
         return fig
-            
+
     if not latencies:
         selffiltered = self
+        resampling=1
     else:
         selffiltered = delayfilter(self,latencies)
-    
-    
+
+    names = [re.sub(r' .*', '',x) for x in selffiltered.get_contents()['stations']]
     statlons, statlats = obspy_addons.search(selffiltered,
                                              fields=['longitude','latitude'],
                                              levels=['networks','stations'])
-
-    names = [re.sub(r' .*', '',x) for x in selffiltered.get_contents()['stations']]
 
     # generate 2 2d grids for the x & y bounds
     if style[0] in ['b']:
@@ -563,54 +686,40 @@ def plot_traveltimes(self,
     dlat = ((numpy.nanmax(statlats)+dmax)-(numpy.nanmin(statlats)-dmax))/numpy.sqrt(bits)
     dlon = ((numpy.nanmax(statlons)+dmax)-(numpy.nanmin(statlons)-dmax))/numpy.sqrt(bits)
 
-    if event:
-        pref = [o.resource_id for o in event.origins].index(event.preferred_origin_id)
-        latitudes, longitudes = numpy.mgrid[slice(event.origins[pref].latitude,
-                                                  event.origins[pref].latitude+0.0000001,
-                                                  1),
-                                            slice(event.origins[pref].longitude,
-                                                  event.origins[pref].longitude+0.0000001,
-                                                  1)]
-    else:
-        latitudes, longitudes = numpy.mgrid[slice(numpy.nanmin(statlats)-(dmax),
-                                                  numpy.nanmax(statlats)+(dmax),
-                                                  dlat),
-                                            slice(numpy.nanmin(statlons)-(dmax),
-                                                  numpy.nanmax(statlons)+(dmax),
-                                                  dlon)]
+    latitudes, longitudes = numpy.mgrid[slice(numpy.nanmin(statlats)-(dmax),
+                                              numpy.nanmax(statlats)+(dmax),
+                                              dlat),
+                                        slice(numpy.nanmin(statlons)-(dmax),
+                                              numpy.nanmax(statlons)+(dmax),
+                                              dlon)]
 
     kmindeg = obspy_addons.haversine(numpy.nanmin(longitudes),
-                               numpy.nanmin(latitudes),
-                               numpy.nanmax(longitudes),
-                               numpy.nanmax(latitudes))
+                                       numpy.nanmin(latitudes),
+                                       numpy.nanmax(longitudes),
+                                       numpy.nanmax(latitudes))
     kmindeg /= 1000*numpy.sqrt((numpy.nanmin(longitudes)-numpy.nanmax(longitudes))**2+(numpy.nanmin(latitudes)-numpy.nanmax(latitudes))**2)
-    
-    dsgrid = numpy.zeros([len(statlons),latitudes.shape[0],latitudes.shape[1]])
-    for col, lon in enumerate(longitudes[0,:]):
-        for line, lat in enumerate(latitudes[:,0]):
-            for i,s in enumerate(statlons):
-                dsgrid[i,line,col] = numpy.sqrt((statlons[i]-lon)**2 + (statlats[i]-lat)**2.)
 
+    dsgrid = numpy.zeros([len(statlons),
+                          latitudes.shape[0],
+                          latitudes.shape[1]])
+    lsgrid = numpy.zeros([resampling,
+                          len(statlons),
+                          latitudes.shape[0],
+                          latitudes.shape[1]])+flat_latency
 
-    lsgrid = numpy.zeros([len(statlons),latitudes.shape[0],latitudes.shape[1]])
+    for i,s in enumerate(statlons):
+        dsgrid[i,:,:] = numpy.sqrt((statlons[i]-longitudes)**2 + (statlats[i]-latitudes)**2.)
+
     if  latencies is not None:
-        latency = numpy.asarray([ numpy.nanmedian( latencies[n] ) for n in names])
-        for col, lon in enumerate(longitudes[0,:]):
-            for line, lat in enumerate(latitudes[:,0]):
-                for i,s in enumerate(statlons):
-                    closest = dsgrid[:,line,col].copy()
-                    closest[closest>numpy.nanmin(dsgrid[:,line,col])]=0.
-                    closest[closest==numpy.nanmin(dsgrid[:,line,col])]=1.
-                    lsgrid[i,line,col] = numpy.nansum(latency*closest)
+        for i,s in enumerate(statlons):
+            for r in range(resampling):
+                lsgrid[r,i,:,:] = numpy.random.choice(latencies[names[i]],
+                                                        size=(1) ),
+                                         
 
-        lsgrid[lsgrid == numpy.nan] =0
+    dmingrid = numpy.sort(dsgrid,axis=0)[dmin[0]]
 
-    dsgrid = numpy.sort(dsgrid,axis=0)
-    dmingrid = dsgrid[dmin[0]]
-    dsgrid = dsgrid[:max(N),:,:]
-    lsgrid = lsgrid[:max(N),:,:]
-
-    tgrids,dgrids,dmax,tmaxupdated,avpgrids,avsgrids = traveltimesgrid(longitudes, latitudes,
+    tP,dP,tPonly,tS,dS,tSonly = traveltimesgrid(longitudes, latitudes,
                                                                 dsgrid,
                                                                 tmax=tmax,
                                                                 depth=depth,
@@ -618,29 +727,19 @@ def plot_traveltimes(self,
                                                                 N=N,
                                                                 style=style,
                                                                 plot=plot,
-                                                                dt=lsgrid,
-                                                                reflevel=reflevel)
-    if latencies and plot in ['c','chron',]:
-        tgrids_nodt,dgrids_nodt,dmax_nodt,tmax_nodt,avpgrids_nodt,avsgrids_nodt = traveltimesgrid(longitudes, latitudes,
-                                                                    dsgrid,
-                                                                    tmax=tmax,
-                                                                    depth=depth,
-                                                                    model=model,
-                                                                    N=N,
-                                                                    style=style,
-                                                                    plot=plot,
-                                                                    reflevel=reflevel)
+                                                                latencies=lsgrid, #reflevel=reflevel,
+                                                                       percentile=percentile)
+
     
-    
-    data=tgrids
+    data=tP
     label=str(N[-1])+'$^{th}$ P travel time (s'
     ax2xlabel='Modeled travel time (s'
     if latencies and plot in ['c','chron',]:
-        data_nodt=tgrids_nodt
+        data_nodt=tPonly
 
     if style in ['d']:
         ax2xlabel='Modeled S delays (s'
-        data=tgrids#+lsgrid#dgrids*110.
+        data=tgrids
         if latencies and plot in ['c','chron',]:
             data_nodt=tgrids_nodt
         label='Modeled S delay at '+str(int(reflevel*numpy.nanmedian(avpgrids)*kmindeg))+'km (s'#S radius at '+str(N[-1])+'$^{th}$ P travel time [km]'
@@ -660,10 +759,11 @@ def plot_traveltimes(self,
             data_nodt=dgrids_nodt*kmindeg
         label='Modeled S radius at '+str(N[-1])+'$^{th}$ P travel time (km'#S radius at '+str(N[-1])+'$^{th}$ P travel time [km]'
     
-    for i,n in enumerate(data):
-        n[dmingrid*kmindeg>dmin[-1]] = numpy.nan
-        n[dmingrid*kmindeg<dmin[1]] = numpy.nan
-
+    for tn in data:
+        for n in tn:
+            n[dmingrid*kmindeg>dmin[-1]] = numpy.nan
+            n[dmingrid*kmindeg<dmin[1]] = numpy.nan
+    
     if latencies and plot in ['c','chron',]:
         for i,n in enumerate(data_nodt):
             n[dmingrid*kmindeg>dmin[-1]] = numpy.nan
@@ -676,8 +776,6 @@ def plot_traveltimes(self,
         ax2xlabel+= ')'
         label+= ')'
 
-
-
     if ax :
         fig = ax.get_figure()
         fig.ax = ax
@@ -686,67 +784,108 @@ def plot_traveltimes(self,
     else:
         fig = matplotlib.pyplot.figure()
         fig.ax = fig.add_subplot(111)
-    
+
     if plot in ['m','map']:
-        fig, fig.ax, fig.bmap = obspy_addons.mapall(others=[selffiltered],
+        toplot = numpy.nanmedian(data[:,N[-1]-1,:,:],
+                                 axis=0)
+        
+        fig, fig.ax, fig.bmap = obspy_addons.map_all(others=[selffiltered],
                                                     xpixels=xpixels,
-                                                    resolution=resolution,
+                                                     resolution=resolution,
                                                     fontsize=fontsize,
                                                     alpha=.5,
                                                     showlegend=False,
-                                                    ax=ax,
+                                                    ax=fig.ax,#ax,
                                                     mapbounds=mapbounds,
                                                     **kwargs)
         axcb = fig.bmap.ax#matplotlib.pyplot.gca()
         
-        if event:
-            cf= fig.bmap.tissot(numpy.median(longitudes),
-                                numpy.median(latitudes),
-                                1.,
-                                100)
+        levels = numpy.asarray([0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,25,50,100,250,500,1000])
+        if tmax:
+            level = levels[numpy.nanargmin(abs((tmax - 0.)/20 - levels))]
+            levels = numpy.arange( 0., tmax+level, level)
         else:
-            levels = numpy.asarray([0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,25,50,100,250,500,1000])
-            if tmax:
-                level = levels[numpy.nanargmin(abs((tmax - 0.)/20 - levels))]
-                levels = numpy.arange( 0., tmax+level, level)
-            else:
-                level = levels[numpy.nanargmin(abs((numpy.nanmax(data[-1]) - numpy.nanmin(data[-1]))/20 - levels))]
-                levels = numpy.arange( numpy.nanmin(data[-1])-level, numpy.nanmax(data[-1])+level, level)
-            levels += -levels[numpy.nanargmin(abs(-levels))]
-            levels = levels[levels>=numpy.nanmin(data[-1]-level)]
-            levels = levels[levels<=numpy.nanmax(data[-1]+level)]
-            
-            cf= fig.bmap.contourf(x=longitudes,
-                            y=latitudes,
-                            data=data[-1],
-                            latlon=True,
-                            corner_mask=True,
-                            zorder=999,
-                            alpha=2/3.,
-                            linewidths=0.,
-                            levels=levels,
-                                  vmax=tmax, vmin=0.)
-            CS = fig.bmap.contour(x=longitudes,
-                       y=latitudes,
-                       data=data[-1],
-                       latlon=True,
-                                  corner_mask=True,
-                       zorder=999,
-                                  levels=[numpy.around(reflevel)],
-                                  vmax=tmax, vmin=0.)
-            matplotlib.pyplot.clabel(CS,
-                                     fmt='%1.0f',
-                                     inline=1,
-                                     fontsize=10)
+            level = levels[numpy.nanargmin(abs((numpy.nanmax(toplot) - numpy.nanmin(toplot))/20 - levels))]
+            levels = numpy.arange( numpy.nanmin(toplot)-level, numpy.nanmax(toplot)+level, level)
+        levels += -levels[numpy.nanargmin(abs(-levels))]
+        levels = levels[levels>=numpy.nanmin(toplot-level)]
+        levels = levels[levels<=numpy.nanmax(toplot+level)]
 
-            if axcb:
-               fig.cb = obspy_addons.nicecolorbar(cf,
-                                                  axcb=axcb,
-                                                  reflevel=reflevel,
-                                                  label=label,
-                                                  vmax=tmax,
-                                                  vmin=0.,
-                                                  data=data[-1])
+
+        cf= fig.bmap.contourf(x=longitudes,
+                              y=latitudes,
+                              data=toplot,
+                              latlon=True,
+                              corner_mask=True,
+                              alpha=2/3.,
+                              linewidths=0.,
+                              levels=levels,
+                              norm = matplotlib.colors.Normalize(vmax=tmax, vmin=0.),
+                              extend='min')
+        CS = fig.bmap.contour(x=longitudes,
+                              y=latitudes,
+                              data = toplot,
+                              latlon=True,
+                              levels=[numpy.around(reflevel), numpy.around(reflevel*3.)],
+                              norm = matplotlib.colors.Normalize(vmax=tmax, vmin=0.),
+                              extend='min')
+        clbls = matplotlib.pyplot.clabel(CS,
+                                         fmt='%1.0fs',
+                                         inline=1,
+                                         fontsize=10,
+                                         use_clabeltext=True)
+        matplotlib.pyplot.setp(clbls, path_effects=[matplotlib.patheffects.withStroke(linewidth=3, foreground="w")])
+        matplotlib.pyplot.setp(CS.collections, path_effects=[matplotlib.patheffects.withStroke(linewidth=3, foreground="w")])
+
+        if axcb:
+            fig.cb = obspy_addons.nicecolorbar(cf,
+                                              axcb=axcb,
+                                              reflevel=reflevel,
+                                              label=label,
+                                              vmax=tmax,
+                                              vmin=0.,
+                                              data=toplot)
+
+        if  percentile is not None and latencies is not None :
+            
+            toplotinset = 10*(numpy.percentile(data[:,N[-1]-1,:,:],
+                                               percentile,
+                                      axis=0,
+                                      interpolation='nearest') - toplot)
+                                      
+            axins = inset_axes(fig.bmap.ax,
+                              #axes_kwargs={'zorder':-9},
+                              width="33%", # width = 30% of parent_bbox
+                              height="33%",
+                               loc=3,#borderpad=0.
+                               )
+            fig, fig.axins, fig.axinsbmap = obspy_addons.map_all(xpixels=xpixels/3,
+                                                                 resolution=resolution,
+                                            fontsize=fontsize,
+                                            alpha=.5,
+                                            showlegend=False,
+                                            ax=axins,
+                                            mapbounds=mapbounds,
+                                             labels=[0, 0, 0, 0],
+                                             titleaddons='$\Delta$'+str(int(percentile))+'$^{th}$%$^{ile}$' )
+            cf= fig.axinsbmap.contourf(x=longitudes,
+                                  y=latitudes,
+                                       data=toplotinset,
+                                  latlon=True,
+                                  corner_mask=True,
+                                  alpha=2/3.,
+                                  linewidths=0.,
+                                  levels=levels,
+                                  norm = matplotlib.colors.Normalize(vmax=tmax, vmin=0.),
+                                  extend='min')
+            CS = fig.axinsbmap.contour(x=longitudes,
+                                  y=latitudes,
+                                       data=toplotinset,
+                                  latlon=True,
+                                  levels=[numpy.around(reflevel), numpy.around(reflevel*3.)],
+                                  norm = matplotlib.colors.Normalize(vmax=tmax, vmin=0.),
+                                  extend='min')
+            matplotlib.pyplot.setp(CS.collections, path_effects=[matplotlib.patheffects.withStroke(linewidth=3, foreground="w")])
 
     elif plot in ['h', 'hodo','hodochrone', 's', 'sect', 'section']:
         
@@ -757,8 +896,8 @@ def plot_traveltimes(self,
         fig.ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
         colors='bgrcmykwbgrcmykwbgrcmykwbgrcmykw'
         for i,n in enumerate(N):
-            fig.ax.scatter(data[i].flatten(),
-                           data[i].flatten()*avpgrids[i].flatten(),
+            fig.ax.scatter(data[i,0].flatten(),
+                           data[i,0].flatten()*avpgrids[i,0].flatten(),
                            10,
                            color=colors[i])
     
@@ -783,177 +922,69 @@ def plot_traveltimes(self,
         obspy_addons.sticker(titletext, ax, x=0, y=1, ha='left', va='top')#,fontsize='xx-small')
 
         fig.ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-        fig.ax.set_xlim([0,min([tmax, 2*dmin[-1]/(kmindeg*numpy.nanmedian(avpgrids))])])
+        fig.ax.set_xlim([0,min([tmax])])#, 2*dmin[-1]/(kmindeg*numpy.nanmedian(avpgrids))])])
         minorLocator = matplotlib.ticker.MultipleLocator(1)
         fig.ax.yaxis.set_minor_locator(minorLocator)
 
-        labels={'P':'P$_{tt}$',
-                'S':'S$_{tt}$',
-                's1':'$\sigma1$',
-                's2':'$\sigma2$',
-                's3':'$\sigma3$',
-                'm':'$\widetilde{tt}$'}
+        labels={'P': 'P$_{tt}$',
+                'S': 'S$_{tt}$',
+                'Ps1': 'tt $\in\sigma1$',
+                'Ps2': 'tt $\in\sigma2$',
+                'Ps3': 'tt $\in\sigma3$',
+                'Pm': '$\widetilde{tt}$',
+                'Ss1': None,
+                'Ss2': None,
+                'Ss3': None,
+                'Sm': None}
         if latencies :
             labels['P']='P$_{tt}^{tt+\delta}$'
             labels['S']= 'S$_{tt}^{tt+\delta}$'
-        
+    
         for i,n in enumerate(N):
-            tmp=data[i]*avpgrids[i]/avsgrids[i]
-            currentSdata = numpy.sort(tmp[tmp<tmax])
-            cumS = numpy.linspace(0,1,len(currentSdata))
-            cumS[cumS>.5]=0.5-(cumS[cumS>.5]-0.5)
-            cumS -= numpy.nanmin(cumS)
-            cumS /= numpy.nanmax(cumS)
-
-            currentdata = numpy.sort(data[i][data[i]<tmax])
-            cum = numpy.linspace(0,1,len(currentdata))
-            cum[cum>.5]=0.5-(cum[cum>.5]-0.5)
-            cum -= numpy.nanmin(cum)
-            cum /= numpy.nanmax(cum)
-
-            yerr_s2=cum[cum>.136*2]
-            yerr_s3=cum[cum<.136*2]
-            yerr_s1=cum[cum>.341*2]
-
-
-            fig.ax.errorbar(currentdata[cum<.136*2],
-                            numpy.repeat(n,len(currentdata[cum<.136*2])),
-                         yerr=[yerr_s3*0, yerr_s3/2.],
-                         color='b',
-                         linewidth=0,
-                         elinewidth=1,
-                            zorder=2,
-                            label=labels['s3'])
-            fig.ax.errorbar(currentdata[cum>.136*2],
-                            numpy.repeat(n,len(currentdata[cum>.136*2])),
-                         yerr=[yerr_s2*0, yerr_s2/2.],
-                         color='g',
-                         linewidth=0,
-                         elinewidth=1,
-                            zorder=3,
-                            label=labels['s2'])
-            fig.ax.errorbar(currentdata[cum>.341*2],
-                         numpy.repeat(n,len(currentdata[cum>.341*2])),
-                         yerr=[yerr_s1*0, yerr_s1/2.],
-                         color='r',
-                         linewidth=0,
-                         elinewidth=1,
-                            zorder=4,
-                            label=labels['s1'])
-            if latencies and plot in ['c','chron',]:
-                currentdata_nodt = numpy.sort(data_nodt[i][data_nodt[i]*avpgrids[i]/avsgrids[i]<tmax])
-                cum_nodt = numpy.linspace(0,1,len(currentdata_nodt))
-                cum_nodt[cum_nodt>.5]=0.5-(cum_nodt[cum_nodt>.5]-0.5)
-                cum_nodt -= numpy.nanmin(cum_nodt)
-                cum_nodt /= numpy.nanmax(cum_nodt)
-
-
-                tmp=data_nodt[i]*avpgrids[i]/avsgrids[i]
-                currentSdata_nodt = numpy.sort(tmp[tmp<tmax])
-                cumS_nodt = numpy.linspace(0,1,len(currentSdata_nodt))
-                cumS_nodt[cumS_nodt>.5]=0.5-(cumS_nodt[cumS_nodt>.5]-0.5)
-                cumS_nodt -= numpy.nanmin(cumS_nodt)
-                cumS_nodt /= numpy.nanmax(cumS_nodt)
-
-                yerr_s2=cum_nodt[cum_nodt>.136*2]
-                yerr_s3=cum_nodt[cum_nodt<.136*2]
-                yerr_s1=cum_nodt[cum_nodt>.341*2]
-            else:
-                currentdata_nodt = currentdata
-                cum_nodt = cum
-                currentSdata_nodt = currentSdata
-                cumS_nodt = cumS
-                if labels['P'] is not None:
-                    labels['P']='tt$_P$'
-                    labels['S']='tt$_S$'
             
             
-            fig.ax.fill_between(currentSdata,
-                                n+cumS/2,
-                                n,
-                                color='gray',
-                                #linewidth=.5,
-                                zorder=1)
-            fig.ax.fill_between(currentSdata_nodt,
-                                n-cumS_nodt/2,
-                                n,
-                                color='gray',
-                                #linewidth=.5,
-                                zorder=1,
-                                label=labels['S'])
-            
-            fig.ax.errorbar(currentdata_nodt[cum_nodt<.136*2],
-                            numpy.repeat(n,len(currentdata_nodt[cum_nodt<.136*2])),
-                         yerr=[yerr_s3/2, yerr_s3*0],
-                         color='b',
-                         linewidth=0,
-                         elinewidth=1,
-                            zorder=2)
-            fig.ax.errorbar(currentdata_nodt[cum_nodt>.136*2],
-                            numpy.repeat(n,len(currentdata_nodt[cum_nodt>.136*2])),
-                         yerr=[yerr_s2/2, yerr_s2*0],
-                         color='g',
-                         linewidth=0,
-                         elinewidth=1,
-                            zorder=3)
-            fig.ax.errorbar(currentdata_nodt[cum_nodt>.341*2],
-                         numpy.repeat(n,len(currentdata_nodt[cum_nodt>.341*2])),
-                         yerr=[yerr_s1/2, yerr_s1*0],
-                         color='r',
-                         linewidth=0,
-                         elinewidth=1,
-                            zorder=4)
-            
-                            
-            fig.ax.plot(currentdata,
-                        n+cum/2,
-                        color='k',
-                        #linewidth=.5,
-                        zorder=5,
-                        label=labels['P'])
-            fig.ax.plot(currentdata_nodt,
-                            n-cum_nodt/2,
-                        color='k',
-                        #linewidth=.5,
-                        zorder=5)
-            labels={'P':None,
-                'S':None,
-                'Pdt':None,
-                'Sdt':None,
-                's1':None,
-                's2':None,
-                's3':None,
-                'm':'$\widetilde{tt}$'}
+            tmp = data[i,0]*avpgrids[i]/avsgrids[i,0]
+            obspy_addons.plot_arrivals_chronologies(fig.ax,
+                                                    n,
+                                                    tmp,
+                                                    PorS='S',
+                                                    upordown=1,
+                                                    labels=labels)
+                                                    
+            tmp = data_nodt[i]*avpgrids_nodt[i]/avsgrids_nodt[i]
+            obspy_addons.plot_arrivals_chronologies(fig.ax,
+                                                    n,
+                                                    tmp,
+                                                    PorS='S',
+                                                    upordown=-1,
+                                                    labels=labels)
 
-
-        medians = [numpy.nanmedian(d[d<tmax]) for d in data]
-        if latencies and plot in ['c','chron',]:
-            medians_nodt = [numpy.nanmedian(d[d<tmax]) for d in data_nodt]
-        else:
-            medians_nodt = medians
-        
-        fig.ax.errorbar(medians_nodt,
-                            N,
-                            yerr=[numpy.repeat(0.5,len(medians_nodt)),numpy.repeat(0,len(medians_nodt))],
-                            color='k',
-                            linewidth=0,
-                            elinewidth=1,
-                        zorder=6,
-                        label=labels['m'])
-        fig.ax.errorbar(medians,
-                        N,
-                        yerr=[numpy.repeat(0,len(medians)),numpy.repeat(.5,len(medians))],
-                        color='k',
-                        linewidth=0,
-                        elinewidth=1,
-                        zorder=6)
-        fig.ax.legend(fancybox=True, framealpha=0.5,ncol=2)
+            tmp=data[i]
+            obspy_addons.plot_arrivals_chronologies(fig.ax,
+                                                    n,
+                                                    tmp,
+                                                    PorS='P',
+                                                    upordown=1,
+                                                    labels=labels)
+                
+                
+            tmp = data_nodt[i]
+            obspy_addons.plot_arrivals_chronologies(fig.ax,
+                                                    n,
+                                                    tmp,
+                                                    PorS='P',
+                                                    upordown=-1,
+                                                    labels=labels)
+        fig.ax.legend(#fancybox=True,
+                      #framealpha=0.5,
+                      #ncol=2,
+                      loc=4)
 
     return fig
 
 def delayfilter(self=obspy.core.inventory.inventory.Inventory([],''),
                 delays={'':[]},
-               dmax=120,
+               dmax=20.,
                dmin=0.,
                save=True,
                out=False):

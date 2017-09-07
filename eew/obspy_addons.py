@@ -24,9 +24,11 @@ import re
 #import datetime
 from obspy import UTCDateTime
 
+
+
 try:
-    import catalog_addons
-    import inventory_addons
+    from . import catalog_addons
+    from . import inventory_addons
 except:
     try:
         import eew.inventory_addons as inventory_addons
@@ -55,55 +57,97 @@ def num2roman(num):
     return roman
 
 
+def ipe_allen2012_hyp(r,
+                      m,
+                      a = 2.085,
+                      b = 1.428,#.913,#1.06,
+                      c = -1.402,#-1.107,#-0.0010,
+                      d = 0.078,#.813,#-3.37,
+                      s = 1,
+                      m1=-0.209,
+                      m2=2.042):
+    
+    rm = m1+m2*numpy.exp(m-5)
+    I = a + b*m + c*numpy.log(numpy.sqrt(r**2 + rm**2))+s
+    for i,ri in enumerate(r):
+        try:
+            for j,rj in enumerate(ri):
+                if rj<50:
+                    I[i,j] = a + b*m[i,j] + c*numpy.log(numpy.sqrt(r[i,j]**2 + rm[i,j]**2))+d*numpy.log(r[i,j]/50)+s
+        except:
+            if ri<50:
+                I[i] = a + b*m[i] + c*numpy.log(numpy.sqrt(r[i]**2 + rm[i]**2))+d*numpy.log(r[i]/50)+s
+    return I
 
 def eew(Rsp=1.8,
         vp=6,
         depth=5,
-        magnitudes=[3,9.5],
-        distances=[0,300],
+        magnitudes=[3,8.5],
+        distances=[6,300],
         events = [],
         eventwidths=[],
         eventlabels = [],
+        eventalphas = [],
+        eventxmaxs=[],
         targets = [],
         targetwidths=[],
+        targetalphas=[],
         targetlabels=[],
-        title_addons=None,
+        title_addons='',
         a = 2.085,#3.9,#5.57,
         b = 1.428,#.913,#1.06,
         c = -1.402,#-1.107,#-0.0010,
         d = 0.078,#.813,#-3.37,
         s = 1,
         m1=-0.209,
-        m2=2.042):
+        m2=2.042,
+        ax=None,
+        fig=None,
+        title='Intensities as a function of alert time%s',
+        xscale='log',
+        xlabel='Blind zone radius (km, ep., depth: %s km)',
+        xxlabel='Delay (s, V$_P$: %s km/s, V$_{S/P}$: %s)',
+        ylabel='Magnitude',
+        clabel='Intensity (Allen et al., 2012)',
+        yticks=range(-2,10),
+        contour_addons={4:'panic',6:'damage'},
+        Itarget=True):
     
-    
-    r,m=numpy.meshgrid(numpy.logspace(numpy.log10(depth),
+    try :
+        xlabel=xlabel%(depth)
+    except:
+        pass
+    try :
+        xxlabel=xxlabel%(vp,Rsp)
+    except:
+        pass
+    try:
+        title=title%(title_addons)
+    except:
+        pass
+    if ax:
+        fig = ax.get_figure()
+    elif fig:
+        ax = fig.add_subplot(111)
+    else:
+        fig = matplotlib.pyplot.figure()
+        ax = fig.add_subplot(111)
+
+    ax.set(xscale=xscale,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            yticks=yticks)
+
+    r,m=numpy.meshgrid(numpy.logspace(numpy.log10(max([depth,distances[0]])),
                                       numpy.log10(numpy.sqrt((depth+distances[0])**2+distances[1]**2)),
                                       100),
                        numpy.linspace(magnitudes[0],magnitudes[1],100))
-    
-    
+
     # Allen 1012 IPE hyp
-    rm = m1+m2*numpy.exp(m-5)
-    I = a + b*m + c*numpy.log(numpy.sqrt(r**2 + rm**2))+s
-    for i,ri in enumerate(r):
-        for j,rj in enumerate(ri):
-            if rj<50:
-                I[i,j] = a + b*m[i,j] + c*numpy.log(numpy.sqrt(r[i,j]**2 + rm[i,j]**2))+d*numpy.log(r[i,j]/50)+s
+    I = ipe_allen2012_hyp(r, m,
+                          a, b, c, d, s, m1, m2)
+
     
-    # Allen 1012 IPE rup
-    #I = a + b*m + c*numpy.log(numpy.sqrt(r**2 + (1 + d*numpy.exp(m-5))**2))+s
-    
-    # india paper
-    #I = a + b*m + c*r + d*numpy.log10(r)
-    
-    
-    fig = matplotlib.pyplot.figure()
-    ax=fig.add_subplot(111,
-                       xscale='log',
-                       xlabel='Blind distance (hyp. km, depth: %s km)'%(depth),
-                       ylabel='Magnitude',
-                       yticks=range(-2,10))
     biga=ax.twiny()
     biga.axis('off')
    
@@ -114,34 +158,88 @@ def eew(Rsp=1.8,
                  m,
                  I,
                  label='S-wave I',
-                 norm=matplotlib.colors.LogNorm())
+                 #norm=matplotlib.colors.LogNorm(),
+                 cmap='jet')
+    cb = matplotlib.pyplot.colorbar(hc,
+                                    ax=ax,
+                                    label=clabel,
+                                    ticks=list(range(1,15)),
+                                    )
+
+    if Itarget:
+        if len(events)>0:
+            for i,t in enumerate(events):
+                eventwidths.append(1)
+                eventalphas.append(.7)
+                Itarget = I[numpy.argmin(abs(m[:,0]-events[i])),numpy.argmin(abs(r[0,:]-max(targets)))]
+                Itarget =(Itarget-numpy.nanmin(I))/(numpy.nanmax(I)-numpy.nanmin(I))
+                
+                cb.ax.plot(cb.ax.get_xlim(),
+                           [Itarget,Itarget],
+                           'w',
+                           alpha=eventalphas[i],
+                           linewidth=eventwidths[i])
+                sticker('I$_{target}$',
+                        cb.ax,
+                        y=Itarget,
+                        x=cb.ax.get_xlim()[0],#-ax.get_xlim()[0])/(ax.get_xlim()[1]-ax.get_xlim()[0]),
+                        ha='center',
+                        va='center',
+                        rotation=90,
+                        transform=cb.ax.transData)
+
+
+    for i,e in enumerate(events):
+        eventwidths.append(1)
+        eventalphas.append(.7)
+        eventxmaxs.append(ax.get_xlim()[1])
+        ax.plot([ax.get_xlim()[0],eventxmaxs[i]],
+                 [e,e],
+                   color='w',
+                #xmax=,
+                   alpha=eventalphas[i],
+                   linewidth=eventwidths[i])
+    for i,t in enumerate(targets):
+        targetwidths.append(None)
+        targetalphas.append(.5)
+        ax.fill([ax.get_xlim()[0], ax.get_xlim()[0],
+                 t, t],
+                [ax.get_ylim()[0],
+                 ax.get_ylim()[1],ax.get_ylim()[1],
+                 ax.get_ylim()[0]],
+                   color='w',
+                linewidth=0,
+                alpha=targetalphas[i])
+
     hl=ax.contour(r,m,I,
                   range(1,15),
                   colors='w',
-                  linewidth=1,
-                  alpha=0.8)
-    ax.grid(color='w',
-            linestyle='dotted')
-    
-    cb = matplotlib.pyplot.colorbar(hc,
-                                    ax=ax,
-                                    label='Intensity (Allen et al., 2012)',
-                                    ticks=list(range(1,15)),
-                                    )
-    cb.ax.set_yticklabels(num2roman(list(range(1,15))))
-    
+                  linewidth=2,
+                  alpha=0.5)
     cl = matplotlib.pyplot.clabel(hl,
-                                  fmt='%1.f',
+                                  fmt='%d',
                                   colors='w')
-    for l in cl:
-        l.set_text(num2roman(int(l.get_text())) )
-    
-    for i,e in enumerate(events):
-        eventwidths.append(None)
-        ax.axhline(e,
-                   color='gray',
-                   alpha=.5,
-                   linewidth=eventwidths[i])
+
+
+    cb.ax.set_yticklabels(num2roman(list(range(1,15))))
+
+    for il,l in enumerate(cl):
+        if int(l.get_text()) in contour_addons :
+            l.set_text('%s: %s'%( num2roman(int(l.get_text())),
+                                   contour_addons[int(l.get_text())] ))
+
+            matplotlib.pyplot.setp(l,
+                                   color='k',
+                                   path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
+                                                                                   foreground="w")])
+                                   
+            matplotlib.pyplot.setp(hl.collections[il],
+                                  color='k',
+                                   path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
+                                                                                   foreground="w")])
+        else:
+            l.set_text(num2roman(int(l.get_text())))
+
     for i,e in enumerate(eventlabels):
         sticker(e,
                 ax,
@@ -150,22 +248,19 @@ def eew(Rsp=1.8,
                 ha='left',
                 va='center',
                 transform=ax.transData)
-    for i,t in enumerate(targets):
-        targetwidths.append(None)
-        ax.axvline(t,
-                   color='gray',
-                   alpha=.5,
-                   linewidth=targetwidths[i])
     for i,t in enumerate(targetlabels):
         sticker(t,
                 ax,
-                y=ax.get_ylim()[0],
+                y=ax.get_ylim()[1],
                 x=targets[i],#-ax.get_xlim()[0])/(ax.get_xlim()[1]-ax.get_xlim()[0]),
                 ha='right',
-                va='bottom',
-                rotation=90,
+                va='top',
+                rotation=-90,
                 transform=ax.transData)
-    
+ 
+    ax.grid(color='w',
+            linestyle='dotted')
+
     pos1 = ax.get_position() # get the original position
     pos2 = [pos1.x0 , pos1.y0,  pos1.width, pos1.height*.85]
     ax.set_position(pos2)
@@ -184,8 +279,8 @@ def eew(Rsp=1.8,
     ax1.set_xscale('log')
     ax1.set_xticks(ax.get_xticks())
     ax1.set_xlim(ax.get_xlim())
-    ax1.set_xticklabels(numpy.round(numpy.asarray(ax.get_xticks())/(vp/Rsp), decimals=1))
-    ax1.set_xlabel('Alert time (s, V$_P$: %s km/s, V$_{S/P}$: %s)'%(vp,Rsp))
+    ax1.set_xticklabels(numpy.round(numpy.asarray(ax.get_xticks())/(vp/Rsp), decimals=2))
+    ax1.set_xlabel(xxlabel)
 
 
     if False:
@@ -204,7 +299,26 @@ def eew(Rsp=1.8,
         ax2.set_xlim(numpy.asarray(ax.get_xlim()))
         ax2.set_xticklabels([])
 
-    biga.set_title('Intensities as a function of alert time%s'%(title_addons))
+    biga.set_title(title)
+
+
+    caption = 'Caption informations'
+    caption += '\nIPE: Allen et al. (2012, hypocentral)'
+    caption += '\nv$_P$: %s km/s, v$_{S/P}$: %s'%(vp,Rsp)
+    caption += '\nSource depth: %s km'%(depth)
+    ax.text(.98,
+            .97,
+            caption,
+            transform=ax.transAxes,
+            va='top',
+            ha='right',
+            color='k',
+            bbox=dict(facecolor='w',
+                      edgecolor='k',
+                      boxstyle='round',
+                      alpha=0),
+            alpha=0)
+
     return fig
 
 def teew(Rsp=1.75):
@@ -246,30 +360,30 @@ def plot_arrivals_chronologies(ax,
                                upordown=1,
                                labels={'P': 'P$_{tt}$',
                                        'S': 'S$_{tt}$',
-                                       'Ps1': '$\sigma1$',
-                                       'Ps2': '$\sigma2$',
-                                       'Ps3': '$\sigma3$',
+                                       'Ps1': 'tt $\in\sigma1$',
+                                       'Ps2': 'tt $\in\sigma2$',
+                                       'Ps3': 'tt $\in\sigma3$',
                                        'Pm': '$\widetilde{tt}$',
                                        'Ss1': None,
                                        'Ss2': None,
                                        'Ss3': None,
                                        'Sm': None},
                                colors={'P': 'k',
-                                       'S': 'gray',
+                                       'S': 'k',
                                        'Ps1': 'b',
                                        'Ps2': 'g',
-                                       'Ps3': 'r',
-                                       'Pm': 'k',
-                                       'Ss1': 'gray',
-                                       'Ss2': 'gray',
-                                       'Ss3': 'gray',
-                                       'Sm': 'k'}):
+                                       'Ps3': 'k',
+                                       'Pm': 'r',
+                                       'Ss1': 'b',
+                                       'Ss2': 'g',
+                                       'Ss3': 'r',
+                                       'Sm': 'r'},
+                               alphas={'P':1,'S':.15}):
 
 
     currentdata = numpy.sort(data[data < tmax])
     if len(currentdata)>0:
         currenthandles, currentlabels = ax.get_legend_handles_labels()
-        print(currentlabels)
         for k in list(labels.keys()):
             if labels[k]:
                 if labels[k] in currentlabels:
@@ -289,30 +403,34 @@ def plot_arrivals_chronologies(ax,
                         color=colors[PorS+'s3'],
                         linewidth=0,
                         elinewidth=1,
-                        zorder=2,
-                        label=labels[PorS+'s3'])
+                    #zorder=2,
+                        label=labels[PorS+'s3'],
+                    alpha=alphas[PorS])
         ax.errorbar(currentdata[cum > .136 * 2],
                         numpy.repeat(n, len(currentdata[cum > .136 * 2])),
                         yerr=[yerr_s2 * 0, upordown * yerr_s2 / 2.],
                         color=colors[PorS+'s2'],
                         linewidth=0,
                         elinewidth=1,
-                        zorder=3,
-                        label=labels[PorS+'s2'])
+                    #zorder=3,
+                    label=labels[PorS+'s2'],
+                    alpha=alphas[PorS])
         ax.errorbar(currentdata[cum > .341 * 2],
                         numpy.repeat(n, len(currentdata[cum > .341 * 2])),
                         yerr=[yerr_s1 * 0, upordown * yerr_s1 / 2.],
                         color=colors[PorS+'s1'],
                         linewidth=0,
                         elinewidth=1,
-                        zorder=4,
-                        label=labels[PorS+'s1'])
+                    #zorder=4,
+                    label=labels[PorS+'s1'],
+                    alpha=alphas[PorS])
 
         ax.plot(currentdata,
                     n + upordown * cum / 2,
                     color=colors[PorS],
-                    zorder=5,
-                    label=labels[PorS])
+                #zorder=5,
+                label=labels[PorS],
+                alpha=alphas[PorS])
 
         median = numpy.nanmedian(data[data < tmax])
         ax.errorbar(median,
@@ -321,8 +439,9 @@ def plot_arrivals_chronologies(ax,
                         color=colors[PorS+'m'],
                         linewidth=0,
                         elinewidth=1,
-                        zorder=6,
-                        label=labels[PorS+'m'])
+                    #zorder=6,
+                    label=labels[PorS+'m'],
+                    alpha=alphas[PorS])
 
 
 
@@ -418,264 +537,6 @@ def search(self,
 
 
 
-class Solutions():
-    def __init__(self,
-                 catalog=obspy.core.event.catalog.Catalog(),
-                 last=0,
-                 arrivals=0,
-                 agency_id=['*'],
-                 magnitude_type=['MVS','Mfd'],
-                 nan=False,
-                 minlikelyhood=0.99):
-
-        if last is not '*':
-            last = 1-last
-        
-        self.mags=list()
-        self.depths=list()
-        
-        self.mags_station_counts=list()
-        self.mags_errors=list()
-        self.mags_types=list()
-        self.mags_creation_times=list()
-        self.mags_delays=list()
-        self.mags_orig_errors=list()
-        self.mags_lat=list()
-        self.mags_lon=list()
-        self.mags_orig_station_counts=list()
-        
-        self.origins_times=dict()
-        self.origins_creation_times=dict()
-        self.origins_errors=dict()
-        self.origins_delays=dict()
-        self.origins_mags=dict()
-        self.origins_station_counts=dict()
-        self.origins_errorsdelays=dict()
-        self.origins_errorsdelays_mags=dict()
-        self.origins_mag_errors=dict()
-        self.origins_mag_delays=dict()
-        self.origins_mag_station_counts=dict()
-        self.mags_errorsdelays=dict()
-        
-        self.picks_delays=list()
-        self.picks_times=list()
-        self.picks_oerrors=list()
-    
-        for e in catalog.events:
-            Mtypes=list()
-            
-            for m in e.magnitudes:
-                if m.resource_id == e.preferred_magnitude_id:
-                    preferred_magnitude_mag = m.mag
-            for o in e.origins:
-                if o.resource_id == e.preferred_origin_id:
-                    #print(o)
-                    preferred_origin_depth= o.depth
-                    preferred_origin_latitude = o.latitude
-                    preferred_origin_longitude = o.longitude
-                    preferred_origin_time = o.time
-        
-            fn=reversed
-            if last:
-                fn=list
-            found = 0
-            sortedmarg = numpy.argsort([m.creation_info.creation_time for m in e.magnitudes])
-            for mi in fn(sortedmarg) :# list(enumerate(e.magnitudes))):
-                m = e.magnitudes[mi]
-                
-                if not hasattr(m.creation_info, 'creation_time'):
-                    continue
-                else:
-                    if not m.creation_info.creation_time:
-                        continue
-                if (
-                    (m.creation_info.agency_id in agency_id or '*' in agency_id) and
-                    (m.magnitude_type in magnitude_type or '*' in magnitude_type) and # m.resource_id != e.preferred_magnitude_id and
-                    e.preferred_magnitude_id is not None and
-                    e.preferred_origin_id is not None
-                    ) :
-                    picks = e.picks.copy()
-                    plist = []
-                    #print(m)
-                    
-                    sortedoarg = numpy.argsort([o.creation_info.creation_time for o in e.origins])
-                    
-                    #for o in e.origins:
-                    for oi in fn(sortedoarg) :
-                        o = e.origins[oi]
-                    
-                        if not hasattr(o.creation_info, 'creation_time'):
-                            continue
-                        else:
-                            if not o.creation_info.creation_time:
-                                continue
-                        dt=o.creation_info.creation_time-preferred_origin_time
-                        d=haversine(preferred_origin_longitude,
-                                    preferred_origin_latitude,
-                                    o.longitude,
-                                    o.latitude)/1000
-                        OK_MarenJohn=1
-                        if m.magnitude_type in ['Mfd']:
-                            if ('forel' in m.creation_info.author or
-                                'alp' in m.creation_info.author):
-                                OK_MarenJohn=0
-                                if ((0.39 * o.longitude + 44) < o.latitude and
-                                    'forel' in m.creation_info.author):
-                                    OK_MarenJohn=1
-                                elif ((0.39 * o.longitude + 44) >= o.latitude and
-                                      'alp' in m.creation_info.author):
-                                    OK_MarenJohn=1
-                        elif m.magnitude_type in ['MVS']:
-                            OK_MarenJohn=0
-                            try :
-                                likelyhood = float(m.comments[-1].text)
-                            except:
-                                likelyhood=0.
-                            if minlikelyhood:
-                                if o.creation_info.author:
-                                    if (likelyhood >= minlikelyhood and
-                                        ('NLoT_auloc' in o.creation_info.author or
-                                         'NLoT_reloc' in o.creation_info.author or
-                                         'autoloc' in o.creation_info.author)):
-                                        OK_MarenJohn=1
-                            else:
-                                OK_MarenJohn=1
-                    
-                        try:
-                            d = numpy.sqrt( d**2 + ((preferred_origin_depth-o.depth)/1000)**2)
-                        except:
-                            pass
-                    
-                        if (m.origin_id == o.resource_id and # o.resource_id != e.preferred_origin_id and
-                            m.magnitude_type+m.creation_info.author+o.creation_info.author not in Mtypes  and
-                            (m.magnitude_type not in ['MVS'] or ('NLoT_auloc' in o.creation_info.author or 'NLoT_reloc' in o.creation_info.author  or 'autoloc' in o.creation_info.author)) and # d>.001 and dt>.01 and dt<1000 and
-                            OK_MarenJohn == 1):
-                            
-                            if m.magnitude_type is None :
-                                m.station_count = o.quality.used_station_count
-                            if m.mag is not None :
-                                found = 1
-                                
-                                
-                                # should I always use this approach ????
-                                timestamp= str(m.resource_id).split('.')[-3][-14:]+'.'+str(m.resource_id).split('.')[-2]
-                                timestamp = timestamp[:4]+'-'+timestamp[4:6]+'-'+timestamp[6:8]+'T'+timestamp[8:10]+':'+timestamp[10:12]+':'+timestamp[12:]
-                                #m.creation_info.creation_time =  UTCDateTime(timestamp)
-                                
-                                timestamp= str(o.resource_id).split('.')[-3][-14:]+'.'+str(o.resource_id).split('.')[-2]
-                                timestamp = timestamp[:4]+'-'+timestamp[4:6]+'-'+timestamp[6:8]+'T'+timestamp[8:10]+':'+timestamp[10:12]+':'+timestamp[12:]
-                                #o.creation_info.creation_time =  UTCDateTime(timestamp)
-                                
-                                if '*' is not last  :
-                                    Mtypes.append(m.magnitude_type+m.creation_info.author+o.creation_info.author)
-                                
-                                if m.magnitude_type not in self.origins_errors:
-                                    self.origins_errors[m.magnitude_type]=list()
-                                    self.origins_delays[m.magnitude_type]=list()
-                                    self.origins_creation_times[m.magnitude_type]=list()
-                                    self.origins_times[m.magnitude_type]=list()
-                                    self.origins_mags[m.magnitude_type]=list()
-                                    self.origins_station_counts[m.magnitude_type]=list()
-                                    self.origins_mag_errors[m.magnitude_type]=list()
-                                    self.origins_mag_delays[m.magnitude_type]=list()
-                                    self.origins_mag_station_counts[m.magnitude_type]=list()
-                                
-                                if str(e.resource_id)+o.creation_info.author not in self.origins_errorsdelays:
-                                    self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author]=list()
-                                    self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author]=list()
-                                    self.origins_errorsdelays_mags[str(e.resource_id)+o.creation_info.author]=preferred_magnitude_mag
-
-                                self.mags.append(preferred_magnitude_mag)
-                                try:
-                                    self.depths.append(preferred_origin_depth/1000.)
-                                except:
-                                    self.depths.append(0)
-                                
-                                
-                                if m.magnitude_type in ['Mfd'] :
-                                    self.mags_station_counts.append(o.quality.used_station_count)
-                                else:
-                                    self.mags_station_counts.append(m.station_count)
-                                
-                                self.mags_orig_station_counts.append(o.quality.used_station_count)
-                                
-                                merror = m.mag-preferred_magnitude_mag
-                                
-                                self.mags_orig_errors.append(d)
-                                self.mags_errors.append(merror)
-                                self.mags_types.append(m.magnitude_type)
-                                self.mags_creation_times.append(m.creation_info.creation_time)
-                                self.mags_lat.append(o.latitude)
-                                self.mags_lon.append(o.longitude)
-                                
-                                if m.creation_info.creation_time<o.creation_info.creation_time :
-                                    self.mags_delays.append(o.creation_info.creation_time-preferred_origin_time)
-                                else:
-                                    self.mags_delays.append(m.creation_info.creation_time-preferred_origin_time)
-                                
-                                self.origins_station_counts[m.magnitude_type].append(o.quality.used_station_count)
-                                self.origins_mags[m.magnitude_type].append(preferred_magnitude_mag)
-                                self.origins_times[m.magnitude_type].append(preferred_origin_time)
-                                self.origins_creation_times[m.magnitude_type].append(o.creation_info.creation_time)
-                                self.origins_delays[m.magnitude_type].append(o.creation_info.creation_time-preferred_origin_time)
-                                self.origins_errors[m.magnitude_type].append(d)
-                                self.origins_mag_errors[m.magnitude_type].append(m.mag-preferred_magnitude_mag)
-
-
-                                if m.creation_info.creation_time<o.creation_info.creation_time :
-                                    self.origins_mag_delays[m.magnitude_type].append(o.creation_info.creation_time-preferred_origin_time)
-                                    if len(self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author])>0:
-                                        self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author][-1][1]])
-                                    self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, merror])
-                                    
-                                        
-                                else:
-                                    self.origins_mag_delays[m.magnitude_type].append(m.creation_info.creation_time-preferred_origin_time)
-                                    
-                                    if len(self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author])>0:
-                                        self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author].append([m.creation_info.creation_time-preferred_origin_time, self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author][-1][1]])
-                                    
-                                    self.mags_errorsdelays[str(e.resource_id)+o.creation_info.author].append([m.creation_info.creation_time-preferred_origin_time, merror])
-                                
-                                if m.magnitude_type in ['Mfd'] :
-                                    self.origins_mag_station_counts[m.magnitude_type].append(o.quality.used_station_count)
-                                else:
-                                    self.origins_mag_station_counts[m.magnitude_type].append(m.station_count)
-
-
-                                if len(self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author])>0:
-                                    self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author][-1][1]])
-                                self.origins_errorsdelays[str(e.resource_id)+o.creation_info.author].append([o.creation_info.creation_time-preferred_origin_time, d])
-                                
-
-                                
-                                
-                                if False:
-                                    if arrivals and len(self.picks_times)<100:
-                                        for a in o.arrivals:
-                                            if a.time_weight is not None:
-                                                if a.time_weight < 4 : #abs(a.time_residual)<(a.distance)/5./3:
-                                                    for p in picks:
-                                                        if (a.pick_id == p.resource_id and
-                                                            p.time-preferred_origin_time > .5 and
-                                                            p.time not in plist):
-                                                            
-                                                            self.picks_times.append(p.time-preferred_origin_time)
-                                                            self.picks_delays.append(p.creation_info.creation_time-preferred_origin_time)
-                                                            self.picks_oerrors.append(self.origins_errors[-1])
-                                                            
-                                                            picks.remove(p)
-                                                            plist.append(p.time)
-                                                            break
-
-
-            if not found and nan:
-                self.mags_delays.append(numpy.nan)
-                self.mags.append(numpy.nan)
-                self.mags_lat.append(numpy.nan)
-                self.mags_lon.append(numpy.nan)
-                self.mags_orig_errors.append(numpy.nan)
-
 def adjust_spines(ax, spines):
     for loc, spine in ax.spines.items():
         if loc in spines:
@@ -746,20 +607,22 @@ def nicecolorbar(self,
     divider = make_axes_locatable(axcb)
     # this code is from
     # http://matplotlib.org/mpl_toolkits/axes_grid/users/overview.html#axes-grid1
-    cax = divider.append_axes("right", size="3%", pad=0.15)
+    cax = divider.append_axes("right", size="2%", pad=0.15)
+
 
 
     levels = numpy.asarray([0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,25,50,100,250,500,1000])
-    if vmax and not vmin:
+    if vmax!= None and vmin != None:
+        level = levels[numpy.nanargmin(abs((vmax - vmin)/5 - levels))]
+        ticks = numpy.arange(vmin, vmax, level)
+
+    elif vmax :
         level = levels[numpy.nanargmin(abs((vmax - numpy.nanmin(data))/5 - levels))]
         ticks = numpy.arange(numpy.nanmin(data), vmax, level)
-    elif vmax and vmin:
-        level = levels[numpy.nanargmin(abs(vmax - vmin)/5 - levels)]
-        ticks = numpy.arange(vmin, vmax, level)
     elif data is not None:
-        level = levels[numpy.nanargmin(abs((numpy.nanmin([cmax,numpy.nanmax(data)]) - numpy.nanmin(data))/5 - levels))]
-        ticks = numpy.arange(numpy.nanmin(data), numpy.nanmin([cmax,numpy.nanmax(data)]), level)
-        ticks -= numpy.nanmin(abs(levels))
+        level = None #levels[numpy.nanargmin(abs((numpy.nanmax(data) - numpy.nanmin(data))/5 - levels))]
+        ticks = None #numpy.arange(numpy.nanmin(data), numpy.nanmax(data), level)
+        #ticks -= numpy.nanmin(abs(ticks))
 
     cb = matplotlib.pyplot.colorbar(self,
                                     cax=cax,
@@ -767,15 +630,17 @@ def nicecolorbar(self,
                                     orientation='vertical',
                                     extend='both',
                                     spacing='uniform',
-                                    ticks=ticks,
-                                    vmin=vmin, vmax=vmax)
+                                    ticks=ticks)
+    if vmax!= None and vmin != None:
+        #print(ticks,vmin,vmax)
+        cb.set_clim(vmin, vmax)
         
     cb.ax.yaxis.set_ticks_position('right')
     cb.ax.yaxis.set_label_position('right')
     cb.ax.set_yticklabels(cb.ax.get_yticklabels(), rotation='vertical',fontsize=fontsize)
 
-    if reflevel:
-        cb.ax.axhline((numpy.around(reflevel)-min(cb.get_clim()))/numpy.diff(cb.get_clim()),zorder=999,color='k',linewidth=2)
+    #if reflevel:
+    #    cb.ax.axhline((reflevel-min(cb.get_clim()))/numpy.diff(cb.get_clim()),zorder=999,color='k',linewidth=2)
     return cb
 
 
@@ -785,9 +650,9 @@ def get_aspectratio(catalog=obspy.core.event.catalog.Catalog(),
                     figsize=4):
     
     lons, lats = search(inventory, fields=['longitude','latitude'], levels=['networks','stations'])
-    for x in get(catalog, 'origins','latitude', types=['p']):
+    for x in catalog_addons.get(catalog, 'origins','latitude', types=['p']):
         lats.append(x)
-    for x in get(catalog, 'origins','longitude', types=['p']):
+    for x in catalog_addons.get(catalog, 'origins','longitude', types=['p']):
         lons.append(x)
 
     if max(lons)-min(lons) < max(lats)-min(lats):
@@ -805,12 +670,13 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
             ax=None,
             alpha=1.,
             xpixels=900,
-            resolution='h',
+            resolution='l',
             fontsize=10,
-            figsize=4,
+            figsize=6,
             labels=[1,0,0,1],
             shift=0.,
-            mapbounds=None):
+            mapbounds=None,
+            arcgis=True):
     
     
     if mapbounds:
@@ -846,21 +712,37 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
         f = matplotlib.pyplot.figure(figsize=figsize)
         ax = f.add_subplot(111)
 
-
-    bmap = Basemap(llcrnrlon=min(lons)-(max(lons)-min(lons))*.1,
-                   llcrnrlat=min(lats)-(max(lats)-min(lats))*.1,
-                   urcrnrlon=max(lons)+(max(lons)-min(lons))*.1,
-                   urcrnrlat=max(lats)+(max(lats)-min(lats))*.1,
+    print('nicemap basemap')
+    bmap = Basemap(llcrnrlon=min(lons)-(max(lons)-min(lons))*.05,
+                   llcrnrlat=min(lats)-(max(lats)-min(lats))*.05,
+                   urcrnrlon=max(lons)+(max(lons)-min(lons))*.05,
+                   urcrnrlat=max(lats)+(max(lats)-min(lats))*.05,
                    epsg=4326,
                    resolution=resolution,
-                   ax=ax)
-    try:
-        #im1 = bmap.arcgisimage(service='World_Physical_Map',xpixels=xpixels)
-        im2 = bmap.arcgisimage(service='ESRI_Imagery_World_2D',xpixels=xpixels)
-        #im1.set_alpha(1.*alpha)
-        im2.set_alpha(0.5*alpha)
-    except:
-        pass
+                   ax=ax,
+                   #projection='rotpole',
+                   #lon_0=min(lons)-(max(lons)-min(lons))*.1,
+                   #o_lat_p=90,
+                   #o_lon_p=45
+                   )
+    print('nicemap basemap done')
+    if arcgis:
+        try:
+            print('nicemap arcgis')
+            #im1 = bmap.arcgisimage(service='World_Physical_Map',xpixels=xpixels)
+            #im2 = bmap.arcgisimage(service='World_Imagery',xpixels=xpixels)
+            im2 = bmap.arcgisimage(service='Ocean/World_Ocean_Base',xpixels=xpixels)
+            im1 = bmap.arcgisimage(service='Reference/World_Boundaries_and_Places_Alternate',xpixels=xpixels)
+            #im1.set_alpha(.7*alpha)
+            im2.set_alpha(alpha)
+            print('nicemap arcgis Ocean/World_Ocean_Bas+World_Topo_Map done, alpha:',alpha)
+        except:
+            try:
+                im2 = bmap.arcgisimage(service='World_Topo_Map',xpixels=xpixels)
+                im2.set_alpha(alpha)
+                print('nicemap arcgis World_Topo_Map done, alpha:',alpha)
+            except:
+                pass
 
     steps=numpy.asarray([ 0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,.5,1,2.5,5,10,25,50,100])
     if aspectratio>1:
@@ -868,30 +750,31 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
     else:
         step = steps[numpy.argmin(abs((max(lats)-min(lats))/5 - steps))]
 
+
     bmap.resolution=resolution
     bmap.drawmeridians(meridians=numpy.arange(int(min(lons))-1,int(max(lons))+2,step),
                          labels=labels,
-                         linewidth=.5,
+                         linewidth=.25,
                          color = 'w',
                          fontsize=fontsize)
     bmap.drawparallels(circles=numpy.arange(int(min(lats))-1,int(max(lats))+2,step),
                          labels=labels,
-                         linewidth=.5,
+                         linewidth=.25,
                          color = 'w',
                          fontsize=fontsize)
-    l = bmap.drawcoastlines(linewidth=.5,
-                          color = 'w')
-    l.set_alpha(alpha)
-    l=bmap.drawstates(linewidth=1.,
-                      color = 'w')
-    l.set_alpha(alpha)
-    l=bmap.drawcountries(linewidth=2,
-                         color='w')
-    l.set_alpha(alpha)
-    l=bmap.drawstates(linewidth=.5)
-    l.set_alpha(alpha)
-    l=bmap.drawcountries(linewidth=1)
-    l.set_alpha(alpha)
+    #l = bmap.drawcoastlines(linewidth=.25,
+    #                      color = 'w')
+    #l.set_alpha(alpha)
+    #l=bmap.drawstates(linewidth=.5,
+    #                  color = 'w')
+    #l.set_alpha(alpha)
+    #l=bmap.drawcountries(linewidth=1,
+    #                     color='w')
+    #l.set_alpha(alpha)
+    #l=bmap.drawstates(linewidth=.25)
+    #l.set_alpha(alpha)
+    #l=bmap.drawcountries(linewidth=.5)
+    #l.set_alpha(alpha)
     bmap.readshapefile('/Users/fmassin/Documents/Data/misc/tectonicplates/PB2002_plates',
                          name='PB2002_plates',
                          drawbounds=True,
@@ -899,15 +782,16 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
     return f,ax,bmap
 
 
-def mapall(self=None,
+def map_all(self=None,
            others=[],
            xpixels=900,
-           resolution='h',
+           resolution='l',
            fontsize=8,
-           alpha=.6,
+           alpha=1,
            aspectratio=gold,
            markers='none',#networks',
            colors='instruments',
+           eventcolors='depth',
            label=False,
            showlegend=True,
            colorbar=True,
@@ -918,6 +802,15 @@ def mapall(self=None,
            fig=None,
            ax=None,
            mapbounds=None,
+            prospective_inventory=None,
+            latencies=None,
+            extracatalog=None,
+            extramarkercatalog='1',
+            extranamecatalog='',
+            forquiver=None,
+            arcgis=True,
+            titletext_alpha=1,
+            fp=False,
            **kwargs):
     #Inventory.plot(self, projection='global', resolution='l',continent_fill_color='0.9', water_fill_color='1.0', marker="v",s ize=15**2, label=True, color='#b15928', color_per_network=False, colormap="Paired", legend="upper left", time=None, show=True, outfile=None, method=None, fig=None, **kwargs)
     
@@ -943,25 +836,30 @@ def mapall(self=None,
                   ax=ax,
                   labels=labels,
                   shift=1/4.,
-                  mapbounds=mapbounds)
+                  mapbounds=mapbounds,
+                            arcgis=arcgis)
 
-    titletext = catalog_addons.mapevents(catalog,
-                           bmap=bmap,
-                           fig=fig,
-                           eqcolorfield = 'depth',
-                           titletext=titleaddons,
-                           colorbar=colorbar,
-                           fontsize=fontsize)
+    titletext = catalog_addons.map_events(catalog,
+                                          bmap=bmap,
+                                          fig=fig,
+                                          eqcolorfield = eventcolors,
+                                          titletext=titleaddons,
+                                          colorbar=colorbar,
+                                          fontsize=fontsize,
+                                          prospective_inventory=prospective_inventory,
+                                          latencies=latencies,
+                                          extra=extracatalog,
+                                          extramarker=extramarkercatalog,
+                                          extraname=extranamecatalog,
+                                          fp=fp)
 
-    titletext += inventory_addons.mapstations(inventory,
+    titletext = inventory_addons.map_stations(inventory,
                              bmap=bmap,
                              fig=fig,
                              colors=colors,
                              markers=markers,
                              titletext=titletext,
                              fontsize=fontsize)
-
-
     
     if title:
         #sticker(titletext, bmap.ax, x=0, y=1, ha='left', va='bottom')
@@ -969,10 +867,21 @@ def mapall(self=None,
                          xy=(0, 1),
                          xycoords='axes fraction',
                          horizontalalignment='left',
-                         verticalalignment='bottom')
+                         verticalalignment='bottom',
+                         alpha=titletext_alpha)
     if showlegend:
         fig.legend = bmap.ax.legend(prop={'size':fontsize}, loc=3)#,ncol=2
 
+
+    if forquiver:
+        if not 'latlon' in forquiver:
+            forquiver['latlon']=True
+        if not 'scale_units' in forquiver:
+            forquiver['scale_units']='inches'
+        if not 'color' in forquiver:
+            forquiver['color']='gray'
+
+        bmap.quiver(**forquiver)
 
     if insetfilter:
         
@@ -1022,10 +931,10 @@ def mapall(self=None,
                                           width_ratios=width_ratios,
                                           height_ratios=height_ratios)
         axinset = fig.add_subplot(gs[pos])
-        fig, fig.axinset, fig.bmapinset = mapall(others=[insetinventory,
-                                                         insetcatalog],
+        fig, fig.axinset, fig.bmapinset = map_all(others=[insetinventory,
+                                                          ],#insetcatalog],
                                                  label=label,
-                                                 xpixels=xpixels,
+                                                 xpixels=xpixels/3,
                                                  resolution=resolution,
                                                  fontsize=5,
                                                  labels=[0,0,0,0],#[0,1,1,0],
@@ -1389,129 +1298,6 @@ def eewtlines(self=obspy.core.event.catalog.Catalog(),last=0,agency_id=['*'],log
             #                          fancybox=True,
             #                          loc=4)
     return f
-
-def evfind(self=obspy.core.event.catalog.Catalog(),
-           toadd=obspy.core.event.catalog.Catalog(),
-           client=None,
-           v=False,
-           x=True):
-    """
-    use get_values instead of loop
-    """
-    
-    tofind = toadd.copy()
-    matchs = obspy.core.event.catalog.Catalog()
-    extras = obspy.core.event.catalog.Catalog()
-    matchs.description = 'Intersections of '+str(self.description)+' and '+str(tofind.description)
-    missed = obspy.core.event.catalog.Catalog()
-    missed.description = 'Part of '+str(self.description)+' not in '+str(tofind.description)
-    listfound=list()
-    
-    for e in self.events :
-        
-        o = e.preferred_origin() or e.origins[-1]
-        
-       
-        found=False
-        memdl=99999999
-        memdt=99999999
-        if v:
-            print('---- event',e.short_str(),'...')
-    
-        if len(listfound) < len(self.events):
-            
-            filter = ["time >= "+str(o.time-30),
-                      "time <= "+str(o.time+30),
-                      "latitude >= "+str(o.latitude-1),
-                      "latitude <= "+str(o.latitude+1),
-                      "longitude >= "+str(o.longitude-1),
-                      "longitude <= "+str(o.longitude+1)]
-                      
-            if client :
-                eq_specs = {'starttime':str(o.time-30),
-                            'endtime':str(o.time+30),
-                            'minlatitude':o.latitude-1,
-                            'maxlatitude':o.latitude+1,
-                            'minlongitude':o.longitude-1,
-                            'maxlongitude':o.longitude+1,
-                            'includearrivals':True}
-                tofind = client.get_events( **eq_specs )
-            
-            for candidate in tofind.filter( *filter ).events:
-                candidateo = candidate.preferred_origin() or candidate.origins[-1]
-                if candidateo.time not in listfound:
-                
-                    dt = abs(o.time-candidateo.time)
-                    dl = numpy.sqrt((o.latitude-candidateo.latitude)**2+(o.longitude-candidateo.longitude)**2)
-                
-                    if (dt < 3 and dl <=.1 and
-                        (dl<memdl or dt<memdt)):
-                    
-                        found = True
-                        memi = str(candidateo.time)
-                        memdl = dl
-                        memdt = dt
-                        meme = candidate
-                    
-                        if v:
-                            print('fits nicely input catalog ',tofind.description,':\n  ', candidate.short_str())
-                        break
-            
-                    elif (dt < 8 and dl <=.4 and
-                          (dl<memdl or dt<memdt)):
-                    
-                        found = True
-                        memi = str(candidateo.time)
-                        memdl = dl
-                        memdt = dt
-                        meme = candidate
-                        if v:
-                            print('fits input catalog ',tofind.description,':\n  ', candidate.short_str())
-
-                    elif (dt < 15 and dl <.8 and
-                          (dl<memdl or dt<memdt)):
-                    
-                        found = True
-                        memi = str(candidateo.time)
-                        memdl = dl
-                        memdt = dt
-                        meme = candidate
-                        if v:
-                            print('poorly fits input catalog ',tofind.description,':\n  ', candidate.short_str())
-                
-
-        if not found:
-            if v:
-                print('does not exist in current catalog')
-            missed.events.append(e)
-
-        elif found:
-            if v:
-                print('merged with ', meme.short_str())
-            #matchs.events.append(e)
-            matchs.events.append(meme)
-            listfound.append(memi)
-            
-            #for prefatt in [ 'preferred_origin_id', 'preferred_magnitude_id' ]:
-            #    if hasattr(meme, prefatt):
-            #        matchs.events[-1][prefatt] = meme[prefatt]
-        
-            
-            for listatt in [ 'origins' , 'magnitudes', 'picks' ]:
-            #    if hasattr(meme, listatt):
-            #        matchs.events[-1][listatt].extend( meme[listatt] )
-
-                if hasattr(e, listatt):
-                    matchs.events[-1][listatt].extend( e[listatt] )
-
-            #tofind.events.remove(meme)
-            
-                
-            
-
-    if x :
-        matchs_otherversion, extras, trash = tofind.evfind(self,v=v,x=False)
-    return matchs, missed, extras
 
 
 
