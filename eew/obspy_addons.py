@@ -663,6 +663,60 @@ def get_aspectratio(catalog=obspy.core.event.catalog.Catalog(),
 
     return aspectratio, lons, lats, figsize
 
+
+
+
+def nicemapscale(self):
+    m=self
+    fig=self.ax.get_figure()
+    diaginch = (sum(m.ax.get_position().size**2.))**.5*(sum(fig.get_size_inches()**2.))**.5
+    diagkm = haversine(min(m.boundarylons),
+                               min(m.boundarylats), 
+                               max(m.boundarylons), 
+                               max(m.boundarylats))/1000.
+    diagdeg = ((max(m.boundarylons)-min(m.boundarylons))**2.+(max(m.boundarylats)-min(m.boundarylats))**2)**.5
+    steps = numpy.asarray([ 0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,.5,1,2.5,5,10,25,50,100,250,500,1000])
+    mainscalekm = steps[numpy.argmin((diagkm/(1*diaginch)-steps)**2)]
+    mainscaledeg = mainscalekm * diagdeg/diagkm
+    m.plot(numpy.mean(m.boundarylons)+[-mainscaledeg/2., mainscaledeg/2.],
+           [min(m.boundarylats),min(m.boundarylats)],
+           'w',
+           linewidth=8,
+           latlon=True,
+           solid_capstyle='butt',
+           alpha=.7,
+           zorder=999999)
+    for i in range(3):
+        scalekm = steps[numpy.argmin((diagkm/(1*diaginch)-steps)**2)-i]
+        scaledeg = scalekm * diagdeg/diagkm
+        if mainscalekm/scalekm<6.:
+            n=0
+            c='k'
+            while scalekm*(n+1)<=mainscalekm:
+                n+=1
+                m.plot(numpy.mean(m.boundarylons)-mainscaledeg/2.+[scaledeg*(n-1), scaledeg*n],
+                       [min(m.boundarylats),min(m.boundarylats)],
+                       c,
+                       linewidth=5,
+                       latlon=True,
+                       solid_capstyle='butt',
+                       zorder=999999)
+                if c=='k':
+                    c='w'
+                else:
+                    c='k'
+    xy=m(numpy.mean(m.boundarylons), min(m.boundarylats)+mainscaledeg/12)
+    m.ax.text(xy[0],xy[1],
+              s='%s km'%(mainscalekm),
+              va='bottom',
+              ha='center',
+              fontsize='xx-small',
+              alpha=.7,
+              path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
+                                                              foreground="white")],
+              zorder=999999)
+
+
 def nicemap(catalog=obspy.core.event.catalog.Catalog(),
             inventory=obspy.core.inventory.inventory.Inventory([],''),
             aspectratio=gold,
@@ -744,7 +798,7 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
             except:
                 pass
 
-    steps=numpy.asarray([ 0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,.5,1,2.5,5,10,25,50,100])
+    steps=numpy.asarray([ 0.001,0.0025,0.005,0.01,0.025,0.05,0.1,0.25,.5,1,2.5,5,10,25,50,100,250,500,1000])
     if aspectratio>1:
         step = steps[numpy.argmin(abs((max(lons)-min(lons))/5 - steps))]
     else:
@@ -762,9 +816,10 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
                          linewidth=.25,
                          color = 'w',
                          fontsize=fontsize)
-    #l = bmap.drawcoastlines(linewidth=.25,
-    #                      color = 'w')
-    #l.set_alpha(alpha)
+
+    l = bmap.drawcoastlines(linewidth=.5,
+                          color = 'w')
+    l.set_alpha(alpha)
     #l=bmap.drawstates(linewidth=.5,
     #                  color = 'w')
     #l.set_alpha(alpha)
@@ -775,10 +830,13 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
     #l.set_alpha(alpha)
     #l=bmap.drawcountries(linewidth=.5)
     #l.set_alpha(alpha)
+
     bmap.readshapefile('/Users/fmassin/Documents/Data/misc/tectonicplates/PB2002_plates',
                          name='PB2002_plates',
                          drawbounds=True,
                          color='gray')
+    nicemapscale(bmap)
+
     return f,ax,bmap
 
 
@@ -870,7 +928,7 @@ def map_all(self=None,
                          verticalalignment='bottom',
                          alpha=titletext_alpha)
     if showlegend:
-        fig.legend = bmap.ax.legend(prop={'size':fontsize}, loc=3)#,ncol=2
+        fig.legend = bmap.ax.legend(prop={'size':fontsize}, loc=1)#,ncol=2
 
 
     if forquiver:
@@ -1422,11 +1480,13 @@ def plot_eventsections(self,
                        agencies=['*'],
                        nminpgv=0,
                        nmaxpgv=-1,
-                       emax=999999):
+                       emax=999999,
+                       distmin=30.*3.,
+                       timemax=30.):
 
     fig = list()
     for ie,e in enumerate(self.events):
-
+        
         picks = []
         arrivals = []
         st = obspy.core.stream.Stream()
@@ -1466,6 +1526,7 @@ def plot_eventsections(self,
                     picks.append(p)
                     arrivals.append(a)
         distances=list()
+
         for a in arrivals:
             if a.distance:
                 distances.append(a.distance)
@@ -1476,23 +1537,32 @@ def plot_eventsections(self,
             if distances[indexp] >0:
                 p = picks[indexp]
                 a = arrivals[indexp]
-                
-                if ( a.distance*110. < 30.*3.):
 
+                if ( a.distance*110. < distmin):
+                    
+                    print('adding',p.waveform_id.network_code,
+                          p.waveform_id.station_code,
+                          p.waveform_id.location_code,
+                          p.waveform_id.channel_code,
+                          o.time,
+                          numpy.min([o.time+timemax,pmax+afterpick]))
+                          
                     if not p.waveform_id.location_code:
                         p.waveform_id.location_code =''
                     
                     if not fileok:
                         try:
                             toadd = client_wf.get_waveforms(p.waveform_id.network_code,
-                                                            p.waveform_id.station_code,
-                                                            p.waveform_id.location_code,
-                                                            p.waveform_id.channel_code,
-                                                            starttime = o.time,
-                                                            endtime = numpy.min([o.time+30,pmax+afterpick]) )
+                                                        p.waveform_id.station_code,
+                                                        p.waveform_id.location_code,
+                                                        p.waveform_id.channel_code,
+                                                        starttime = o.time,
+                                                        endtime = numpy.min([o.time+timemax,pmax+afterpick]) )
                         except:
+                            print('client_wf failed' )
                             toadd = obspy.core.stream.Stream()
                     else:
+                        print('uses file' )
                         toadd = fst.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.'+p.waveform_id.location_code+'.'+p.waveform_id.channel_code)
                     
                     for tr in toadd:
@@ -1505,7 +1575,7 @@ def plot_eventsections(self,
                             if not os.path.isfile(ifile):
                                 try:
                                     inv=client_wf.get_stations(startbefore = o.time,
-                                                               endafter = numpy.min([o.time+30,pmax+afterpick]),
+                                                               endafter = numpy.min([o.time+timemax,pmax+afterpick]),
                                                                network=tr.stats.network,
                                                                station=tr.stats.station,
                                                                location=tr.stats.location,
@@ -1568,7 +1638,7 @@ def plot_eventsections(self,
             
             if len(st)<5:
                 for i,tr in enumerate(st):
-                    ax.text(30.0, tr.stats.distance / 1e3,  tr.stats.station, #rotation=270,
+                    ax.text(timemax, tr.stats.distance / 1e3,  tr.stats.station, #rotation=270,
                             va="bottom", ha="left",#         transform=transform,
                             zorder=10)
             
@@ -1684,7 +1754,7 @@ def plot_eventsections(self,
                                 R = [(tr.stats.distance/1000)                     for tr in tmp if tr.stats.distance/1000/3<ct - o.time]
                                 PGV = numpy.asarray([numpy.max(abs(tr.data)) for tr in tmp if tr.stats.distance/1000/3<ct - o.time ])
                                 PGVm = cuaheaton2007(magnitudes=[cm.mag], R = R, phases=phases)
-                                PGVerror = abs(PGV - PGVm/100)/PGV
+                                PGVerror = abs(PGV - 10**PGVm)/PGV
                                 PGVerror=PGVerror[numpy.argsort(R)]
                                 R = numpy.sort(R)
                                 
@@ -1738,7 +1808,7 @@ def plot_eventsections(self,
             ax2.xaxis.set_minor_locator(minorLocator)
             ax3.xaxis.set_major_locator(majorLocator)
             ax2.xaxis.set_major_locator(majorLocator)
-            ax2.set_xlim([0,30])
+            ax2.set_xlim([0,timemax])
 
             try:
                 l = ax.get_legend()
@@ -1762,7 +1832,7 @@ def plot_eventsections(self,
             #ax2.set_ylim([-.021,-.008])
             ax3.set_yscale('log')
             ax3.set_ylim([.1,100])
-            ax3.set_xlim([0,30])
+            ax3.set_xlim([0,timemax])
             ax3r.set_ylim([-1.1,1.1])
 
             ax3.legend(plotted, plottedl, loc=2)
@@ -1782,9 +1852,13 @@ def cuaheaton2007(R=[100],
                   types=['rock'],
                   outputs=['velocity'],
                   phases=['S-wave'],
-                  components=['Vertical amplitudes'],
+                  components=['Root mean square horizontal amplitudes'],
                   corrections=[0]):
     """
+        log10(PGV) in cm/s
+        log10(PGA) in cm/s/s
+        log10(PGD) in cm
+        
         Cua, G., & Heaton, T. (2007). The Virtual Seismologist (VS) method: A Bayesian approach to earthquake early warning (pp. 97–132). Berlin, Heidelberg: Springer Berlin Heidelberg. http://doi.org/10.1007/978-3-540-72241-0_7
     """
     parameters = {'name': ['a','b','c1','c2','d','e','s'],
@@ -1892,13 +1966,17 @@ def haversine(lon1, lat1, lon2, lat2):
     on the earth (specified in decimal degrees)
     """
     # convert decimal degrees to radians
-    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    #lon1 = numpy.deg2rad(lon1)
+    #lat1 = numpy.deg2rad(lat1)
+    #lon2 = numpy.deg2rad(lon2)
+    #lat2 = numpy.deg2rad(lat2)
+    lon1, lat1, lon2, lat2 = map(numpy.deg2rad, [lon1, lat1, lon2, lat2])
 
     # haversine formula
     dlon = lon2 - lon1
     dlat = lat2 - lat1
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * asin(sqrt(a))
+    a = numpy.sin(dlat/2)**2 + numpy.cos(lat1) * numpy.cos(lat2) * numpy.sin(dlon/2)**2
+    c = 2 * numpy.arcsin(numpy.sqrt(a))
     r = 6371000 # Radius of earth in meters. Use 3956 for miles
     return c * r
 
