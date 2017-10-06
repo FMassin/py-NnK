@@ -26,7 +26,45 @@ from pandas import rolling_kurt
 from obspy import read, Trace, Stream
 from obspy.core.trace import Stats
 from obspy.signal.filter import highpass
-from scanner import spherical_to_cartesian
+
+def spherical_to_cartesian(vector):
+    """
+    Convert the spherical coordinates [azimuth, polar angle
+    radial distance] to Cartesian coordinates [x, y, z].
+
+    ______________________________________________________________________
+    :type vector : 3D array, list | np.array
+    :param vector :  The spherical coordinate vector.
+
+    :rtype : 3D array, np.array
+    :return : The vector of cartesian coordinates.
+
+    .. note::
+
+        This file is extracted & modified from the program relax (Edward
+            d'Auvergne).
+
+    .. seealso::
+
+        http://svn.gna.org/svn/relax/1.3/maths_fns/coord_transform.py
+    ______________________________________________________________________
+    """
+
+    # Unit vector if r is missing
+    if len(vector) == 2 :
+        radius =1
+    else:
+        radius=vector[2]
+
+    # Trig alias.
+    sin_takeoff = np.sin(vector[1])
+
+    # The vector.
+    x = radius * sin_takeoff * np.cos(vector[0])
+    y = radius * sin_takeoff * np.sin(vector[0])
+    z = radius * np.cos(vector[1])
+
+    return [x, y, z]
 
 
 def streamdatadim(a):
@@ -253,7 +291,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 
 		# Avoid clock channels
 		if not tr.stats.channel == 'YH':
-
+            #tr.filter("lowpass",freq=10/(scales[0]*tr.stats.delta),corners=4,zerophase=True)
 			for n, s in reversed(list(enumerate(scales))) : # Avoid scales when too wide for the current channel
 
 				npts = tr.stats.npts
@@ -307,7 +345,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 					dtiny = np.finfo(0.0).tiny
 					idx = timeseries[t][n] < dtiny
 					timeseries[t][n][idx] = dtiny
-					timeseries[t][n][12000:] = dtiny
+                    #timeseries[t][n][12000:] = dtiny
 					# finish rms case
 					if (operation is 'rms') :
 						timeseries[t][n][:npts] = timeseries[t][n][:npts]**.5
@@ -794,7 +832,7 @@ class ShortLongTerms(object):
 						channels[1][station_i][n_enhancements] = bigscale_data
 
 		if n_enhancements == -1:
-			print "scales must around 1 orders apart (from *7 to *10)"
+			print("scales must around 1 orders apart (from *7 to *10)")
 
 		for i in range(n_enhancements+1, nscale**2):
 			channels = np.delete(channels, n_enhancements+1, axis=2)

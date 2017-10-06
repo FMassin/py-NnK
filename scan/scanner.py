@@ -752,6 +752,7 @@ def energy_seismicsourcemodel(G, XYZ) :
 
     return [rms, norm, average]
 
+# BASE CLASS
 
 class Aki_Richards(object):
     """
@@ -884,7 +885,7 @@ class Aki_Richards(object):
             obs_cart = np.asarray(obs_cart)
         ## Keeping that in mind
         requestdimension = obs_cart.shape
-        obs_cart = np.reshape(obs_cart, (3, np.prod(requestdimension)/3))
+        obs_cart = np.reshape(obs_cart, (3, int(np.prod(requestdimension)/3.)))
 
         # Displacement array
         # precompute directional cosine array
@@ -1271,7 +1272,7 @@ class Vavryeuk(object):
 
         ## Making sure you get that error.
         else:
-            print 'Can t yet compute this wave type.'
+            print('Can t yet compute this wave type.')
 
         ## transform G into vector x,y,z
         G_cart = spherical_to_cartesian(np.asarray([AZM, TKO, G]))
@@ -2068,15 +2069,15 @@ class SourceScan(object):
 
         elif n_dims == 4 :
             # Scans: strike, dip, slip, DC%
-            print "S, D, Sl, DC% scan not yet impl"
+            print("S, D, Sl, DC% scan not yet impl")
 
         elif n_dims == 5 :
             # Scans: strike, dip, slip, DC%, ISO%
-            print "strike, dip, slip, DC%, ISO%  scan not yet impl"
+            print("strike, dip, slip, DC%, ISO%  scan not yet impl")
 
         elif n_dims == 6 :
             # Scans: Sxx, Syy, Szz, Sxy, Sxz, Syz
-            print "full mt scan not yet impl"
+            print("full mt scan not yet impl")
 
         N = np.prod(source_mechanisms.shape[:-1])
         flat2coordinate = np.asarray( np.unravel_index( range(N), source_mechanisms.shape[:-1] ) )
@@ -2149,19 +2150,19 @@ class SourceScan(object):
 
 
             ### Saves for next time
-            print 'Saving',file
+            print('Saving',file)
             np.savez(file, source_mechanisms = self.source_mechanisms, modeled_amplitudes=self.modeled_amplitudes)
         else:
-            print 'Loading',file
+            print('Loading',file)
             npzfile = np.load(file)
             self.modeled_amplitudes = npzfile['modeled_amplitudes'].item()
             self.source_mechanisms  = npzfile['source_mechanisms'].item()
 
-        print 'Loaded in object:',
-        print N,'source models (precision:',self.precision,') for',
-        print np.prod(np.asarray(self.atr[0]).shape), 'observations',
-        print len(waves),'waves',
-        print len(sum(components, [])),'components.'
+        print('Loaded in object:',)
+        print(N,'source models (precision:',self.precision,') for',)
+        print(np.prod(np.asarray(self.atr[0]).shape), 'observations',)
+        print(len(waves),'waves',)
+        print(len(sum(components, [])),'components.')
         #for key, value in self.modeled_amplitudes.iteritems():
         #   print key, value
 
@@ -2311,7 +2312,7 @@ class SourceScan(object):
         #print(self.source_mechanisms['P(d)'])
         
         if info ==1:
-            print "P(d), prelim",self.source_mechanisms['P(d)']
+            print("P(d), prelim",self.source_mechanisms['P(d)'])
         
         # limits impossibles values
         # must be np.nanmin(self.source_mechanisms['P(Mt)'])  < < np.nanmax(self.source_mechanisms['P(d|Mt)']) ????
@@ -2353,12 +2354,12 @@ class SourceScan(object):
         self.scanned = 1
 
         if info ==1:
-            print 'P(d)', self.source_mechanisms['P(d)']
-            print 'P(Mt)', np.nanmin(self.source_mechanisms['P(Mt)']), np.nanmax(self.source_mechanisms['P(Mt)'])
-            print 'P(d|Mt)', np.nanmin(self.source_mechanisms['P(d|Mt)']), np.nanmax(self.source_mechanisms['P(d|Mt)'])
-            print 'P(Mt|d)', np.nanmin(self.source_mechanisms['P(Mt|d)']), np.nanmax(self.source_mechanisms['P(Mt|d)'])
-            print 'best likelyhood', self.best_likelyhood, '(full mt, P(Mt|d)%)'
-            print 'centroid', self.centroid, '(full mt, P(Mt|d)%)'
+            print( 'P(d)', self.source_mechanisms['P(d)'])
+            print( 'P(Mt)', np.nanmin(self.source_mechanisms['P(Mt)']), np.nanmax(self.source_mechanisms['P(Mt)']))
+            print( 'P(d|Mt)', np.nanmin(self.source_mechanisms['P(d|Mt)']), np.nanmax(self.source_mechanisms['P(d|Mt)']))
+            print( 'P(Mt|d)', np.nanmin(self.source_mechanisms['P(Mt|d)']), np.nanmax(self.source_mechanisms['P(Mt|d)']))
+            print( 'best likelyhood', self.best_likelyhood, '(full mt, P(Mt|d)%)')
+            print( 'centroid', self.centroid, '(full mt, P(Mt|d)%)')
 
     def plot(self, scanned=1, data=SyntheticWavelets(mt=None), sol = None, style = 'b'):
 
@@ -2772,7 +2773,7 @@ def mt_diff( mt1, mt2):
 
 def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , sol='b'):
 
-    print 'This may take a long time...'
+    print('This may take a long time...')
 
     N_tests = np.asarray(N_tests)
 
