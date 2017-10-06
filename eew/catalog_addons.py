@@ -520,7 +520,7 @@ def map_events(self=obspy.core.event.catalog.Catalog(),
             extraname='and %s %s ' % (str(nextra), extraname)
 
         if fp:
-            from obspy.clients.fdsn import Client
+            #from obspy.clients.fdsn import Client
             from obspy.imaging.beachball import beach
             cmap=cf.get_cmap()
             if vmin and vmax:
@@ -528,19 +528,18 @@ def map_events(self=obspy.core.event.catalog.Catalog(),
             else:
                 norm=matplotlib.colors.Normalize(vmin=min(eqcolor),vmax=max(eqcolor))
             
-            
-            client = Client("USGS")
-            for i in numpy.argsort(sizes)[::-1][:min([40,len(sizes)])]:
-                id = str(self.events[i].resource_id).split('id=')[-1].split('&')[0]
-                try:
-                    e = client.get_events(eventid=id,producttype='moment-tensor').events[0]
-                    #print(e)
+            #client = Client("USGS")
+            for i in numpy.argsort(sizes)[max([-100,-1*len(sizes)]):]:
+                if sizes[i]>=fp:
+                    id = str(self.events[i].resource_id).split('id=')[-1].split('&')[0]
+                    #try:
+                    e = self.events[i] #client.get_events(eventid=id,producttype='moment-tensor').events[0]
                     o = e.preferred_origin()
                     for f in e.focal_mechanisms[::-1]:
+                        #print(f)
+                        t=f.moment_tensor.tensor
+                        xy=bmap(longitudes[i],latitudes[i])
                         try:
-                            t=f.moment_tensor.tensor
-                            #print(t)
-                            xy=bmap(o.longitude,o.latitude)
                             b = beach([t.m_rr,t.m_tt,t.m_pp,t.m_rt,t.m_rp,t.m_tp],
                                       xy=(xy[0],xy[1]),
                                       width=.0182*sizes[i]**.525,
@@ -551,12 +550,11 @@ def map_events(self=obspy.core.event.catalog.Catalog(),
                                       )
                             b.set_zorder(999)
                             bmap.ax.add_collection(b)
-                            print('beachball added')
                             break
                         except:
                             pass
-                except:
-                   pass
+                        #except:
+                        #pass
 
         titletext += '\n%s events %s(%s' % (len(times), extraname, str(min(times))[:10])
         if str(max(times))[:10] > str(min(times))[:10]:
