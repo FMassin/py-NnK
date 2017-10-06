@@ -269,6 +269,7 @@ def map_stations(self=obspy.core.inventory.inventory.Inventory([],''),
                 stations_markerdata=None,
                 stations_sizedata=None,
                 filled_markers = ('^', 'v', '<', '>', '8', 's', 'p', '*', 'h', 'H', 'D', 'd', 'P', 'X','o'),
+                 dateintitle=False,
                 ):
    
 
@@ -371,7 +372,9 @@ def map_stations(self=obspy.core.inventory.inventory.Inventory([],''),
 
     times, = obspy_addons.search(self, fields=['start_date'], levels=['networks','stations'])
     if len(times)>0:
-        titletext+= '\n%s stations (%s to %s)' % (len(times), str(min(times))[:10], str(max(times))[:10])
+        titletext+= '\n%s stations' % (len(times))
+        if dateintitle:
+            titletext+= '(%s to %s)' % (str(min(times))[:10], str(max(times))[:10])
 
     return titletext
 
