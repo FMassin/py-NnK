@@ -14,6 +14,7 @@ import re
 import numpy
 import matplotlib
 import obspy
+import datetime
 from obspy.taup import TauPyModel
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
@@ -28,26 +29,14 @@ except:
 
 
 
-
-def traveltime(self,
-               reference_time,
-               filters=None,
-               mode='relative'):
-    if filters :
-        if not eval(filters):
-            return numpy.nan
-    if 'ref' in mode:
-        return reference_time.datetime
-    elif 'abs' in mode:
-        return self.time.datetime
-    return self.time - reference_time
-
 def delay(self,
           reference_time,
+          mode='relative',
           filters=None,
-          mode='relative'):
+          nan = numpy.nan):
     """
-        Returns the time difference or the time itself.
+        Returns the object's delays or its time or the reference time.
+        
     ______
     :type:
         - self:
@@ -58,9 +47,34 @@ def delay(self,
             ObsPy:class:`~obspy.core.event.catalog.Catalog`.
         - reference_time:
             ObsPy:class:`~obspy.core.utcdatetime.UTCDateTime`.
+        - filters:
+            string, default None.
+        - mode:
+            string, default 'relative'.
+        - nan:
+            Default NumPy:class:`~numpy.nan`.
     :param:
-        - self: pick, origin, magnitude, event or catalog.
+        - self:
+            Pick, origin, magnitude, event or catalog.
         - reference_time:
+            Time to take as a reference for delay estimate.
+        - filters:
+            A string to be evalutated as a filter. If
+            the evaluated string is True the delay is returned. The
+            string might test any attribute of the oject (i.e. self, e.g.
+            '"P" in self.phase_hint' to select only P picks).
+        - mode:
+            String controling output type:
+            - 'relative': time difference between the object timestamp and
+                          the reference time.
+            - 'absolute': timestamp of self.
+            The following work only with picks:
+            - 'travel': time difference between the object time and the
+                        reference time.
+            - 'time': timestamp of object.
+        - nan:
+            Value to return when filters evaluate as False (e.g. None, [] or
+            default's numpy.nan).
     _______
     :rtype:
         - float of datetime:class:`~datetime.datetime`
@@ -74,7 +88,7 @@ def delay(self,
     """
     if filters :
         if not eval(filters):
-            return numpy.nan
+            return nan
     if 'ref' in mode:
         return reference_time.datetime
     elif 'abs' in mode:
@@ -96,17 +110,6 @@ def origin_delays(self,
     elif len(tmp)==0:
         return numpy.nan
     return tmp
-def origin_traveltimes(self,
-                       reference_time,
-                       rank=None,
-                       filters=None,
-                       mode='relative'):
-    tmp=[a.pick_id.get_referred_object().traveltime(reference_time,filters=filters,mode=mode) for a in self.arrivals]
-    if len(tmp)>0 and rank is not None:
-        return numpy.sort(tmp)[min([len(tmp)-1,rank])]
-    elif len(tmp)==0:
-        return numpy.nan
-    return tmp
 
 def magnitude_delays(self,
                      reference_time,
@@ -118,16 +121,6 @@ def magnitude_delays(self,
                          rank=rank,
                          filters=filters,
                          mode=mode)
-def magnitude_traveltimes(self,
-                          reference_time,
-                          rank=None,
-                          filters=None,
-                          mode='relative'):
-    return origin_traveltimes(self.origin_id.get_referred_object(),
-                              reference_time,
-                              rank=rank,
-                              filters=filters,
-                              mode=mode)
 
 def event_delay(self,
                 mode='relative',
@@ -136,7 +129,7 @@ def event_delay(self,
                   self.preferred_origin_id.get_referred_object().time,
                   mode=mode,
                   filters=filters)
-import datetime
+
 def event_delays(self,
                  field='magnitudes',
                  function='delay',
@@ -188,9 +181,7 @@ obspy.core.event.origin.Pick.delay = delay
 obspy.core.event.origin.Origin.delay = delay
 obspy.core.event.magnitude.Magnitude.delay = delay
 obspy.core.event.origin.Origin.delays = origin_delays
-obspy.core.event.origin.Origin.traveltimes = origin_traveltimes
 obspy.core.event.magnitude.Magnitude.delays = magnitude_delays
-obspy.core.event.magnitude.Magnitude.traveltimes = origin_traveltimes
 obspy.core.event.Event.delay = event_delay
 obspy.core.event.Event.delays = event_delays
 obspy.core.event.catalog.Catalog.delays = catalog_delays
