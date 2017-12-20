@@ -17,6 +17,7 @@ import obspy
 from obspy.taup import TauPyModel
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
+
 try:
     from . import obspy_addons
 except:
@@ -26,6 +27,194 @@ except:
         import NnK.eew.obspy_addons as obspy_addons
 
 
+
+
+def traveltime(self,
+               reference_time,
+               filters=None,
+               mode='relative'):
+    if filters :
+        if not eval(filters):
+            return numpy.nan
+    if 'ref' in mode:
+        return reference_time.datetime
+    elif 'abs' in mode:
+        return self.time.datetime
+    return self.time - reference_time
+
+def delay(self,
+          reference_time,
+          filters=None,
+          mode='relative'):
+    """
+        Returns the time difference or the time itself.
+    ______
+    :type:
+        - self:
+            ObsPy:class:`~obspy.core.event.origin.Pick` or
+            ObsPy:class:`~obspy.core.event.origin.Origin` or
+            ObsPy:class:`~obspy.core.event.magnitude.Magnitude`
+            ObsPy:class:`~obspy.core.event.Event` or
+            ObsPy:class:`~obspy.core.event.catalog.Catalog`.
+        - reference_time:
+            ObsPy:class:`~obspy.core.utcdatetime.UTCDateTime`.
+    :param:
+        - self: pick, origin, magnitude, event or catalog.
+        - reference_time:
+    _______
+    :rtype:
+        - float of datetime:class:`~datetime.datetime`
+    :return:
+        - seconds or timestamp.
+    _________
+    .. note::
+
+        Works similarly to ObsPy:meth:`~obspy.core.stream.select`.
+
+    """
+    if filters :
+        if not eval(filters):
+            return numpy.nan
+    if 'ref' in mode:
+        return reference_time.datetime
+    elif 'abs' in mode:
+        return self.creation_info.creation_time.datetime
+    elif 'trav' in mode:
+        return self.time - reference_time
+    elif 'time' in mode:
+        return self.time.datetime
+    return self.creation_info.creation_time - reference_time
+
+def origin_delays(self,
+                  reference_time,
+                  rank=None,
+                  filters=None,
+                 mode='relative'):
+    tmp=[a.pick_id.get_referred_object().delay(reference_time,filters=filters,mode=mode) for a in self.arrivals]
+    if len(tmp)>0 and rank is not None:
+        return numpy.sort(tmp)[min([len(tmp)-1,rank])]
+    elif len(tmp)==0:
+        return numpy.nan
+    return tmp
+def origin_traveltimes(self,
+                       reference_time,
+                       rank=None,
+                       filters=None,
+                       mode='relative'):
+    tmp=[a.pick_id.get_referred_object().traveltime(reference_time,filters=filters,mode=mode) for a in self.arrivals]
+    if len(tmp)>0 and rank is not None:
+        return numpy.sort(tmp)[min([len(tmp)-1,rank])]
+    elif len(tmp)==0:
+        return numpy.nan
+    return tmp
+
+def magnitude_delays(self,
+                     reference_time,
+                     rank=None,
+                     filters=None,
+                     mode='relative'):
+    return origin_delays(self.origin_id.get_referred_object(),
+                         reference_time,
+                         rank=rank,
+                         filters=filters,
+                         mode=mode)
+def magnitude_traveltimes(self,
+                          reference_time,
+                          rank=None,
+                          filters=None,
+                          mode='relative'):
+    return origin_traveltimes(self.origin_id.get_referred_object(),
+                              reference_time,
+                              rank=rank,
+                              filters=filters,
+                              mode=mode)
+
+def event_delay(self,
+                mode='relative',
+                filters=None):
+    return  delay(self,
+                  self.preferred_origin_id.get_referred_object().time,
+                  mode=mode,
+                  filters=filters)
+import datetime
+def event_delays(self,
+                 field='magnitudes',
+                 function='delay',
+                 rank=None,
+                 ref=None,
+                 filters=None,
+                 mode='relative'):
+    if not ref:
+        ref=self.preferred_origin_id.get_referred_object().time
+    
+    if function == 'delay':
+        tmp=[ o.delay(ref,filters=filters,mode=mode) for o in self[field]]
+        if rank is not None:
+            return numpy.sort(tmp)[min([len(tmp)-1,rank])]
+        return tmp
+    elif function == 'delays':
+        tmp=[ o.delays(ref,rank=rank,filters=filters,mode=mode) for o in self[field]]
+        if rank is not None:
+            try:
+                return numpy.nanmin(tmp)
+            except:
+                try:
+                    return sorted([t for t in tmp if isinstance(t, datetime.datetime) ])[0]
+                except:
+                    return None
+        return tmp
+    elif function == 'traveltimes':
+        tmp=[ o.traveltimes(ref,rank=rank,filters=filters,mode=mode) for o in self[field]]
+        if rank is not None:
+            try:
+                return numpy.nanmin(tmp)
+            except:
+                try:
+                    return sorted([t for t in tmp if isinstance(t, datetime.datetime) ])[0]
+                except:
+                    return None
+        return tmp
+
+def catalog_delays(self,
+                 field='magnitudes',
+                 function='delay',
+                   rank=None,
+                  filters=None,
+                 mode='relative'):
+
+    return [ e.delays(field,function,rank=rank,filters=filters,mode=mode) for e in self.events ]
+
+obspy.core.event.origin.Pick.delay = delay
+obspy.core.event.origin.Origin.delay = delay
+obspy.core.event.magnitude.Magnitude.delay = delay
+obspy.core.event.origin.Origin.delays = origin_delays
+obspy.core.event.origin.Origin.traveltimes = origin_traveltimes
+obspy.core.event.magnitude.Magnitude.delays = magnitude_delays
+obspy.core.event.magnitude.Magnitude.traveltimes = origin_traveltimes
+obspy.core.event.Event.delay = event_delay
+obspy.core.event.Event.delays = event_delays
+obspy.core.event.catalog.Catalog.delays = catalog_delays
+
+
+def mag_norm(mags):
+    n = matplotlib.colors.PowerNorm(1,
+                                    vmin=numpy.max([numpy.min(mags),0.01]),
+                                    vmax=numpy.max(mags))
+    return n
+def depth_norm(depths):
+    n = matplotlib.colors.LogNorm(vmin=numpy.max([numpy.min(depths),0.1]),
+                                  vmax=numpy.max(depths))
+    return n
+
+def nsta2msize(n,nref=None):
+    n = numpy.asarray(n)
+    if nref:
+        nref = numpy.asarray(nref)
+    else:
+        nref = numpy.asarray(n)
+    size = (n-min(nref)+1)/(max(nref)-min(nref))*500
+    
+    return size
 
 
 def eventsize(mags):
@@ -154,8 +343,12 @@ def distfilter(self=obspy.core.event.catalog.Catalog(),
                 break
         if (x1 and y1) or (x2 and y2):
             d = 110.*obspy_addons.DistancePointLine(o.longitude, o.latitude, x1, y1, x2, y2)
-        else:
+        elif o.quality.minimum_distance :
             d = o.quality.minimum_distance*110.
+        else:
+            print('warning: no minimum_distance in origin, excluded')
+            print(o)
+            d=999999999999.
         if z1 is not None:
             d = numpy.sqrt(d**2. + (o.depth/1000-z1)**2)
         distances.append(d)
@@ -230,19 +423,27 @@ def match_events(self=obspy.core.event.catalog.Catalog(),
                       "longitude <= "+str(o.longitude+1)]
                       
             if client :
-                eq_specs = {'starttime':str(o.time-30),
-                            'endtime':str(o.time+30),
+                eq_specs = {'starttime':str(o.time-40),
+                            'endtime':str(o.time+40),
                             'minlatitude':o.latitude-1,
                             'maxlatitude':o.latitude+1,
                             'minlongitude':o.longitude-1,
                             'maxlongitude':o.longitude+1,
                             'includearrivals':True}
+
                 try:
                     tofind = client.get_events( **eq_specs, **get_events_args )
+                    if v:
+                        print('Event in reference client')
                 except:
                     if v:
                         print('No event in reference client')
                     continue
+                try:
+                    tofind = obspy.read_events(get_events_args['filename'],
+                                               format=get_events_args['format'])
+                except:
+                    pass
             
             for candidate in tofind.filter( *filter ).events:
                 candidateo = candidate.preferred_origin() or candidate.origins[-1]
@@ -251,7 +452,7 @@ def match_events(self=obspy.core.event.catalog.Catalog(),
                     dt = abs(o.time-candidateo.time)
                     dl = numpy.sqrt((o.latitude-candidateo.latitude)**2+(o.longitude-candidateo.longitude)**2)
                 
-                    if (dt < 3 and dl <=.1 and
+                    if (dt < 10 and dl <=.1 and
                         (dl<memdl or dt<memdt)):
                     
                         found = True
@@ -264,7 +465,7 @@ def match_events(self=obspy.core.event.catalog.Catalog(),
                             print('fits nicely input catalog ',tofind.description,':\n  ', candidate.short_str())
                         break
             
-                    elif (dt < 8 and dl <=.4 and
+                    elif (dt < 20 and dl <=.4 and
                           (dl<memdl or dt<memdt)):
                     
                         found = True
@@ -275,7 +476,7 @@ def match_events(self=obspy.core.event.catalog.Catalog(),
                         if v:
                             print('fits input catalog ',tofind.description,':\n  ', candidate.short_str())
 
-                    elif (dt < 15 and dl <.8 and
+                    elif (dt < 40 and dl <.8 and
                           (dl<memdl or dt<memdt)):
                     
                         found = True
@@ -330,11 +531,11 @@ def map_events(self=obspy.core.event.catalog.Catalog(),
                colorbar=None,
                fontsize=8,
               cmap = None,
-              vmax=None,
-              vmin=None,
+               vmax=40.,
+              vmin=0.,
                prospective_inventory=None,
                latencies=None,
-               flat_delay=2,
+               flat_delay=0.,
                VpVsRatio=1.75,
                model_correction='iasp91',
                Vs=3.428,
@@ -350,7 +551,7 @@ def map_events(self=obspy.core.event.catalog.Catalog(),
     
     if prospective_inventory:
         
-        if eqcolorfield[0] == 't':
+        if eqcolorfield[0] == 'P':
             model = TauPyModel(model=model_correction)
         stations_longitudes, stations_latitudes = obspy_addons.search(prospective_inventory,
                                                                   fields=['longitude','latitude'],
@@ -360,61 +561,136 @@ def map_events(self=obspy.core.event.catalog.Catalog(),
         longitudes = get(self, 'origins','longitude', types=['b'])
         latitudes = get(self, 'origins','latitude', types=['b'])
 
+
         if eqcolorfield == 'depth':
             eqcolor = get(self, 'origins',eqcolorfield, types=['b'])
             eqcolor = numpy.asarray(eqcolor)/-1000.
             eqcolorlabel = 'Event depth (km) and magnitude'
         
-        elif eqcolorfield[0] == 't' and eqcolorfield[1:] in [str(int(n)) for n in range(100)]:
+        elif (eqcolorfield[0] == 'P' and eqcolorfield[1:] in [str(int(n)) for n in range(100)]) or eqcolorfield[1] in ['M', 'O']:
             eqcolorlabel = 'Travel time to %s$^{th}$ station (s'%(eqcolorfield[1:])
-            if latencies:
-                eqcolorlabel += 'delays incl.)'
+            if eqcolorfield[1] in ['M', 'O']:
+                eqcolorlabel = 'Delay of %s$^{th}$ %s (s after Ot'%(eqcolorfield[1:-1],eqcolorfield[-1])
+                if eqcolorfield[-1] is '1':
+                    eqcolorlabel = 'Delay of 1$^{st}$ %s (s after Ot'%(eqcolorfield[1:-1])
+                if eqcolorfield[-1] is '2':
+                    eqcolorlabel = 'Delay of 2$^{nd}$ %s (s after Ot'%(eqcolorfield[1:-1])
+                if eqcolorfield[-1] is '3':
+                    eqcolorlabel = 'Delay of 3$^{rd}$ %s (s after Ot'%(eqcolorfield[1:-1])
+                
+                if eqcolorfield[-1] is 'l':
+                    eqcolorlabel = 'Delay of last %s (s after Ot)'%(eqcolorfield[-2])
+
+            if latencies or 's' in eqcolorfield or 'p' in eqcolorfield :
+                eqcolorlabel += ', delays incl.)'
             else:
                 eqcolorlabel += ')'
-            ntht=list()
-            for ie,e in enumerate(self.events):
-                t=[9999999999999999 for d in range(100)]
-                for o in e.origins:
-                    if str(e.preferred_origin_id) == str(o.resource_id):
-                        d=[9999999999999999 for d in range(100)]
-                        if not prospective_inventory:
-                            for a in o.arrivals:
-                                if a.phase[0] == 'P':
-                                    for p in e.picks:
-                                        if str(a.pick_id) == str(p.resource_id) :
-                                            t.append(p.time - o.time)
-                                            if latencies:
-                                                mlatency = numpy.median(latencies[p.waveform_id.network_code+'.'+p.waveform_id.station_code])
-                                                t[-1] += mlatency+flat_delay
-                    
 
+            ntht=list()
+            if prospective_inventory:
+                print('Using travel time modeling')
+            else:
+                print('Using earthquake location travel time')
+
+            for ie,e in enumerate(self.events):
+                t=[]
+                origin=e.preferred_origin_id.get_referred_object()
+                #magnitude=e.preferred_magnitude_id.get_referred_object()
+                
+                if eqcolorfield[1] in ['O']:
+                    o=e.origins[0]
+                    for o in e.origins:
+                        if eqcolorfield[2] not in ['p','P','s','S']:
+                            if eqcolorfield[2:-1] in ['',str(o.method_id),str(o.creation_info.author)] : #or eqcolorfield[1] in ['M']:
+                                if o.creation_info.creation_time-origin.time>0:
+                                    t.append(o.creation_info.creation_time-origin.time)
+                    
                         else:
-                            for istation,lonstation in enumerate(stations_longitudes):
-                                latstation =  stations_latitudes[istation]
-                                ep_d =  numpy.sqrt((lonstation-o.longitude)**2+(latstation-o.latitude)**2)
-                                d.append(ep_d)
-                            d = numpy.sort(d)
-                            for ep_d in  d[:int(eqcolorfield[1:])]:
-                                
-                                arrivals = model.get_travel_times(o.depth/1000.,
-                                                                  distance_in_degree=ep_d,
-                                                                  phase_list=['ttp'],
-                                                                  receiver_depth_in_km=0.0)
-                                try:
-                                    t.append( numpy.nanmin([ a.time for a in arrivals ]))
-                                except:
-                                    print('No phase for depth',o.depth/1000.,'and distance',ep_d)
-                                    pass
+                            if eqcolorfield[-1] == 'l':
+                                t.append(numpy.nan)
+                            for a in o.arrivals:
+                                #if a.phase[0] in [ eqcolorfield[2].upper() , eqcolorfield[2].lower() ]:
+                                p = a.pick_id.get_referred_object()
+                                if p.time - origin.time>0 and p.creation_info.creation_time - origin.time>0:
+                                    if eqcolorfield[2] in ['s','p']:
+                                        if eqcolorfield[-1] == 'l' :#and t[-1]<9999999999999999.:
+                                            t[-1] = numpy.nanmax([p.creation_info.creation_time - origin.time, t[-1]])
+                                        else:
+                                            t.append(p.creation_info.creation_time - origin.time)
+                                    else:
+                                        if eqcolorfield[-1] == 'l' :#and t[-1]<9999999999999999.:
+                                            t[-1] = numpy.nanmax([p.time - origin.time, t[-1]])
+                                        else:
+                                            t.append(p.time - origin.time)
+                                        
+                                        mlatency=0
+                                        if latencies:
+                                            mlatency = numpy.median(latencies[p.waveform_id.network_code+'.'+p.waveform_id.station_code])
+                                        t[-1] += mlatency+flat_delay
+
+                                #if eqcolorfield[-1] =='l':
+                                #    pass#    break
+                                #elif len([tmp for tmp in t if tmp<vmax]) > int(eqcolorfield[-1])-1:
+                                #    break
+                        #if eqcolorfield[-1] == 'l':
+                        #    print(t)
+                elif eqcolorfield[1] in ['M']:
+                    for m in e.magnitudes:
+                        #test = re.sub('.*rigin#','', str(m.resource_id ))
+                        #test = re.sub('#.*','', str(test))
+                        if eqcolorfield[1:-1] in str(m.magnitude_type) : # and str( test )  in  str( o.resource_id ) :
+                            if m.creation_info.creation_time-origin.time>0:
+                                t.append(m.creation_info.creation_time-origin.time)
+                                #break
+                                    
+                elif eqcolorfield[0] in ['p','P'] :
+                    d=[9999999999999999 for d in range(100)]
+                    if not prospective_inventory:
+                        for a in origin.arrivals:
+                            if a.phase[0] in [ eqcolorfield[0].upper() , eqcolorfield[0].lower() ]:
+                                p = a.pick_id.get_referred_object()
+                                if eqcolorfield[0] in ['s','p']:
+                                    t.append(p.creation_info.creation_time - origin.time)
+                                else:
+                                    t.append(p.time - origin.time)
+                                    if latencies:
+                                        mlatency = numpy.median(latencies[p.waveform_id.network_code+'.'+p.waveform_id.station_code])
+                                        t[-1] += mlatency+flat_delay
+
+                            if eqcolorfield[-1] =='l':
+                                pass#    break
+                            elif len([tmp for tmp in t if tmp<vmax])>int(eqcolorfield[-1])-1:
+                                break
             
+
+                    else:
+                        for istation,lonstation in enumerate(stations_longitudes):
+                            latstation =  stations_latitudes[istation]
+                            ep_d =  numpy.sqrt((lonstation-origin.longitude)**2+(latstation-origin.latitude)**2)
+                            d.append(ep_d)
+                        d = numpy.sort(d)
+                        for ep_d in  d[:int(eqcolorfield[1:])]:
+                            arrivals = model.get_travel_times(origin.depth/1000.,
+                                                              distance_in_degree=ep_d,
+                                                              phase_list=['ttp'],
+                                                              receiver_depth_in_km=0.0)
+                            try:
+                                t.append( numpy.nanmin([ a.time for a in arrivals ]))
+                            except:
+                                print('No phase for depth',origin.depth/1000.,'and distance',ep_d)
+                                pass
+                for tmp in range(100):
+                    t.append(99999999999999.)
                 t = numpy.sort(t)
-                ntht.append( t[int(eqcolorfield[1:])-1] )
+                if eqcolorfield[-1] =='l':
+                    ntht.append( numpy.nanmin(t) )
+                else:
+                    ntht.append( t[int(eqcolorfield[-1])-1] )
                 
             
             ntht = numpy.asarray(ntht)
             ntht[ntht<0.]=0.
             eqcolor = ntht
-            vmax=40.
-            vmin=0.
 
         elif eqcolorfield[0] == 'I' and eqcolorfield[1:] in [str(int(n)) for n in range(100)]:
             eqcolorlabel = 'Intensity at %s$^{th}$ station'%(eqcolorfield[1:])
@@ -425,7 +701,7 @@ def map_events(self=obspy.core.event.catalog.Catalog(),
             r=list()
             error=list()
             for ie,e in enumerate(self.events):
-                d=[9999999999999999 for d in range(100)]
+                d=[9999999999999999. for d in range(100)]
                 for o in e.origins:
                     if str(e.preferred_origin_id) == str(o.resource_id):
                         if not prospective_inventory:
@@ -477,12 +753,24 @@ def map_events(self=obspy.core.event.catalog.Catalog(),
                          edgecolor='k',
                          lw=.5,
                         zorder=992)
+        bmap.scatter(longitudes,
+                     latitudes,
+                     sizes,
+                     color='w',
+                     edgecolor='none',
+                     lw=0.,
+                     zorder=992)
         
-        cf = bmap.scatter([longitudes[i] for i in numpy.argsort(eqcolor)],
-                              [latitudes[i] for i in numpy.argsort(eqcolor)],
-                              [sizes[i] for i in numpy.argsort(eqcolor)],
-                                [eqcolor[i] for i in numpy.argsort(eqcolor)],
-                              edgecolor='None',
+        sortorder =  numpy.argsort(eqcolor)
+        if eqcolorfield[0] == 't' or eqcolorfield[0] == 'P' or eqcolorfield[0] == 'p':
+            sortorder =  sortorder[::-1]
+
+        eqcolor[eqcolor>vmax]=numpy.nan
+        cf = bmap.scatter([longitudes[i] for i in sortorder],
+                          [latitudes[i] for i in sortorder],
+                          [sizes[i] for i in sortorder],
+                          [eqcolor[i] for i in sortorder ],
+                          edgecolor='None',
                           cmap=cmap,
                           norm = matplotlib.colors.Normalize(vmin=vmin,vmax=vmax),
                           zorder=995)
@@ -961,6 +1249,189 @@ def plot_Mfirst(self=obspy.core.event.catalog.Catalog(),last=0, agency_id=['*'],
     return f
 
 
+def delays(self=obspy.core.event.catalog.Catalog(),
+           element = [],
+           target=['creation_info','creation_time'],
+           ref = 'preferred_origin().time',
+           rank=0):
+    
+    if target[-1][-1].isdigit() :
+        rank=int(target[-1][-1])-1
+        target[-1] = target[-1][:-1]
+    data = []
+    references=[]
+
+    for e in self.events:
+        reftime=0
+        if 'preferred_origin().time' in ref:
+            for o in e.origins:
+                if str(o.resource_id) == str(e.preferred_origin_id):
+                    reftime = o.time
+
+        if reftime:
+            lasti = len(references)
+            if len(element) >0:
+                for sub in e[element[0]]:
+                    
+                    if len(element) >1:
+                        
+                        lasti = len(references)
+                        for subsub in sub[element[1]]:
+                            if len(element) >2:
+                                pass
+                            else:
+                                references.append(reftime.datetime)
+                                o=subsub
+                                for t in target:
+                                    o = o[t]
+                                if 'time' in target[-1]:
+                                    data.append(o-reftime)
+                                else:
+                                    data.append(o.datetime)
+
+                        data[lasti:] = numpy.sort(data[lasti:])[-1]
+                    else:
+                        references.append(reftime.datetime)
+                        o=sub
+                        for t in target:
+                            o = o[t]
+                        if 'time' in target[-1]:
+                            data.append(o-reftime)
+                        else:
+                            data.append(o.datetime)
+            else:
+                references.append(reftime.datetime)
+                o=e
+                for t in target:
+                    o = o[t]
+                if 'time' in target[-1]:
+                    data.append(o-reftime)
+                else:
+                    data.append(o.datetime)
+        if len(data[lasti:])>0:
+            tmp = numpy.sort(data[lasti:])[min([rank,len(data[lasti:])-1])]
+            data[lasti:] = [ tmp for d in data[lasti:] ]
+            data = data[:lasti+1]
+            references = references[:lasti+1]
+            
+    return data,references
+
+def history(self=obspy.core.event.catalog.Catalog(),
+                  fig=False,
+                  ax=False,
+                fields = ['magnitudes',
+                            'origins',
+                            'origins',
+                            'origins'],#,  [] ],
+            functions = ['delay',
+                      'delay',
+                      'delays',
+                      'delays'],#,['creation_info','creation_time'] ] ,
+            modes = ['rel',
+                         'rel',
+                         'rel',
+                         'trav'],#,['creation_info','creation_time'] ] ,
+            ranks = [0,0,5,5],#,['creation_info','creation_time'] ] ,
+            legendlabels=['Magnitudes',
+                          'Orgins',
+                          '6$^{th}$ picks',
+                          '6$^{th}$ travel times'],
+            eew=True,
+            titleaddons=None):
+    """
+    Plots each event's time delays as a function of time
+        - Magnitude delays
+        - origin delays
+        - pick delays
+        - data delays.
+    ______
+    :type:
+        - self:
+            ObsPy:class:`~obspy.core.events.Events`.
+    :param:
+        - self: event catalog
+            ObsPy:class:`~obspy.core.events.Events`.
+    _______
+    :rtype:
+        - matplotlib:class:`~matplotlib.pyplot.figure`
+    :return:
+        - figure with plot.
+    _________
+    .. note::
+
+        Works similarly to ObsPy:meth:`~obspy.core.stream.select`.
+
+    """
+    import datetime
+    from operator import sub
+
+    if not fig and not ax:
+        fig = matplotlib.pyplot.figure()
+    if not ax:
+        ax = fig.gca()
+
+    handles=[]
+    for index,field in enumerate(fields):
+        
+        test = [ self.delays(field=field,
+                        function=functions[index],
+                             mode=modes[index],
+                        rank=ranks[index]),
+                 self.delays(field=field,
+                        function=functions[index],
+                        mode='ref',
+                        rank=ranks[index]) ]
+                        
+        ok = [isinstance(d, datetime.datetime)  for d in test[-1] ]
+        test[-1] = [d for i,d in enumerate(test[-1]) if ok[i]]
+        test[0] = [d for i,d in enumerate(test[0]) if ok[i]]
+        ok = [d>0 for d in test[0] ]
+        test[-1] = [d for i,d in enumerate(test[-1]) if ok[i]]
+        test[0] = [d for i,d in enumerate(test[0]) if ok[i]]
+
+        if False:
+            ax.plot(test[-1],
+                      test[0],
+                      '.',
+                      markersize=3+(len(fields)-index)**1.5,
+                      markeredgewidth=2.+(len(fields)-index)/3.,
+                      zorder=-1*index+len(fields),
+                    color='k',
+                      )
+        ax.plot(test[-1],
+                test[0],
+                '.',
+                label='%s (%s)'%((field or ['event'])[-1] , fields[index][-1] ) ,
+                markersize=3+(len(fields)-index)**1.5,
+                markeredgewidth=.5+(len(fields)-index)/3.,
+                zorder=index+len(fields),
+                )
+
+
+    ax.legend(legendlabels,
+              prop={'size':'small'})
+    ax.set_yscale('log')
+    ax.set_ylabel('Delays after origin time (s)')
+    ax.text(0,1,titleaddons,
+            ha='left',
+            va='bottom',
+            transform=ax.transAxes)
+    ax.grid()
+    ax.xaxis_date()
+    ax.get_figure().autofmt_xdate()
+    matplotlib.pyplot.xticks(rotation=30,
+                                 ha='right')
+    if eew:
+        ax.set_ylim([1., 100.])
+    return fig
+
+
+
+
+
+
+
+
 
 class Solutions():
     def __init__(self,
@@ -1220,3 +1691,162 @@ class Solutions():
                 self.mags_lat.append(numpy.nan)
                 self.mags_lon.append(numpy.nan)
                 self.mags_orig_errors.append(numpy.nan)
+
+def eewtlines(self=obspy.core.event.catalog.Catalog(),
+              last=0,
+              xlims=[3,30],
+              agency_id=['*'],
+              magnitude_type=['MVS','Mfd'],
+              log=None,
+              minlikelyhood=None,
+              ax1=None,
+              f=None):
+    
+    solutions_first = Solutions(catalog=self,last=0, arrivals=0, magnitude_type=magnitude_type, agency_id=agency_id,minlikelyhood=minlikelyhood)
+    solutions_all = Solutions(catalog=self,last='*', arrivals=0, magnitude_type=magnitude_type, agency_id=agency_id,minlikelyhood=minlikelyhood)
+    
+    if ax1:
+        if not f:
+            f = ax1.get_figure()
+    else:
+        if not f:
+            f = matplotlib.pyplot.figure()
+        ax1 = f.add_subplot(111)
+    ax2=ax1.twinx()
+
+    pos1 = ax1.get_position() # get the original position
+    pos2 = [pos1.x0 , pos1.y0+pos1.height*.5,  pos1.width, pos1.height*.5]
+    ax1.set_position(pos2)
+
+    pos2 = [pos1.x0 , pos1.y0,  pos1.width, pos1.height*.5]
+    ax2.set_position(pos2)
+    
+    
+    ax1.set_ylabel('Error in location (km)')
+    ax2.set_ylabel('Error in magnitude')
+    ax1.set_xlabel('Time after origins (s)')
+    ax2.set_xlabel('Time after origins (s)')
+    if log:
+        ax2.set_xscale('log')
+        ax1.set_xscale('log')
+    ax1.set_yscale('log')
+    ax1.xaxis.set_label_position('top')
+    ax1.xaxis.set_ticks_position('top')
+    ax2.yaxis.set_ticks_position('left')
+    ax2.yaxis.set_label_position('left')
+    ax1.grid()
+    ax2.grid()
+    ax2.axhline(0, linestyle='--', color='k') # horizontal lines
+    
+    if len(solutions_first.mags) >0:
+        
+        
+        line_segments1 = matplotlib.collections.LineCollection([solutions_all.origins_errorsdelays[l]
+                                                               for l in solutions_all.origins_errorsdelays],
+                                                              linewidths=1,
+                                                               linestyles='solid',zorder=1,alpha=.9,
+                                                               norm=mag_norm(solutions_all.mags))#[2,5]))#
+        line_segments1.set_array(numpy.asarray([solutions_all.origins_errorsdelays_mags[l] for l in solutions_all.origins_errorsdelays]))
+        
+        
+        line_segments2 = matplotlib.collections.LineCollection([solutions_all.mags_errorsdelays[l]
+                                                               for l in solutions_all.mags_errorsdelays],
+                                                              linewidths=1,
+                                                               linestyles='solid',zorder=1,alpha=.9,
+                                                               norm=mag_norm(solutions_all.mags))#[2,5]))#
+        line_segments2.set_array(numpy.asarray([solutions_all.origins_errorsdelays_mags[l] for l in solutions_all.origins_errorsdelays]))
+        
+        
+        
+        
+        
+        markers = {'MVS':'o','Mfd':'^'}
+        for k in solutions_first.origins_delays:
+            
+            i_first = numpy.argsort(solutions_first.origins_mags[k])
+            
+            sizes = nsta2msize([solutions_first.origins_station_counts[k][i] for i in i_first],
+                               [0,32])#solutions_first.mags_station_counts)
+            
+            ax1.scatter([solutions_first.origins_delays[k][i] for i in i_first],
+                        [solutions_first.origins_errors[k][i] for i in i_first],
+                        sizes,
+                        marker=markers[k],edgecolors='k',facecolor='None')
+            ax1.scatter([solutions_first.origins_delays[k][i] for i in i_first],
+                        [solutions_first.origins_errors[k][i] for i in i_first],
+                        sizes,
+                        marker=markers[k],edgecolors='None',facecolor='w')
+            sc1 = ax1.scatter([solutions_first.origins_delays[k][i] for i in i_first],
+                              [solutions_first.origins_errors[k][i] for i in i_first],
+                              sizes,
+                              [solutions_first.origins_mags[k][i] for i in i_first],
+                              marker=markers[k],
+                              norm=mag_norm(solutions_all.mags),#[2,5]),#label=e.short_str(),
+                              linewidths=0,zorder=2,
+                              alpha=.8,edgecolors='None')
+
+
+            sizes = nsta2msize([solutions_first.origins_mag_station_counts[k][i] for i in i_first],
+                               [0,32])#solutions_first.mags_station_counts)
+            
+            ax2.scatter([solutions_first.origins_mag_delays[k][i] for i in i_first],
+                        [solutions_first.origins_mag_errors[k][i] for i in i_first],
+                        sizes,
+                        marker=markers[k],edgecolors='k',facecolor='None')
+            ax2.scatter([solutions_first.origins_mag_delays[k][i] for i in i_first],
+                        [solutions_first.origins_mag_errors[k][i] for i in i_first],
+                        sizes,
+                        marker=markers[k],edgecolors='None',facecolor='w')
+            sc2 = ax2.scatter([solutions_first.origins_mag_delays[k][i] for i in i_first],
+                              [solutions_first.origins_mag_errors[k][i] for i in i_first],
+                              sizes,
+                              [solutions_first.origins_mags[k][i] for i in i_first],
+                              marker=markers[k],
+                              norm=mag_norm(solutions_all.mags), #[2,5]),#
+                              linewidths=0,zorder=2,
+                              alpha=.8,edgecolors='None')
+                              
+            if len(i_first) <5:
+                for i in i_first:
+                    ax1.text(solutions_first.origins_delays[k][i]-.2,
+                             solutions_first.origins_errors[k][i],
+                             str(solutions_first.origins_mags[k][i])[:3],
+                             va='bottom',ha='right',
+                             path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
+                                                                             foreground="white")])
+                    ax2.text(solutions_first.origins_mag_delays[k][i]-.2,
+                             solutions_first.origins_mag_errors[k][i],
+                             str(solutions_first.origins_mags[k][i])[:3],
+                             va='bottom',ha='right',
+                             path_effects=[matplotlib.patheffects.withStroke(linewidth=3,
+                                                                             foreground="white")])
+    
+        ax1.add_collection(line_segments1)
+        ax2.add_collection(line_segments2)
+        
+        cb=matplotlib.pyplot.colorbar(line_segments1, ax=[ax1,ax2])#ax1, ax=[ax1,ax2])
+        cb.set_label('Reference magnitude')
+        ob2 = ax2.scatter(20,0,10,marker='o',alpha=0.1,color='b', edgecolors='none',zorder=-999)
+        ob1 = ax2.scatter(20,0,10,marker='o',color='b',edgecolors='k',zorder=-999)
+        ax2.scatter(20,0,10,marker='o',color='w',edgecolors='w',linewidths=3,zorder=-99)
+        
+        xmin=9999999
+        xmax=0
+        for k in solutions_first.origins_mag_delays:
+            xmin = numpy.min([xmin, numpy.min(solutions_first.origins_delays[k])])
+            xmax = numpy.max([xmax, numpy.max(solutions_first.origins_mag_delays[k])])
+        ax2.set_xlim([1,xmax*1.1])
+        ax2.set_xlim(xlims)
+        ax2.set_ylim([-1.1,1.1])
+        ax1.set_ylim([1,100])
+
+
+            #lg = matplotlib.pyplot.legend((ob1, ob2),
+            #                          ('Solutions (loc. or M)', 'Picks (t or A)'),
+            #                          numpoints=1,
+            #                          scatterpoints=1,
+            #                          fancybox=True,
+            #                          loc=4)
+    return f
+
+

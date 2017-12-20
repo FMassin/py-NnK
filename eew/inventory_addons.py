@@ -598,6 +598,11 @@ def plot_traveltimes(self,
                      clims=None,
                      resampling=100,#0,
                      percentile=84,
+                     grid=[0],
+                     scautolocgrid=False,
+                     scautolocgridformat='%.2f %.2f %.1f %.1f %.1f %.0f',
+                     scautolocgridminn=None,
+                     scautolocgridfile=None,
                      **kwargs):
     
     if isinstance(dmin[0], list):
@@ -686,15 +691,59 @@ def plot_traveltimes(self,
     if style[0] in ['b']:
         tmax*=1.7
     dmax=tmax*8./110.
-    dlat = ((numpy.nanmax(statlats)+dmax)-(numpy.nanmin(statlats)-dmax))/numpy.sqrt(bits)
-    dlon = ((numpy.nanmax(statlons)+dmax)-(numpy.nanmin(statlons)-dmax))/numpy.sqrt(bits)
+    
+    if len(grid)==1:
+        dlat = ((numpy.nanmax(statlats)+dmax)-(numpy.nanmin(statlats)-dmax))/numpy.sqrt(bits)
+        dlon = ((numpy.nanmax(statlons)+dmax)-(numpy.nanmin(statlons)-dmax))/numpy.sqrt(bits)
 
-    latitudes, longitudes = numpy.mgrid[slice(numpy.nanmin(statlats)-(dmax),
-                                              numpy.nanmax(statlats)+(dmax),
-                                              dlat),
-                                        slice(numpy.nanmin(statlons)-(dmax),
-                                              numpy.nanmax(statlons)+(dmax),
-                                              dlon)]
+        latitudes, longitudes = numpy.mgrid[slice(numpy.nanmin(statlats)-(dmax),
+                                                  numpy.nanmax(statlats)+(dmax),
+                                                  dlat),
+                                            slice(numpy.nanmin(statlons)-(dmax),
+                                                  numpy.nanmax(statlons)+(dmax),
+                                                  dlon)]
+        
+        dsgrid = numpy.zeros([len(statlons),
+                              latitudes.shape[0],
+                              latitudes.shape[1]])
+        lsgrid = numpy.zeros([resampling,
+                              len(statlons),
+                              latitudes.shape[0],
+                              latitudes.shape[1]])+flat_latency
+    
+    else:
+        latitudes  = grid[0]
+        longitudes  = grid[1]
+        depths  = grid[2]
+        radius = grid[3]
+        dlat = grid[3]
+        dlon = grid[3]
+        dsgrid = numpy.zeros([len(statlons),
+                              latitudes.shape[0]])
+        lsgrid = numpy.zeros([resampling,
+                              len(statlons),
+                              latitudes.shape[0]])+flat_latency
+
+
+
+    for i,s in enumerate(statlons):
+        #dsgrid[i,:,:] = numpy.sqrt((statlons[i]-longitudes)**2 + (statlats[i]-latitudes)**2.)
+        dsgrid[i] = numpy.nanmedian([obspy_addons.haversine(statlons[i],
+                                                         statlats[i],
+                                                         longitudes+dlon/2.,
+                                                         latitudes+dlat/2.),
+                                  obspy_addons.haversine(statlons[i],
+                                                         statlats[i],
+                                                         longitudes+dlon/2.,
+                                                         latitudes-dlat/2.),
+                                  obspy_addons.haversine(statlons[i],
+                                                         statlats[i],
+                                                         longitudes-dlon/2.,
+                                                         latitudes+dlat/2.),
+                                  obspy_addons.haversine(statlons[i],
+                                                         statlats[i],
+                                                         longitudes-dlon/2,
+                                                         latitudes-dlat/2)],axis=0) / (6371000*2*numpy.pi)*360.
 
     kmindeg = obspy_addons.haversine(numpy.nanmin(longitudes),
                                        numpy.nanmin(latitudes),
@@ -702,75 +751,119 @@ def plot_traveltimes(self,
                                        numpy.nanmax(latitudes))
     kmindeg /= 1000*numpy.sqrt((numpy.nanmin(longitudes)-numpy.nanmax(longitudes))**2+(numpy.nanmin(latitudes)-numpy.nanmax(latitudes))**2)
 
-    dsgrid = numpy.zeros([len(statlons),
-                          latitudes.shape[0],
-                          latitudes.shape[1]])
-    lsgrid = numpy.zeros([resampling,
-                          len(statlons),
-                          latitudes.shape[0],
-                          latitudes.shape[1]])+flat_latency
 
-    for i,s in enumerate(statlons):
-        dsgrid[i,:,:] = numpy.sqrt((statlons[i]-longitudes)**2 + (statlats[i]-latitudes)**2.)
 
     if  latencies is not None:
         for i,s in enumerate(statlons):
             for r in range(resampling):
-                lsgrid[r,i,:,:] = numpy.random.choice(latencies[names[i]],
+                lsgrid[r,i] = numpy.random.choice(latencies[names[i]],
                                                         size=(1) ),
                                          
 
     dmingrid = numpy.sort(dsgrid,axis=0)[dmin[0]]
 
-    tP,dP,tPonly,tS,dS,tSonly = traveltimesgrid(longitudes, latitudes,
-                                                                dsgrid,
-                                                                tmax=tmax,
-                                                                depth=depth,
-                                                                model=model,
-                                                                N=N,
-                                                                style=style,
-                                                                plot=plot,
-                                                                latencies=lsgrid, #reflevel=reflevel,
-                                                                       percentile=percentile)
+    if scautolocgrid:
+        if not scautolocgridminn:
+            scautolocgridminn = (dmin[0]-6)/2+6
+        
+        tmp=numpy.zeros(longitudes.flatten().shape)
+        if len(grid)==1:
+            tmp = numpy.asarray([latitudes.flatten(),
+                                 longitudes.flatten(),
+                                 tmp+depth,
+                                 tmp+((dlat**2+dlon**2)**.5)/2.,
+                                 dmingrid.flatten(),
+                                 tmp+scautolocgridminn ])
+        else:
+            tmp = numpy.asarray([latitudes.flatten(),
+                                 longitudes.flatten(),
+                                 depths.flatten(),
+                                 radius.flatten(),
+                                 dmingrid.flatten(),
+                                 tmp+scautolocgridminn ])
 
-    
-    data=tP
-    label=str(N[-1])+'$^{th}$ P travel time (s'
-    ax2xlabel='Modeled travel time (s'
-    if latencies and plot in ['c','chron',]:
-        data_nodt=tPonly
+        if scautolocgridfile:
+            f = open(scautolocgridfile, 'w')
+            scautolocgridformat+='\n'
+            for l in range(len(latitudes.flatten())):
+                if tmp[1][l] < 0:
+                    tmp[1][l] = 360+tmp[1][l]
+                f.write(scautolocgridformat %(tmp[0][l],
+                                            tmp[1][l],
+                                            tmp[2][l],
+                                            tmp[3][l],
+                                            tmp[4][l],
+                                            tmp[5][l]))
+            f.close()
+            print(scautolocgridfile)
+        else:
+            for l in range(len(latitudes.flatten())):
+                print(scautolocgridformat %(tmp[0][l],
+                       tmp[1][l],
+                       tmp[2][l],
+                       tmp[3][l],
+                       tmp[4][l],
+                       tmp[5][l]))
+                    
 
-    if style in ['d']:
-        ax2xlabel='Modeled S delays (s'
-        data=tgrids
+        data=dmingrid
+        tmax = numpy.nanmax(dmingrid.flatten())
+        reflevel = 1.
+        unit='°'#$^{o}$'
+        ax2xlabel='Haversine ('+unit
+        label='Haversine '+str(N[-1])+'$^{th}$ station ('+unit
+    else:
+
+        tP,dP,tPonly,tS,dS,tSonly = traveltimesgrid(longitudes, latitudes,
+                                                                    dsgrid,
+                                                                    tmax=tmax,
+                                                                    depth=depth,
+                                                                    model=model,
+                                                                    N=N,
+                                                                    style=style,
+                                                                    plot=plot,
+                                                                    latencies=lsgrid, #reflevel=reflevel,
+                                                                           percentile=percentile)
+
+
+        unit='s'
+        data=tP
+        label=str(N[-1])+'$^{th}$ P travel time ('+unit
+        ax2xlabel='Modeled travel time (s'
         if latencies and plot in ['c','chron',]:
-            data_nodt=tgrids_nodt
-        label='Modeled S delay at '+str(int(reflevel*numpy.nanmedian(avpgrids)*kmindeg))+'km (s'#S radius at '+str(N[-1])+'$^{th}$ P travel time [km]'
-        reflevel=0.
-    elif style in ['l']:
-        data=lsgrid
+            data_nodt=tPonly
+
+        if style in ['d']:
+            ax2xlabel='Modeled S delays ('+unit
+            data=tgrids
+            if latencies and plot in ['c','chron',]:
+                data_nodt=tgrids_nodt
+            label='Modeled S delay at '+str(int(reflevel*numpy.nanmedian(avpgrids)*kmindeg))+'km ('+unit#S radius at '+str(N[-1])+'$^{th}$ P travel time [km]'
+            reflevel=0.
+        elif style in ['l']:
+            data=lsgrid
+            if latencies and plot in ['c','chron',]:
+                data_nodt=lsgrids_nodt
+            ax2xlabel='Data delays (s'
+            label=str(N[-1])+'$^{th}$ data delays ('+unit
+        elif style in ['b']:
+            ax2xlabel='Modeled S radius (km'
+            tmax=dmax*kmindeg
+            reflevel*= numpy.nanmedian(avsgrids)*kmindeg
+            data=dgrids*kmindeg
+            if latencies and plot in ['c','chron',]:
+                data_nodt=dgrids_nodt*kmindeg
+            label='Modeled S radius at '+str(N[-1])+'$^{th}$ P travel time ('+unit#S radius at '+str(N[-1])+'$^{th}$ P travel time [km]'
+        
+        for tn in data:
+            for n in tn:
+                n[dmingrid*kmindeg>dmin[-1]] = numpy.nan
+                n[dmingrid*kmindeg<dmin[1]] = numpy.nan
+        
         if latencies and plot in ['c','chron',]:
-            data_nodt=lsgrids_nodt
-        ax2xlabel='Data delays (s'
-        label=str(N[-1])+'$^{th}$ data delays (s'
-    elif style in ['b']:
-        ax2xlabel='Modeled S radius (km'
-        tmax=dmax*kmindeg
-        reflevel*= numpy.nanmedian(avsgrids)*kmindeg
-        data=dgrids*kmindeg
-        if latencies and plot in ['c','chron',]:
-            data_nodt=dgrids_nodt*kmindeg
-        label='Modeled S radius at '+str(N[-1])+'$^{th}$ P travel time (km'#S radius at '+str(N[-1])+'$^{th}$ P travel time [km]'
-    
-    for tn in data:
-        for n in tn:
-            n[dmingrid*kmindeg>dmin[-1]] = numpy.nan
-            n[dmingrid*kmindeg<dmin[1]] = numpy.nan
-    
-    if latencies and plot in ['c','chron',]:
-        for i,n in enumerate(data_nodt):
-            n[dmingrid*kmindeg>dmin[-1]] = numpy.nan
-            n[dmingrid*kmindeg<dmin[1]] = numpy.nan
+            for i,n in enumerate(data_nodt):
+                n[dmingrid*kmindeg>dmin[-1]] = numpy.nan
+                n[dmingrid*kmindeg<dmin[1]] = numpy.nan
 
     if  latencies is not None :#and plot not in ['c','chron','h', 'hodo','hodochrone', 's', 'sect', 'section']:
         ax2xlabel+= ', data delays incl.)'
@@ -789,8 +882,12 @@ def plot_traveltimes(self,
         fig.ax = fig.add_subplot(111)
 
     if plot in ['m','map']:
-        toplot = numpy.nanmedian(data[:,N[-1]-1,:,:],
-                                 axis=0)
+        if scautolocgrid:
+            toplot = data
+
+        else:
+            toplot = numpy.nanmedian(data[:,N[-1]-1,:,:],
+                                     axis=0)
         
         fig, fig.ax, fig.bmap = obspy_addons.map_all(others=[selffiltered],
                                                     xpixels=xpixels,
@@ -833,7 +930,7 @@ def plot_traveltimes(self,
                               norm = matplotlib.colors.Normalize(vmax=tmax, vmin=0.),
                               extend='min')
         clbls = matplotlib.pyplot.clabel(CS,
-                                         fmt='%1.0fs',
+                                         fmt='%1.0f'+unit,
                                          inline=1,
                                          fontsize=10,
                                          use_clabeltext=True)
@@ -848,6 +945,10 @@ def plot_traveltimes(self,
                                               vmax=tmax,
                                               vmin=0.,
                                               data=toplot)
+        if scautolocgrid:
+            fig.bmap.scatter(x=longitudes,
+                             y=latitudes,
+                             marker='+')
 
         if  percentile is not None and latencies is not None :
             

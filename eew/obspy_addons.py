@@ -98,7 +98,7 @@ def eew(Rsp=1.8,
         b = 1.428,#.913,#1.06,
         c = -1.402,#-1.107,#-0.0010,
         d = 0.078,#.813,#-3.37,
-        s = 1,
+        s = 0,
         m1=-0.209,
         m2=2.042,
         ax=None,
@@ -110,7 +110,7 @@ def eew(Rsp=1.8,
         ylabel='Magnitude',
         clabel='Intensity (Allen et al., 2012)',
         yticks=range(-2,10),
-        contour_addons={4:'panic',6:'damage'},
+        contour_addons={4:'',6:''},
         Itarget=True):
     
     try :
@@ -154,7 +154,7 @@ def eew(Rsp=1.8,
     I[numpy.isnan(I)] = numpy.nanmin(I[I>.5])
     I[I<.5] =  numpy.nanmin(I[I>.5])
     
-    hc=ax.pcolor(r,
+    hc=ax.pcolor((r**2-depth**2)**.5,
                  m,
                  I,
                  label='S-wave I',
@@ -211,22 +211,27 @@ def eew(Rsp=1.8,
                 linewidth=0,
                 alpha=targetalphas[i])
 
-    hl=ax.contour(r,m,I,
+    hl=ax.contour((r**2-depth**2)**.5,
+                  m,I,
                   range(1,15),
                   colors='w',
                   linewidth=2,
                   alpha=0.5)
     cl = matplotlib.pyplot.clabel(hl,
                                   fmt='%d',
-                                  colors='w')
+                                  colors='w',
+                                  ha='center')
 
 
     cb.ax.set_yticklabels(num2roman(list(range(1,15))))
 
     for il,l in enumerate(cl):
         if int(l.get_text()) in contour_addons :
-            l.set_text('%s: %s'%( num2roman(int(l.get_text())),
-                                   contour_addons[int(l.get_text())] ))
+            if contour_addons[int(l.get_text())] != '':
+                l.set_text('%s: %s'%( num2roman(int(l.get_text())),
+                                       contour_addons[int(l.get_text())] ))
+            else:
+                l.set_text(num2roman(int(l.get_text())))
 
             matplotlib.pyplot.setp(l,
                                    color='k',
@@ -784,12 +789,16 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
         try:
             print('nicemap arcgis')
             #im1 = bmap.arcgisimage(service='World_Physical_Map',xpixels=xpixels)
-            #im2 = bmap.arcgisimage(service='World_Imagery',xpixels=xpixels)
-            im2 = bmap.arcgisimage(service='Ocean/World_Ocean_Base',xpixels=xpixels)
-            im1 = bmap.arcgisimage(service='Reference/World_Boundaries_and_Places_Alternate',xpixels=xpixels)
-            #im1.set_alpha(.7*alpha)
+            im2 = bmap.arcgisimage(service='Ocean/World_Ocean_Base',verbose=True,xpixels=xpixels)
+                
+            im3 = bmap.arcgisimage(service='Elevation/World_Hillshade',verbose=True,xpixels=xpixels)
+            data=im3.get_array()
+            data[:,:,3] = 1 - (data[:,:,0]*data[:,:,1]*data[:,:,2])
+            im3.set_array(data)
+
+            im1 = bmap.arcgisimage(service='Reference/World_Boundaries_and_Places_Alternate',verbose=True,xpixels=xpixels)
             im2.set_alpha(alpha)
-            print('nicemap arcgis Ocean/World_Ocean_Bas+World_Topo_Map done, alpha:',alpha)
+            print('nicemap arcgis Ocean/World_Ocean_Base + World_Topo_Map done, alpha:',alpha)
         except:
             try:
                 im2 = bmap.arcgisimage(service='World_Topo_Map',xpixels=xpixels)
@@ -856,6 +865,7 @@ def map_all(self=None,
            title=True,
            labels=[1,0,0,1],
            titleaddons='',
+            titlereplacement=None,
            insetfilter=None,
            fig=None,
            ax=None,
@@ -921,6 +931,8 @@ def map_all(self=None,
     
     if title:
         #sticker(titletext, bmap.ax, x=0, y=1, ha='left', va='bottom')
+        if titlereplacement is not None:
+            titletext = titlereplacement
         bmap.ax.annotate(titletext,
                          xy=(0, 1),
                          xycoords='axes fraction',
@@ -1981,25 +1993,6 @@ def haversine(lon1, lat1, lon2, lat2):
     return c * r
 
 
-def nsta2msize(n,nref=None):
-    n = numpy.asarray(n)
-    if nref:
-        nref = numpy.asarray(nref)
-    else:
-        nref = numpy.asarray(n)
-    size = (n-min(nref)+1)/(max(nref)-min(nref))*500
-    
-    return size
-
-def mag_norm(mags):
-    n = matplotlib.colors.PowerNorm(1,
-                                    vmin=numpy.max([numpy.min(mags),0.01]),
-                                    vmax=numpy.max(mags))
-    return n
-def depth_norm(depths):
-    n = matplotlib.colors.LogNorm(vmin=numpy.max([numpy.min(depths),0.1]),
-                                  vmax=numpy.max(depths))
-    return n
 
 
 #obspy.core.event.catalog.Catalog.plot_eventsections = plot_eventsections
