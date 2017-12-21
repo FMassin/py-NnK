@@ -578,21 +578,23 @@ def sticker(t,
             ha='left',
             va='bottom',
             transform=None,
+            colors=['k','None'],
+            foregrounds=['w','None'],
             **kwargs):
     
     if not transform:
         transform=a.transAxes
     o = list()
-    colorin=['None','None']
-    for i,c in enumerate(['w','k']):
+
+    for i,c in enumerate(foregrounds):
         o.append( a.text(x,y,t,
-            fontweight='bold',
+            fontweight='semibold',
             zorder=999,#            alpha=0.4,
-            color=colorin[i],
+            color=colors[i],
             ha=ha,va=va,
             #fontsize='large',
             transform=transform,
-            path_effects=[matplotlib.patheffects.withStroke(linewidth=1.5-i, foreground=c)],
+            path_effects=[matplotlib.patheffects.withStroke(linewidth=4-i*3/len(foregrounds), foreground=c)],
             **kwargs))
         
     return o

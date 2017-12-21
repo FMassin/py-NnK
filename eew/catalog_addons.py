@@ -996,62 +996,56 @@ def plot_traveltime(self=obspy.core.event.catalog.Catalog(),
         for m in e.magnitudes:
             if str(e.preferred_magnitude_id) == str(m.resource_id):
                 mag=m.mag
-        for o in e.origins:
-            if str(e.preferred_origin_id) == str(o.resource_id):
-                if depth_correction:
-                    z=o.depth/1000.
-                    if o.depth/1000. < .1:
-                        z=.1
-                    arrivals_correction = model.get_travel_times(z,
-                                                                 distance_in_degree=0.,#0001,
-                                                      phase_list=['p','s'],
-                                                      receiver_depth_in_km=0.0)
-                t=list()
-                for a in o.arrivals:
-                    for p in e.picks:
-                        if str(a.pick_id) == str(p.resource_id) :
-                            t.append(p.time)
-                
-                for ia in numpy.argsort(t):
-                    a=o.arrivals[ia]
-                    for p in e.picks:
-                        if str(a.pick_id) == str(p.resource_id) and p.time-o.time>0:
-                            k = '%s.%s'%(p.waveform_id.network_code,p.waveform_id.station_code)
-                            if a.phase[0] == 'S':
-                                ns+=1
-                                n[ns][ie] = p.time-o.time
-                                ndt[ns][ie] = p.time-o.time+flat_latency+latencies_type(latencies[k])
-                                mags[np][ie] = mag
-                                if depth_correction:
-                                    tnadir = arrivals_correction[1].time
-                                    thoriz = ((p.time-o.time)**2-tnadir**2)**.5
-                                    n[ns][ie] = (thoriz**2+tsz_correction**2)**.5
-                                    ndt[ns][ie] = (thoriz**2+tsz_correction**2)**.5+flat_latency+latencies_type(latencies[k])
-        
-                            elif a.phase[0] == 'P':
-                                np+=1
-                                N[np][ie] = p.time-o.time
-                                Ndt[np][ie] = p.time-o.time+flat_latency+latencies_type(latencies[k])
-                                mags[np][ie] = mag
-                                if depth_correction:
-                                    tnadir = arrivals_correction[0].time
-                                    thoriz = ((p.time-o.time)**2-tnadir**2)**.5
-                                    N[np][ie] = (thoriz**2+tpz_correction**2)**.5
-                                    Ndt[np][ie] = (thoriz**2+tpz_correction**2)**.5+flat_latency+latencies_type(latencies[k])
-                AvVsVpRatio=0.
-                AvN=0
-                VpVsRatio=1.8
-                for p in range(np):
-                    if n[p][ie] >0 and N[p][ie] >0:
-                        AvVsVpRatio += n[p][ie]/N[p][ie]
-                        AvN+=1
-                        VpVsRatio = AvVsVpRatio/AvN
-                for p in range(np):
-                    if not n[p][ie] >0:
-                        n[p][ie] = N[p][ie]*VpVsRatio
-                        ndt[p][ie] = Ndt[p][ie]*VpVsRatio
-                        
-                break
+
+        o = e.preferred_origin_id.get_referred_object()
+        if depth_correction:
+            z=o.depth/1000.
+            if o.depth/1000. < .1:
+                z=.1
+            arrivals_correction = model.get_travel_times(z,
+                                                         distance_in_degree=0.,#0001,
+                                              phase_list=['p','s'],
+                                              receiver_depth_in_km=0.0)
+
+        for a in o.arrivals:
+            p = a.pick_id.get_referred_object()
+            if p.time-o.time>0:
+                k = '%s.%s'%(p.waveform_id.network_code,p.waveform_id.station_code)
+                if 'S' in str(a.phase[0])  :
+                    ns+=1
+                    n[ns][ie] = p.time-o.time
+                    ndt[ns][ie] = p.time-o.time+flat_latency+latencies_type(latencies[k])
+                    mags[np][ie] = mag
+                    if depth_correction:
+                        tnadir = arrivals_correction[1].time
+                        thoriz = ((p.time-o.time)**2-tnadir**2)**.5
+                        n[ns][ie] = (thoriz**2+tsz_correction**2)**.5
+                        ndt[ns][ie] = (thoriz**2+tsz_correction**2)**.5+flat_latency+latencies_type(latencies[k])
+
+                elif 'P' in str(a.phase[0])  :
+                    np+=1
+                    N[np][ie] = p.time-o.time
+                    Ndt[np][ie] = p.time-o.time+flat_latency+latencies_type(latencies[k])
+                    mags[np][ie] = mag
+                    if depth_correction:
+                        tnadir = arrivals_correction[0].time
+                        thoriz = ((p.time-o.time)**2-tnadir**2)**.5
+                        N[np][ie] = (thoriz**2+tpz_correction**2)**.5
+                        Ndt[np][ie] = (thoriz**2+tpz_correction**2)**.5+flat_latency+latencies_type(latencies[k])
+        AvVsVpRatio=0.
+        AvN=0
+        VpVsRatio=1.8
+        for p in range(np):
+            if n[p][ie] >0 and N[p][ie] >0:
+                AvVsVpRatio += n[p][ie]/N[p][ie]
+                AvN+=1
+                VpVsRatio = AvVsVpRatio/AvN
+        for p in range(np):
+            if not n[p][ie] >0:
+                n[p][ie] = N[p][ie]*VpVsRatio
+                ndt[p][ie] = Ndt[p][ie]*VpVsRatio
+
+
     
     if not ax:
         f, (ax) = matplotlib.pyplot.subplots(1, 1)
@@ -1065,15 +1059,17 @@ def plot_traveltime(self=obspy.core.event.catalog.Catalog(),
         ax.set_aspect('equal')
     elif style in  ['cum','c','cumulate']:
         ax.set_ylabel('Phase arrival order')
-        ax.set_xlabel('Observed travel Time')
+        ax.set_xlabel('Travel Time')
         if depth_correction:
-            ax.set_xlabel('Observed travel Time (corr. to depth %s km)'%(depth_correction))
+            ax.set_xlabel('Travel Time (corr. to depth %s km)'%(depth_correction))
         ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
         minorLocator = matplotlib.ticker.MultipleLocator(1)
         ax.yaxis.set_minor_locator(minorLocator)
     ax.grid()
     if sticker_addons:
-        obspy_addons.sticker(sticker_addons, ax, x=0, y=1, ha='left', va='top')  # ,fontsize='xx-small')
+        obspy_addons.sticker(sticker_addons,
+                             ax,x=0, y=1,
+                             ha='left', va='top')  # ,fontsize='xx-small')
 
     b=0
     if style in ['vs','v','versus']:
@@ -1141,7 +1137,8 @@ def plot_traveltime(self=obspy.core.event.catalog.Catalog(),
     if plots:
         if not iplot:
             ax.legend(#ncol=2,
-                      loc=4)
+                      loc=4,
+                      framealpha=1)
         if style in ['vs','v','versus']:
             ax.plot([0,b],[0,b],color='grey')
     return ax, b
@@ -1313,16 +1310,16 @@ def history(self=obspy.core.event.catalog.Catalog(),
                 fields = ['magnitudes',
                             'origins',
                             'origins',
-                            'origins'],#,  [] ],
+                            'origins'],
             functions = ['delay',
                       'delay',
                       'delays',
-                      'delays'],#,['creation_info','creation_time'] ] ,
+                      'delays'],
             modes = ['rel',
                          'rel',
                          'rel',
-                         'trav'],#,['creation_info','creation_time'] ] ,
-            ranks = [0,0,5,5],#,['creation_info','creation_time'] ] ,
+                         'trav'],
+            ranks = [0,0,5,5],
             legendlabels=['Magnitudes',
                           'Orgins',
                           '6$^{th}$ picks',
@@ -1410,7 +1407,7 @@ def history(self=obspy.core.event.catalog.Catalog(),
     ax.grid()
     ax.xaxis_date()
     ax.get_figure().autofmt_xdate()
-    matplotlib.pyplot.xticks(rotation=30,
+    matplotlib.pyplot.xticks(rotation=20,
                                  ha='right')
     if eew:
         ax.set_ylim([1., 100.])

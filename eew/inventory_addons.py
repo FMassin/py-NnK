@@ -514,6 +514,7 @@ def traveltimesgrid(longitudes,     # (lat,lon)
         print('sort S travel times grids ')
         sort_indices = numpy.argsort(tSarrivals, axis=1)[:,:max(N),:,:]  # this is the slow step
         static_indices = numpy.indices(tSarrivals.shape*numpy.asarray([1,0,1,1])+numpy.asarray([0,max(N),0,0]))
+        print(dSarrivals.shape)
         dSarrivals = dSarrivals[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
         tSarrivals_ttonly = tSarrivals_ttonly[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
         tSarrivals = tSarrivals[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
@@ -624,25 +625,30 @@ def plot_traveltimes(self,
             else:
                 sa=letters[i]+'. '
             plot_traveltimes(self,
-                     tmax=tmax,
-                     depth=depth,
-                     model=model,
-                     N=N,
-                     ax=ax[i],
-                     style=style,
-                     plot=plot,
-                     bits=bits,
-                     reflevel=reflevel,
-                     latencies=latencies,
-                     xpixels=xpixels,
-                     resolution=resolution,
-                     fontsize=fontsize,
-                     dmin=d,
-                     sticker_addons=sa,
+                             ax=ax[i],
+                             dmin=d,
+                             sticker_addons=sa,
+                             tmax=tmax,
+                             depth=depth,
+                             model=model,
+                             N=N,
+                             style=style,
+                             plot=plot,
+                             bits=bits,
+                             reflevel=reflevel,
+                             latencies=latencies,
+                             flat_latency=flat_latency,
+                             xpixels=xpixels,
+                             resolution=resolution,
+                             fontsize=fontsize,
+                             event=event,
                              mapbounds=mapbounds,
+                             clims=clims,
                              resampling=resampling,
                              percentile=percentile,
-                     **kwargs)
+                             grid=grid,
+                             scautolocgrid=False,
+                             **kwargs)
 
             if i==0:
                 ax[i].legend().set_visible(False)
@@ -710,7 +716,7 @@ def plot_traveltimes(self,
                               len(statlons),
                               latitudes.shape[0],
                               latitudes.shape[1]])+flat_latency
-    
+
     else:
         latitudes  = grid[0]
         longitudes  = grid[1]
