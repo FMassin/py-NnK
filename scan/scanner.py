@@ -1558,18 +1558,26 @@ class SeismicSource(object):
 
 
 
-def degrade(wavelets, shift = [-.1, .1], snr = [.5, 5.]):
+def degrade(wavelets, shift = [-.1, .1], snr = [.5, 5.], snrtype='peak'):
 
+
+    
+    
     shift = np.random.random_integers(int(shift[0]*1000), int(shift[1]*1000), len(wavelets))/1000. # np.linspace(shift[0], shift[1], wavelets.shape[0])
     snr = np.random.random_integers(int(snr[0]*1000), int(snr[1]*1000), len(wavelets))/1000. # np.linspace(snr[0], snr[1], wavelets.shape[0])
-
+    
     for i,w in enumerate(wavelets):
         w = w.data
         tmp = np.max(abs(w)).copy()
-        wavelets[i].data += (np.random.random_integers(-100,100,len(w))/100.) * np.max(w)/snr[i]
+        if 'rms' in snrtype:
+            # RMS noise np.sum(noise**2.)/len(noise) = 0.336
+            rmsw=np.sum(w**2.)/len(w)
+            wavelets[i].data += (np.random.random_integers(-100,100,len(w))/100.) * rmsw/( snr[i] * 0.336 )
+        else:
+            wavelets[i].data += (np.random.random_integers(-100,100,len(w))/100.) * np.max(w)/snr[i]
         wavelets[i].data /= tmp #*np.max(abs(self.wavelets[i]))
 
-        tmp = np.zeros( len(w)*3. )
+        tmp = np.zeros( int(len(w)*3.) )
         index = [ int(len(w)+(shift[i]*len(w))), 0 ]
         index[1] = index[0]+len(w)
         tmp[index[0]:index[1]] = wavelets[i].data[:int(np.diff(index)) ]
@@ -1663,7 +1671,7 @@ def plot_wavelet(bodywavelet,
     #axins.set_xlim([0 , lmax-1])
     axins.yaxis.set_ticks_position('left')
     axins.yaxis.set_label_position('left')#    axins.xaxis.set_label_position('top')
-    axins.set_xlabel('Time samples')
+    axins.set_xlabel('Time')
     axins.set_ylabel('Amplitudes')
 
 
@@ -1825,11 +1833,14 @@ class SyntheticWavelets(object):
         put all of this in a obspy stream
         ______________________________________________________________________
         """
-    def __init__(self, n = 50, mt=None, full_sphere=0, gap = 0):
+    def __init__(self,
+                 n = 50,
+                 mt=None,
+                 full_sphere=0,
+                 gap = 0):
 
-        if mt == None :
+        if  mt is None:
             mt = [np.random.uniform(0,360) ,np.random.uniform(-90,90),np.random.uniform(0,180)]
-
         current_gap = 0
 
 
@@ -1941,13 +1952,17 @@ class BodyWavelets(object):
     def __init__(self, f= 100., starts=-0.05, ends=0.2, n= 100, sds= "/Users/massin/Documents/Data/ANT/sds/", catalog = "/Users/massin/Desktop/arrivals-hybrid.Id-Net-Sta-Type-W_aprio-To-D-Az-Inc-hh-mm-t_obs-tt_obs-tt_calc-t_calc-res-W_apost-F_peak-F_median-A_max-A_unit-Id-Ot-Md-Lat-Lon-Dep-Ex-Ey-Ez-RMS-N_P-N_S-D_min-Gap-Ap-score_S-score_M", sacs= "/Volumes/WD-massin/4Massin/Data/WY/dtec/2010/01/21/20100121060160WY/", nll = "/Volumes/WD-massin/4Massin/Data/WY/dtec/2010/01/21/20100121060160WY/20100121060160WY.UUSS.inp.loc.nlloc/WY_.20100121.061622.grid0.loc.hyp", mode="sds-column", mt=[]):
 
         from obspy.core.stream import read
+        from obspy.signal.freqattributes import central_frequency_unwindowed
 
         #self.n_wavelet = n_wavelet
         #self.az_max = []
         #self.mt = []
         #self.wavelets = np.asarray([])
         #self.obs_sph = np.asarray([])
-        npoints = f*(ends - starts)-1
+        try:
+            npoints = int(f*(ends - starts)-1)
+        except:
+            npoint=50
 
         # Get infos
         self.title = 'observations'
@@ -1971,6 +1986,8 @@ class BodyWavelets(object):
 
             from obspy.core.utcdatetime import UTCDateTime
             from obspy.clients.filesystem.sds import Client
+            print('Using SDS from %s'%(sds))
+            print('and catalog in %s'%(catalog))
 
             client = Client(sds)
 
@@ -2010,8 +2027,9 @@ class BodyWavelets(object):
         elif mode == "sac-nll" :
 
             from obspy import read_events
-            from obspy.signal.freqattributes import central_frequency_unwindowed
             import glob
+            print('Using SAC files from %s*Z*.sac.linux'%(sacs))
+            print('and NonLinLoc results in %s'%(nll))
             cat = read_events(nll)
 
             for p,pick in enumerate(cat[0].picks):
@@ -2042,7 +2060,6 @@ class BodyWavelets(object):
                                         Trace.trim(starttime=pick.time+startp, endtime=pick.time+endp) #npts=endp)
                                         #https://docs.obspy.org/packages/autogen/obspy.signal.freqattributes.html?highlight=dominant_period
                                         #Trace.data = Trace.data[:(1/central_frequency_unwindowed(Trace.data , Trace.stats.sampling_rate))*1.5*Trace.stats.sampling_rate]
-                                        Trace.data = Trace.data/np.max(abs(Trace.data))
                                         
                                         self.Stream.append(Trace)
                                         self.observations['types'][index] = str(arrival.phase)
@@ -2064,55 +2081,122 @@ class BodyWavelets(object):
         #                                                        'mt'   : mt,
         #                                                        'n'    : n,
         #                                                        'gap'  : current_gap }
-            maxlen=99999999999999999999.
-            for t in self.Stream.traces:
-                maxlen=min([t.stats.npts, maxlen])
-            maxlen=min([100, maxlen])
-            for t in self.Stream.traces:
-                t.interpolate(sampling_rate=t.stats.sampling_rate*maxlen/t.stats.npts)# npts=11)
-                t.data=t.data[:maxlen-1]
+
                     
         elif mode == "loc-client" :
 
             from obspy import read_events
             import glob
+            print('Using SDS from %s'%(sds))
+            print('and NonLinLoc results in %s'%(nll))
             cat = read_events(nll)
             
-            from obspy.clients.fdsn import Client
-            client = Client(sds)
+            client = sds
 
-            for p,pick in enumerate(cat[0].picks):
-                if True: #len(self.Stream) < n :
-                    #print pick.waveform_id, pick.phase_hint, pick.time,
-                    if ((cat[0].preferred_origin()).arrivals[0]).takeoff_angle:
-                        for a,arrival in enumerate((cat[0].preferred_origin()).arrivals):
-                            if arrival.pick_id == pick.resource_id and arrival.takeoff_angle and len(self.Stream) < n :
-                                #print arrival.azimuth, arrival.takeoff_angle, arrival.distance
-                                #print(str(pick.waveform_id.network_code), str(pick.waveform_id.station_code), str(pick.waveform_id.location_code), str(pick.waveform_id.channel_code))
-                                try:
-                                    st = client.get_waveforms(str(pick.waveform_id.network_code), str(pick.waveform_id.station_code), str(pick.waveform_id.location_code), str(pick.waveform_id.channel_code), pick.time-10., pick.time+60.)
-                                except:
-                                    continue
-
-                                st.detrend()
-                                st.normalize()
-                                #st.plot()
-                                #st.interpolate(f, starttime=pick.time+starts, npts=npoints)
-                                for t,Trace in enumerate(st):
-                                    if len(self.Stream) < n and 1./st[0].stats.delta>= f*.9:
-
-                                        index +=1
-
-                                        data = np.zeros((1,npoints))
-                                        Trace.interpolate(f, starttime=pick.time+starts, npts=npoints)
-                                        Trace.data = Trace.data[:npoints]/np.max(abs(Trace.data[:npoints]))
-                                        self.Stream.append(Trace)
-                                        self.observations['sph'][:, index] = [np.deg2rad(arrival.azimuth),
-                                                                              np.deg2rad(arrival.takeoff_angle),
-                                                                              1.]#arrival.distance] ## metadata[arrival][5]])
+            for a,arrival in enumerate((cat[0].preferred_origin()).arrivals):
+                pick = arrival.pick_id.get_referred_object()
+                if arrival.takeoff_angle and len(self.Stream) < n :
+                    #print arrival.azimuth, arrival.takeoff_angle, arrival.distance
                     
-                                        
+                    try:
+                        st = client.get_waveforms(str(pick.waveform_id.network_code),
+                                                  str(pick.waveform_id.station_code),
+                                                  str(pick.waveform_id.location_code).replace('None',''),
+                                                  str(pick.waveform_id.channel_code),
+                                                  pick.time-5.,
+                                                  pick.time+60.,
+                                                  attach_response=True)
+                    except:
+                        print('No data for',str(pick.waveform_id.network_code),
+                              str(pick.waveform_id.station_code),
+                              str(pick.waveform_id.location_code).replace('None',''),
+                              str(pick.waveform_id.channel_code),pick.time-10.,
+                              pick.time+60.)
+                        continue
+                    #st.detrend()
+                    #st.remove_response(output="VEL",pre_filt = [1,2, 10, 15])
+                    st.detrend()
+                    st.filter("bandpass", freqmin=2.0, freqmax=10.0)
+                    #st.plot()
+                    #st.interpolate(f, starttime=pick.time+starts, npts=npoints)
+                    for t,Trace in enumerate(st):
+                        if Trace.stats.channel[0] in 'EHS' and len(self.Stream) < n and 1./st[0].stats.delta>= f*.9 and Trace.stats.npts !=0:
+                    
+                            #https://docs.obspy.org/packages/autogen/obspy.signal.freqattributes.html?highlight=dominant_period
+                            tmp = Trace
+                            if True:
+                                for scale in [2.]: #8.,4.,
+                                    if tmp.stats.npts!=0 :
+                                        wavelength = scale/central_frequency_unwindowed(tmp.data , tmp.stats.sampling_rate)    #ends[index]-starts[index]
+                                        starttime=pick.time+wavelength/scale*starts[min([len(starts)-1,index+1])] # wavelength/(scale*8.)
+                                        endtime=pick.time+wavelength+wavelength/scale*starts[min([len(starts)-1,index+1])]+wavelength/scale*ends[min([len(ends)-1,index+1])] #+wavelength/(scale*8.)
+                                        tmp.trim(starttime=starttime, endtime=endtime)
+                                        tmp.detrend('linear')
+                        
+                            Trace = tmp
+                            if tmp.stats.npts!=0 :
+                                
+                                wavelength = 1./central_frequency_unwindowed(Trace.data , Trace.stats.sampling_rate)
+                                t = np.linspace(.0, 1,
+                                                Trace.stats.sampling_rate*(1*wavelength),
+                                                endpoint=False)
+                                wavelet = np.sin(2 * np.pi * t )*max(abs(Trace.data))#[:Trace.data.shape[0]]
+                                correlation = np.correlate(Trace.data,wavelet,  "full")#[Trace.stats.npts: int(Trace.stats.npts+wavelength*Trace.stats.sampling_rate/2.)]
+                                correlation[:len(wavelet)-1]=0.
+                                correlation[int(len(wavelet)+wavelength*Trace.stats.sampling_rate/2.5):]=0.
+                                imax = np.argmax(abs(correlation))
+                                correction = sum(np.arange(imax-2,imax+3)*correlation[imax-2:imax+3])/sum(correlation[imax-2:imax+3])-len(wavelet)+2
+                                starttime=Trace.stats.starttime+correction/Trace.stats.sampling_rate
+                                
+                                corrcoef = np.corrcoef(Trace.data[:len(wavelet)],wavelet[:len(Trace.data)])[0,1]
+                                print('correction:', correction,
+                                      'pts ; corrcoef', corrcoef,
+                                      '; wavelength:', wavelength)
 
+                                if False: #True:#
+                                    fig = plt.figure()
+                                    ax=fig.add_subplot(111)
+                                    ax.plot(wavelet,'r')
+                                    ax.plot(wavelet,'+k')
+                                    ax.plot(Trace.data,'b',alpha=0.5)
+                                    ax.plot(range(-len(wavelet),Trace.stats.npts-1),
+                                            max(abs(Trace.data))*correlation/max(abs(correlation)),'g')
+
+                                Trace.interpolate(starttime=starttime,
+                                                  sampling_rate=Trace.stats.sampling_rate,
+                                                  npts=wavelength*Trace.stats.sampling_rate)
+                                #Trace.trim(starttime=starttime,
+                                #   endtime=starttime+1.*wavelength)
+                                   
+                                Trace.detrend('linear')
+                                if False: #True:#
+                                    ax.plot(Trace.data,'b')
+                                        
+                                corrcoef = np.corrcoef(Trace.data[:len(wavelet)],wavelet[:len(Trace.data)])[0,1]
+
+                                if abs(corrcoef)<.01:
+                                    print('nope')
+                                    continue
+                                        
+                                index +=1
+                                self.Stream.append(Trace)
+                                self.observations['sph'][:, index] = [np.deg2rad(360-(arrival.azimuth+90)),
+                                                                      np.deg2rad(arrival.takeoff_angle),
+                                                                      1.]#arrival.distance] ## metadata[arrival][5]])
+        
+        # No data extrapolation (NOT USED)
+        maxlen=99999999999999999999.
+        for t in self.Stream.traces:
+            maxlen=min([t.stats.npts, maxlen])
+        # Some data extrapolation
+        maxlen = int(np.median([t.stats.npts for t in self.Stream.traces ]))
+        # Can't go crazy anyway
+        maxlen=min([100, maxlen])
+        maxlen=max([10, maxlen])
+        for t in self.Stream.traces:
+            t.interpolate(sampling_rate=t.stats.sampling_rate*maxlen/t.stats.npts,
+                          npts=maxlen-2)
+        self.Stream.normalize()
         self.observations['cart'] = np.asarray(spherical_to_cartesian( self.observations['sph'] ))
         self.observations['n'] = len(self.Stream)
 
@@ -2159,7 +2243,7 @@ class SourceScan(object):
 
         ## Attributes info
         s = '_'
-        self.file = grids_rootdir+'/Wtypes_'+s.join(waves)+'.Ch_'+s.join(sum(components, []))+'.Nd_'+str(n_dims)+'.Nm_'+str(n_model)+'.No_'+str(n_obs)+'.npz'
+        self.file = grids_rootdir+'/Wtypes_'+s.join(waves)+'.Ch_'+s.join(sum(components, []))+'.Nd_'+str(n_dims)+'.Nm_'+str(n_model)+'.No_'+str(n_obs)+'.'+str(np.version.version)+'.npz'
         self.grids_rootdir = grids_rootdir
         self.n_model = n_model
         self.n_obs = n_obs
@@ -2522,7 +2606,7 @@ class SourceScan(object):
         #tmp = ax.get_position().bounds
         #ax.set_position([tmp[0] , tmp[1], tmp[2]*.9 , tmp[3] ])
 
-        ## plots best result
+        ## plots centroid result
         ax, axins, cbar = plot_wavelet( self.corrected_data(self.centroid[0], self.data, title='cent.') , style, ax=ax3, detail_level = 0)
         axins.set_ylabel(r'Rectified'+'\n'+'amplitudes')
         axins.set_title(r'D. '+axins.get_title())
@@ -2629,7 +2713,7 @@ class SourceScan(object):
             #ax.plot_surface(x, y, z, linewidth=0, rstride=1, cstride=1, facecolors=s_m.to_rgba(self.pdf['P/T'][:,:,i]), alpha=1.)
 
             ### plot SLP contours.
-            CS1 =  map.contour(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100.,
+            CS1 = map.contour(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100.,
                              animated=True, colors=colorlines[i], linewidths=0.5)
             CS2 = map.contourf(x,y,self.pdf['P/T'][:,:,i]*100.,clevs*100.,
                              animated=True, cmap=colormaps[i], alpha=.5)
@@ -2936,8 +3020,8 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
 
     x = np.asarray([N_range*2, snr_range, shift_range, ndc_range])
 
-    rms = np.zeros([nstep, N_bootstrap, 4, len(N_tests)])*np.nan
-    error = np.zeros([nstep, N_bootstrap, 4, len(N_tests)])*np.nan
+    rms  =  np.zeros([nstep, N_bootstrap, 4, max([3, len(N_tests)]) ])*np.nan
+    error = np.zeros([nstep, N_bootstrap, 4, max([3, len(N_tests)]) ])*np.nan
     labels = []   #np.zeros([4, len(N_tests)])
     labels.append([])
     labels.append([])
@@ -3032,7 +3116,7 @@ def test_scan( nstep = 40 , N_tests = [ 16, 32, 64, 128 ], N_bootstrap = 20 , so
                         error[i,k, 0,j] =  mt_diff( MomentTensor(dcscanner.best_likelyhood[0]), dcscanner.data.MomentTensor)
 
 
-    labels[0].append( r'n (G$_{none}$)' )
+    labels[0].append( r'n' )
     for i,N in enumerate(N_range):
         for k in range(N_bootstrap):
             data = SyntheticWavelets(n=int(N), mt=None)
