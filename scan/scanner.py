@@ -1949,7 +1949,21 @@ class BodyWavelets(object):
         This object is composed of two methods : get and plot.
         ______________________________________________________________________
         """
-    def __init__(self, f= 100., starts=-0.05, ends=0.2, n= 100, sds= "/Users/massin/Documents/Data/ANT/sds/", catalog = "/Users/massin/Desktop/arrivals-hybrid.Id-Net-Sta-Type-W_aprio-To-D-Az-Inc-hh-mm-t_obs-tt_obs-tt_calc-t_calc-res-W_apost-F_peak-F_median-A_max-A_unit-Id-Ot-Md-Lat-Lon-Dep-Ex-Ey-Ez-RMS-N_P-N_S-D_min-Gap-Ap-score_S-score_M", sacs= "/Volumes/WD-massin/4Massin/Data/WY/dtec/2010/01/21/20100121060160WY/", nll = "/Volumes/WD-massin/4Massin/Data/WY/dtec/2010/01/21/20100121060160WY/20100121060160WY.UUSS.inp.loc.nlloc/WY_.20100121.061622.grid0.loc.hyp", mode="sds-column", mt=[]):
+    def __init__(self,
+                 f= 100.,
+                 starts=-0.05,
+                 ends=0.2,
+                 n= 100,
+                 sds= "/Users/massin/Documents/Data/ANT/sds/",
+                 catalog = "/Users/massin/Desktop/arrivals-hybrid.Id-Net-Sta-Type-W_aprio-To-D-Az-Inc-hh-mm-t_obs-tt_obs-tt_calc-t_calc-res-W_apost-F_peak-F_median-A_max-A_unit-Id-Ot-Md-Lat-Lon-Dep-Ex-Ey-Ez-RMS-N_P-N_S-D_min-Gap-Ap-score_S-score_M",
+                 sacs= "/Volumes/WD-massin/4Massin/Data/WY/dtec/2010/01/21/20100121060160WY/",
+                 nll = "/Volumes/WD-massin/4Massin/Data/WY/dtec/2010/01/21/20100121060160WY/20100121060160WY.UUSS.inp.loc.nlloc/WY_.20100121.061622.grid0.loc.hyp",
+                 mode="sds-column",
+                 mt=[],
+                 filter={'type':"bandpass",
+                         'freqmin':2.0,
+                         'freqmax':10.0}
+                 ):
 
         from obspy.core.stream import read
         from obspy.signal.freqattributes import central_frequency_unwindowed
@@ -2085,7 +2099,7 @@ class BodyWavelets(object):
                     
         elif mode == "loc-client" :
 
-            from obspy import read_events
+            from obspy import read_events 
             import glob
             print('Using SDS from %s'%(sds))
             print('and NonLinLoc results in %s'%(nll))
@@ -2095,28 +2109,52 @@ class BodyWavelets(object):
 
             for a,arrival in enumerate((cat[0].preferred_origin()).arrivals):
                 pick = arrival.pick_id.get_referred_object()
-                if arrival.takeoff_angle and len(self.Stream) < n :
+                if arrival.takeoff_angle and len(self.Stream) < n and str(pick.waveform_id.channel_code)[-1] in 'ZLQT':
                     #print arrival.azimuth, arrival.takeoff_angle, arrival.distance
-                    
-                    try:
-                        st = client.get_waveforms(str(pick.waveform_id.network_code),
-                                                  str(pick.waveform_id.station_code),
-                                                  str(pick.waveform_id.location_code).replace('None',''),
-                                                  str(pick.waveform_id.channel_code),
-                                                  pick.time-5.,
-                                                  pick.time+60.,
-                                                  attach_response=True)
-                    except:
-                        print('No data for',str(pick.waveform_id.network_code),
-                              str(pick.waveform_id.station_code),
-                              str(pick.waveform_id.location_code).replace('None',''),
-                              str(pick.waveform_id.channel_code),pick.time-10.,
-                              pick.time+60.)
-                        continue
+                    if str(pick.waveform_id.channel_code) in 'LQT':
+                        try:
+                            st = client.get_waveforms(str(pick.waveform_id.network_code),
+                                                      str(pick.waveform_id.station_code),
+                                                      str(pick.waveform_id.location_code).replace('None',''),
+                                                      str(pick.waveform_id.channel_code)[:-1],
+                                                      pick.time-5.,
+                                                      pick.time+60.,
+                                                      attach_response=True)
+                            st.rotate(method="ZNE->LQT",
+                                      back_azimuth=360-(arrival.azimuth+90),
+                                      inclination=arrival.takeoff_angle)
+                            st = st.select(channel=str(pick.waveform_id.channel_code))
+                        except:
+                            print('No data for',str(pick.waveform_id.network_code),
+                                  str(pick.waveform_id.station_code),
+                                  str(pick.waveform_id.location_code).replace('None',''),
+                                  str(pick.waveform_id.channel_code),pick.time-10.,
+                                  pick.time+60.)
+                            continue
+                    else:
+                        try:
+                            st = client.get_waveforms(str(pick.waveform_id.network_code),
+                                                      str(pick.waveform_id.station_code),
+                                                      str(pick.waveform_id.location_code).replace('None',''),
+                                                      str(pick.waveform_id.channel_code),
+                                                      pick.time-5.,
+                                                      pick.time+60.,
+                                                      attach_response=True)
+                        except:
+                            print('No data for',str(pick.waveform_id.network_code),
+                                  str(pick.waveform_id.station_code),
+                                  str(pick.waveform_id.location_code).replace('None',''),
+                                  str(pick.waveform_id.channel_code),pick.time-10.,
+                                  pick.time+60.)
+                            continue
                     #st.detrend()
                     #st.remove_response(output="VEL",pre_filt = [1,2, 10, 15])
                     st.detrend()
-                    st.filter("bandpass", freqmin=2.0, freqmax=10.0)
+                    if filter is not None:
+                        try:
+                            st.filter(**filter)
+                        except:
+                            print('OUTPUTS ARE NOT FILTERED !! I can t make a filter with',filter)
                     #st.plot()
                     #st.interpolate(f, starttime=pick.time+starts, npts=npoints)
                     for t,Trace in enumerate(st):
@@ -2149,7 +2187,9 @@ class BodyWavelets(object):
                                 starttime=Trace.stats.starttime+correction/Trace.stats.sampling_rate
                                 
                                 corrcoef = np.corrcoef(Trace.data[:len(wavelet)],wavelet[:len(Trace.data)])[0,1]
-                                print('correction:', correction,
+                                print(arrival.phase,
+                                      Trace.id,
+                                      'correction:', correction,
                                       'pts ; corrcoef', corrcoef,
                                       '; wavelength:', wavelength)
 
@@ -2180,6 +2220,7 @@ class BodyWavelets(object):
                                         
                                 index +=1
                                 self.Stream.append(Trace)
+                                self.observations['types'][index] = str(arrival.phase)
                                 self.observations['sph'][:, index] = [np.deg2rad(360-(arrival.azimuth+90)),
                                                                       np.deg2rad(arrival.takeoff_angle),
                                                                       1.]#arrival.distance] ## metadata[arrival][5]])
