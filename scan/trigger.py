@@ -458,9 +458,13 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 	.. rubric:: Example
 
 		>>> import trigger
-		>>> stlt = trigger.ShortLongTerms(trigger.artificial_stream(npts=5000))
-		>>> ax,shift=trigger.stream_processor_plot(stlt.data, stlt.ratio.output(), cfcolor='r', label=r'$^M\bar{ST}/\bar{LT}$')
-		>>> trigger.stream_processor_plot(stlt.data, stlt.correlate.output(), ax=ax, cfcolor='g', label=r'$^M\bar{ST}\star\bar{LT}$', f="nodata")
+		>>> data = trigger.artificial_stream(npts=5000)
+		>>> data_preprocessed = (trigger.ShortLongTerms(data, preprocessor = 'averageabs')).output()
+		>>> cf_Ratio = trigger.Ratio(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')
+		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')
+
+		>>> ax,shift=trigger.stream_processor_plot(cf_Ratio.data, cf_Ratio.output(), cfcolor='r', label=r'$^M\bar{ST}/\bar{LT}$')
+		>>> trigger.stream_processor_plot(cf_Correlate.data, cf_Correlate.output(), ax=ax, cfcolor='g', label=r'$^M\bar{ST}\star\bar{LT}$', f="nodata")
 		>>> ax.legend()
 
 	"""
@@ -616,20 +620,24 @@ def artificial_stream(npts=1000., noise=1., P=[10., 15., 3.**.5], S=[17., 15., 3
 	___________
 	.. rubric:: Example
 
+		Generate data
 		>>> import trigger
 		>>> a = trigger.artificial_stream(npts=1000)
-		>>> print a
-	_________
-	.. plot::
+		>>> print(a)
 
-		>>> import trigger
-		>>> plotTfr((a[1]).data, dt=.01, fmin=0.1, fmax=25)
-		>>> plotTfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
+		Plot	
+		>>> import matplotlib.pyplot as plt
+		>>> from mpl_toolkits.mplot3d import Axes3D
+		>>> from obspy.signal.tf_misfit import plot_tfr
+
+		>>> npts=1000
+		>>> plot_tfr((a[1]).data, dt=.01, fmin=0.1, fmax=25)
+		>>> plot_tfr((a[2]).data, dt=.01, fmin=0.1, fmax=25)
 		>>> fig = plt.figure()
 		>>> ax = fig.gca(projection='3d')
 		>>> ax.plot(a[5].data, a[6].data, a[7].data, label='noise', alpha=.5, color='g')
-		>>> ax.plot(a[5].data[npts/3:npts/2],a[6].data[npts/3:npts/2],a[7].data[npts/3:npts/2], label='P', color='b')
-		>>> ax.plot(a[5].data[npts/2:npts*2/3],a[6].data[npts/2:npts*2/3],a[7].data[npts/2:npts*2/3], label='S', color='r')
+		>>> ax.plot(a[5].data[npts//3:npts//2],a[6].data[npts//3:npts//2],a[7].data[npts//3:npts//2], label='P', color='b')
+		>>> ax.plot(a[5].data[npts//2:npts*2//3],a[6].data[npts//2:npts*2//3],a[7].data[npts//2:npts*2//3], label='S', color='r')
 		>>> ax.legend()
 		>>> plt.show()
 
@@ -638,8 +646,8 @@ def artificial_stream(npts=1000., noise=1., P=[10., 15., 3.**.5], S=[17., 15., 3
 	Fs = npts/10.
 	Fnl = npts/30.
 	npts_c = npts+ Fnl
-	Pspot = range(npts/3,npts/2)
-	Sspot = range(npts/2,npts*2/3)
+	Pspot = range(npts//3,npts//2)
+	Sspot = range(npts//2,npts*2//3)
 
 	stats3_z = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"Z", 'npts':npts, 'delta':1/Fs})
 	stats3_e = Stats({'network':"Test", 'station':"P", 'location':"", 'channel':"E", 'npts':npts, 'delta':1/Fs})
@@ -776,13 +784,20 @@ class ShortLongTerms(object):
 	___________
 	.. rubric:: Example
 
-		Plot the data-streams:
+		Plot the preprocessed (STA,LTA) data:
 		>>> import trigger
-		>>> cf = trigger.ShortLongTerms(trigger.artificial_stream(npts=5000), statistic='rms')
+		>>> data = trigger.artificial_stream(npts=5000)
+		>>> cf = trigger.ShortLongTerms(data, preprocessor='averageabs')
 		>>> cf.plot()
 
-		Plot the characteristic function:
-		>>> cf.correlate.plot()
+		Plot the characteristic function(ratio method):
+		>>> data_preprocessed = (trigger.ShortLongTerms(data, preprocessor='averageabs')).output()  
+		>>> cf_Ratio = trigger.Ratio(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')
+		>>> cf_Ratio.plot()
+        
+		Plot the characteristic function(correlate method):
+		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')
+		>>> cf_Correlate.plot()
 
 	"""
 
@@ -880,14 +895,21 @@ class LeftRightTerms(object):
 			`~trigger.Ratio` class to compare data-streams.
 	___________
 	.. rubric:: Example
-
-		Plot the data-streams:
+	
+		Plot the preprocessed (LP,RP) data:
 		>>> import trigger
-		>>> cf = trigger.LeftRightTerms(trigger.artificial_stream(npts=5000), statistic='rms')
+		>>> data = trigger.artificial_stream(npts=5000)
+		>>> cf = trigger.LeftRightTerms(data, preprocessor='sumabs')
 		>>> cf.plot()
 
-		Plot the characteristic function:
-		>>> cf.correlate.plot()
+		Plot the characteristic function(ratio method):
+		>>> data_preprocessed = (trigger.LeftRightTerms(data, preprocessor='sumabs')).output()  
+		>>> cf_Ratio = trigger.Ratio(data_preprocessed, data, multiplexor = "leftrightterms", preprocessor = 'sumabs')
+		>>> cf_Ratio.plot()
+        
+		Plot the characteristic function(correlate method):
+		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "leftrightterms", preprocessor = 'sumabs')
+		>>> cf_Correlate.plot()
 
 	"""
 
@@ -996,13 +1018,20 @@ class Components(object):
 	___________
 	.. rubric:: Example
 
-		Plot the data-streams:
+		Plot the preprocessed (components) data:
 		>>> import trigger
-		>>> cf = trigger.Component(trigger.artificial_stream(npts=5000), statistic='rms')
+		>>> data = trigger.artificial_stream(npts=5000)
+		>>> cf = trigger.Components(data, preprocessor='rms')
 		>>> cf.plot()
 
-		Plot the characteristic function:
-		>>> cf.correlate.plot()
+		Plot the characteristic function(ratio method):
+		>>> data_preprocessed = (trigger.Components(data), preprocessor='rms').output()  
+		>>> cf_Ratio = trigger.Ratio(data_preprocessed, data, multiplexor = "components", preprocessor = 'rms')
+		>>> cf_Ratio.plot()
+        
+		Plot the characteristic function(correlate method):
+		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "components", preprocessor = 'rms')
+		>>> cf_Correlate.plot()
 
 	"""
 
@@ -1141,14 +1170,17 @@ class Ratio(object):
 	___________
 	.. rubric:: Example
 
-		Get some data-streams:
+		Get the preprocessed (STA,LTA) data:
 		>>> import trigger
 		>>> data = trigger.artificial_stream(npts=5000)
-		>>> data_streams = (trigger.ShortLongTerms(data)).output()
-
-		Get the operator instance and plot:
-		>>> cf = trigger.Ratio(data_streams, data)
-		>>> cf.plot()
+		>>> data_preprocessed = (trigger.ShortLongTerms(data, preprocessor='averageabs')).output()  
+        
+		Plot the characteristic function:
+		>>> cf_Ratio = trigger.Ratio(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')
+		>>> cf_Ratio.plot()
+        
+		Output the characteristic function(time-series):      
+		>>> cf_Ratio = trigger.Ratio(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs').output() 
 
 	"""
 	def __init__(self, data, multiplexor = 'shortlongterms', preprocessor = 'averageabs', **kwargs): #, pre_processed_data, data=None):
@@ -1232,19 +1264,17 @@ class Correlate(object):
 			`~trigger.stream_processor_plot`.
 	___________
 	.. rubric:: Example
-
-		Get some data-streams:
+		Get the preprocessed (STA,LTA) data:
 		>>> import trigger
 		>>> data = trigger.artificial_stream(npts=5000)
-		>>> data_streams = (trigger.ShortLongTerms(data)).output()
-
-		Get the operator instance and plot:
-		>>> cf = trigger.Correlate(data_streams, data, scales=[10])
-		>>> cf.plot()
-
-		Idem, activating multi-scaling:
-		>>> mcf = trigger.Correlate(data_streams, data)
-		>>> mcf.plot()
+		>>> data_preprocessed = (trigger.ShortLongTerms(data, preprocessor='averageabs')).output()  
+        
+		Plot the characteristic function:
+		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')  # if non muiltiscaling: ex. proscales=[10]
+		>>> cf_Correlate.plot()
+        
+		Output the characteristic function(time-series):      
+		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs').output() 
 
 	"""
 	def __init__(self, data, multiplexor = 'components', preprocessor = 'rms', procscales=None, **kwargs): #, pre_processed_data, data=None):
