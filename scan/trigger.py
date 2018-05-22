@@ -421,7 +421,7 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 	return cc #**(1./nscale)
 
 
-def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, shift = 0, f=None, rescale=None):
+def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, shift = 0, f=None, rescale=None, size=(8,5)):
 	"""
 	Plots the body-wave characteristic functions resulting of
 	`~trigger.Ratio.output` and `~trigger.Correlate.output` classes.
@@ -447,6 +447,7 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 		- f: flag to deactivate data plotting (any value but None).
 		- rescale: flag to deactivate the normalization of
 			characteristic functions (any value but None).
+		- size: Output figure size
 	_______
 	:rtype:
 		- matplotlib:class:`~matplotlib.axes.Axes`
@@ -463,14 +464,14 @@ def stream_processor_plot(stream, cf, cfcolor = 'm', ax = None, label = None, sh
 		>>> cf_Ratio = trigger.Ratio(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')
 		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')
 
-		>>> ax,shift=trigger.stream_processor_plot(cf_Ratio.data, cf_Ratio.output(), cfcolor='r', label=r'$^M\bar{ST}/\bar{LT}$')
+		>>> ax,shift=trigger.stream_processor_plot(cf_Ratio.data, cf_Ratio.output(), cfcolor='r', label=r'$^M\bar{ST}/\bar{LT}$',size=(8,5))
 		>>> trigger.stream_processor_plot(cf_Correlate.data, cf_Correlate.output(), ax=ax, cfcolor='g', label=r'$^M\bar{ST}\star\bar{LT}$', f="nodata")
 		>>> ax.legend()
 
 	"""
 
 	if ax is None :
-		ax = (plt.figure( figsize=(8, 5) )).gca()
+		ax = (plt.figure( figsize=size )).gca()
 		(ax.get_figure()).tight_layout()
 
 
@@ -1023,11 +1024,6 @@ class Components(object):
 		>>> data = trigger.artificial_stream(npts=5000)
 		>>> cf = trigger.Components(data, preprocessor='rms')
 		>>> cf.plot()
-
-		Plot the characteristic function(ratio method):
-		>>> data_preprocessed = (trigger.Components(data), preprocessor='rms').output()  
-		>>> cf_Ratio = trigger.Ratio(data_preprocessed, data, multiplexor = "components", preprocessor = 'rms')
-		>>> cf_Ratio.plot()
         
 		Plot the characteristic function(correlate method):
 		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "components", preprocessor = 'rms')
@@ -1264,17 +1260,17 @@ class Correlate(object):
 			`~trigger.stream_processor_plot`.
 	___________
 	.. rubric:: Example
-		Get the preprocessed (STA,LTA) data:
+		Get the preprocessed (Components) data:
 		>>> import trigger
 		>>> data = trigger.artificial_stream(npts=5000)
-		>>> data_preprocessed = (trigger.ShortLongTerms(data, preprocessor='averageabs')).output()  
+		>>> data_preprocessed = (trigger.Components(data, preprocessor='rms')).output()  
         
 		Plot the characteristic function:
-		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs')  # if non muiltiscaling: ex. proscales=[10]
+		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "components", preprocessor = 'rms')  # if non muiltiscaling: ex. proscales=[10]
 		>>> cf_Correlate.plot()
         
 		Output the characteristic function(time-series):      
-		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "shortlongterms", preprocessor = 'averageabs').output() 
+		>>> cf_Correlate = trigger.Correlate(data_preprocessed, data, multiplexor = "components", preprocessor = 'rms').output() 
 
 	"""
 	def __init__(self, data, multiplexor = 'components', preprocessor = 'rms', procscales=None, **kwargs): #, pre_processed_data, data=None):
