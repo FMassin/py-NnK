@@ -111,7 +111,10 @@ def eew(Rsp=1.8,
         clabel='Intensity (Allen et al., 2012)',
         yticks=range(-2,10),
         contour_addons={4:'',6:''},
-        Itarget=True):
+        Itarget=True,
+        cmap='nipy_spectral',
+        vmin=1.,
+        vmax=8.5):
     
     try :
         xlabel=xlabel%(depth)
@@ -158,8 +161,10 @@ def eew(Rsp=1.8,
                  m,
                  I,
                  label='S-wave I',
-                 #norm=matplotlib.colors.LogNorm(),
-                 cmap='jet')
+                 norm = matplotlib.colors.Normalize(vmin=vmin,vmax=vmax),#norm=matplotlib.colors.LogNorm(),
+                 cmap=cmap)
+
+    
     cb = matplotlib.pyplot.colorbar(hc,
                                     ax=ax,
                                     label=clabel,
@@ -304,7 +309,7 @@ def eew(Rsp=1.8,
         ax2.set_xlim(numpy.asarray(ax.get_xlim()))
         ax2.set_xticklabels([])
 
-    biga.set_title(title)
+    ax1.set_title(title,loc='left')
 
 
     caption = 'Caption informations'
@@ -580,6 +585,7 @@ def sticker(t,
             transform=None,
             colors=['k','None'],
             foregrounds=['w','None'],
+            fontweight='semibold',
             **kwargs):
     
     if not transform:
@@ -588,7 +594,7 @@ def sticker(t,
 
     for i,c in enumerate(foregrounds):
         o.append( a.text(x,y,t,
-            fontweight='semibold',
+                         fontweight=fontweight,#'semibold',
             zorder=999,#            alpha=0.4,
             color=colors[i],
             ha=ha,va=va,
@@ -733,11 +739,14 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
             xpixels=900,
             resolution='l',
             fontsize=10,
-            figsize=6,
+            figsize=[6*gold,6],
             labels=[1,0,0,1],
             shift=0.,
             mapbounds=None,
-            arcgis=True):
+            arcgis=True,
+            scale=True,
+            server=None,
+            service=None):
     
     
     if mapbounds:
@@ -772,8 +781,7 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
     else:
         f = matplotlib.pyplot.figure(figsize=figsize)
         ax = f.add_subplot(111)
-
-    print('nicemap basemap')
+    
     bmap = Basemap(llcrnrlon=min(lons)-(max(lons)-min(lons))*.05,
                    llcrnrlat=min(lats)-(max(lats)-min(lats))*.05,
                    urcrnrlon=max(lons)+(max(lons)-min(lons))*.05,
@@ -786,26 +794,28 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
                    #o_lat_p=90,
                    #o_lon_p=45
                    )
-    print('nicemap basemap done')
     if arcgis:
         try:
-            print('nicemap arcgis')
             #im1 = bmap.arcgisimage(service='World_Physical_Map',xpixels=xpixels)
-            im2 = bmap.arcgisimage(service='Ocean/World_Ocean_Base',verbose=True,xpixels=xpixels)
+            im2 = bmap.arcgisimage(service='Ocean/World_Ocean_Base',
+                                   xpixels=xpixels)
+            if server and service:
+                im4 = bmap.arcgisimage(server=server,
+                                       service=service,
+                                       xpixels=xpixels)
+                im4.set_alpha(alpha)
                 
-            im3 = bmap.arcgisimage(service='Elevation/World_Hillshade',verbose=True,xpixels=xpixels)
+            im3 = bmap.arcgisimage(service='Elevation/World_Hillshade',xpixels=xpixels)
             data=im3.get_array()
             data[:,:,3] = 1 - (data[:,:,0]*data[:,:,1]*data[:,:,2])
             im3.set_array(data)
 
-            im1 = bmap.arcgisimage(service='Reference/World_Boundaries_and_Places_Alternate',verbose=True,xpixels=xpixels)
+            im1 = bmap.arcgisimage(service='Reference/World_Boundaries_and_Places_Alternate',xpixels=xpixels)
             im2.set_alpha(alpha)
-            print('nicemap arcgis Ocean/World_Ocean_Base + World_Topo_Map done, alpha:',alpha)
         except:
             try:
                 im2 = bmap.arcgisimage(service='World_Topo_Map',xpixels=xpixels)
                 im2.set_alpha(alpha)
-                print('nicemap arcgis World_Topo_Map done, alpha:',alpha)
             except:
                 pass
 
@@ -834,19 +844,20 @@ def nicemap(catalog=obspy.core.event.catalog.Catalog(),
     #l=bmap.drawstates(linewidth=.5,
     #                  color = 'w')
     #l.set_alpha(alpha)
-    #l=bmap.drawcountries(linewidth=1,
-    #                     color='w')
-    #l.set_alpha(alpha)
+    l=bmap.drawcountries(linewidth=1,
+                         color='w')
+    l.set_alpha(alpha)
     #l=bmap.drawstates(linewidth=.25)
     #l.set_alpha(alpha)
-    #l=bmap.drawcountries(linewidth=.5)
-    #l.set_alpha(alpha)
+    l=bmap.drawcountries(linewidth=.5)
+    l.set_alpha(alpha)
 
     bmap.readshapefile('/Users/fmassin/Documents/Data/misc/tectonicplates/PB2002_plates',
                          name='PB2002_plates',
                          drawbounds=True,
                          color='gray')
-    nicemapscale(bmap)
+    if scale:
+        nicemapscale(bmap)
 
     return f,ax,bmap
 
@@ -881,6 +892,9 @@ def map_all(self=None,
             arcgis=True,
             titletext_alpha=1,
             fp=False,
+            scale=True,
+            server=None,
+            service=None,
            **kwargs):
     #Inventory.plot(self, projection='global', resolution='l',continent_fill_color='0.9', water_fill_color='1.0', marker="v",s ize=15**2, label=True, color='#b15928', color_per_network=False, colormap="Paired", legend="upper left", time=None, show=True, outfile=None, method=None, fig=None, **kwargs)
     
@@ -907,7 +921,10 @@ def map_all(self=None,
                   labels=labels,
                   shift=1/4.,
                   mapbounds=mapbounds,
-                            arcgis=arcgis)
+                            arcgis=arcgis,
+                            scale=scale,
+                            server=server,
+                            service=service)
 
     titletext = catalog_addons.map_events(catalog,
                                           bmap=bmap,
@@ -1018,6 +1035,7 @@ def map_all(self=None,
                                                  ax=axinset,
                                                  title=False,
                                                  colorbar=False,
+                                                  scale=False,
                                                  **kwargs)
         insetbounds = [fig.bmapinset.boundarylons,
                        fig.bmapinset.boundarylats]
@@ -1489,14 +1507,15 @@ def get_event_waveform(self=obspy.core.event.event.Event(), client_eq=None, afte
 
 def plot_eventsections(self,
                        client_wf,
-                       afterpick = 30,
+                       afterpick = 40,
                        file = None,
                        agencies=['*'],
                        nminpgv=0,
                        nmaxpgv=-1,
                        emax=999999,
-                       distmin=30.*3.,
-                       timemax=30.):
+                       timemax=40.,
+                       npicks=10,
+                       letters='abcdefghijklmnopkrstuvwxyz'):
 
     fig = list()
     for ie,e in enumerate(self.events):
@@ -1523,29 +1542,18 @@ def plot_eventsections(self,
                     fileok = 'data/'+(str(e.resource_id)).replace('/', '_')
                 else:
                     os.remove('data/'+(str(e.resource_id)).replace('/', '_'))
-
-        o = e.origins[-1]
-        for co in e.origins:
-            if co.resource_id == e.preferred_origin_id:
-                o=co
-        pm = e.magnitudes[-1]
-        for cm in e.magnitudes:
-            if cm.resource_id == e.preferred_magnitude_id:
-                pm=cm
+        
+        o = e.preferred_origin_id.get_referred_object()
+        pm = e.preferred_magnitude_id.get_referred_object()
         pmax = max([p.time for p in e.picks])
+        picks = [ a.pick_id.get_referred_object() for a in o.arrivals ]
+        arrivals = [ a for a in o.arrivals ]
+        distances= [ a.distance for a in arrivals ]
+        traveltimes= [ p.time - o.time for p in picks ]
 
-        for p in e.picks:
-            for a in o.arrivals:
-                if str(a.pick_id) == str(p.resource_id):
-                    picks.append(p)
-                    arrivals.append(a)
-        distances=list()
-
-        for a in arrivals:
-            if a.distance:
-                distances.append(a.distance)
-            else:
-                distances.append(numpy.nan)
+        if npicks:
+            distmin = numpy.sort(distances)[npicks]*110.
+            #timemax = numpy.sort(traveltimes)[npicks]
 
         for indexp in numpy.argsort(distances) :
             if distances[indexp] >0:
@@ -1571,13 +1579,22 @@ def plot_eventsections(self,
                                                         p.waveform_id.location_code,
                                                         p.waveform_id.channel_code,
                                                         starttime = o.time,
-                                                        endtime = numpy.min([o.time+timemax,pmax+afterpick]) )
+                                                        endtime = numpy.min([o.time+timemax+afterpick,pmax+afterpick]) )
                         except:
                             print('client_wf failed' )
                             toadd = obspy.core.stream.Stream()
                     else:
                         print('uses file' )
                         toadd = fst.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.'+p.waveform_id.location_code+'.'+p.waveform_id.channel_code)
+                        
+                        if not toadd.traces:
+                            toadd = fst.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.*.HHZ')
+                        if not toadd.traces:
+                            toadd = fst.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.*.HNZ')
+                        if not toadd.traces:
+                            toadd = fst.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.*.EHZ')
+                            
+                        print(toadd)
                     
                     for tr in toadd:
                         if (sum(abs(tr.data)) < .1 or
@@ -1589,7 +1606,7 @@ def plot_eventsections(self,
                             if not os.path.isfile(ifile):
                                 try:
                                     inv=client_wf.get_stations(startbefore = o.time,
-                                                               endafter = numpy.min([o.time+timemax,pmax+afterpick]),
+                                                               endafter = numpy.min([o.time+timemax+afterpick,pmax+afterpick]),
                                                                network=tr.stats.network,
                                                                station=tr.stats.station,
                                                                location=tr.stats.location,
@@ -1606,7 +1623,7 @@ def plot_eventsections(self,
                             
                     st += toadd
                             
-                    for t in st.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.'+p.waveform_id.location_code+'.'+p.waveform_id.channel_code):
+                    for t in st.select(id=p.waveform_id.network_code+'.'+p.waveform_id.station_code+'.*.*'):
                         t.stats.distance = sqrt((a.distance*110000.)**2+o.depth**2)
                     
                     if len(st)>20 :
@@ -1621,30 +1638,36 @@ def plot_eventsections(self,
 
         if len(st)>0:
 
-            st.remove_response(output="VEL")
+            st.remove_sensitivity()#output="VEL")
             st.detrend('linear')
-
-            st.taper(.1)
-            st.filter("highpass", freq=.5)
-            st.detrend('linear')
-            st.taper(.1)
-            st.filter("lowpass", freq=45)
+            if False:
+                st.taper(.1)
+                try:
+                    st.filter("highpass", freq=.5)
+                except:
+                    print('can t filter')
+                st.detrend('linear')
+                st.taper(.1)
+                try:
+                    st.filter("lowpass", freq=45)
+                except:
+                    print('can t filter')
             
-            tmp=st.slice(starttime=o.time, endtime=o.time+30)
+            tmp=st.slice(starttime=o.time, endtime=numpy.min([o.time+timemax,pmax+afterpick]))
             tmp.merge(method=1)
             
             fig.append( matplotlib.pyplot.figure() )
             
             tmp.select(channel='*Z').plot(type='section', # starttime=o.time-10,
-                     reftime=o.time,
-                     time_down=True,
-                     linewidth=.75,
-                     #grid_linewidth=0.,
-                     show=False,
-                     fig=fig[-1],
-                     #color='network',
-                     orientation='horizontal',
-                     scale=3)
+                                          reftime=o.time,
+                                          time_down=False,#True,
+                                          linewidth=.75,
+                                         #grid_linewidth=0.,
+                                         show=False,
+                                         fig=fig[-1],
+                                         color='channel',
+                                         orientation='horizontal',
+                                         scale=1)
             ax = matplotlib.pyplot.gca()
             
             transform = matplotlib.transforms.blended_transform_factory(ax.transAxes, ax.transAxes )
@@ -1681,16 +1704,15 @@ def plot_eventsections(self,
                                                                                 foreground="white")])
 
 
-            ax2 = fig[-1].add_subplot(311)
-            ax3 = fig[-1].add_subplot(312)
-            ax3r = ax3.twinx()
-            pos1 = ax.get_position() # get the original position
-            pos2 = [pos1.x0 , pos1.y0,  pos1.width, pos1.height *1/3.]
-            ax.set_position(pos2) # set a new position
-
             markers = {'MVS':'o','Mfd':'^'}
             colors = {'MVS':'b','Mfd':'r'}
-            alphas = {'Pb':.1,'SED':.5}
+            alphas = {'Pb':.1,'SED':.5,'INETER':.5}
+            PGerrors = {'MVS':list(),'Mfd':list()}
+            PGerrorsR = {'MVS':list(),'Mfd':list()}
+            PGerrorsDELAYS = {'MVS':list(),'Mfd':list()}
+            LOCerrors = {'MVS':list(),'Mfd':list()}
+            MAGerrors = {'MVS':list(),'Mfd':list()}
+            errorDELAYS = {'MVS':list(),'Mfd':list()}
             plotted=list()
             plottedr=list()
             plottedl=list()
@@ -1710,7 +1732,7 @@ def plot_eventsections(self,
                     if f==0:
                         print('NOT FOUND')
 
-            for alpha in ['SED','Pb']:
+            for alpha in ['SED','Pb','INETER']: #
                 for cm in e.magnitudes:
                     testm = re.sub('.*rigin.','', str(cm.origin_id))
                     for co in e.origins:
@@ -1732,7 +1754,8 @@ def plot_eventsections(self,
                                 else:
                                     OK_pipeline=1
 
-                            elif (str(cm.magnitude_type) in ['MVS'] ):#and
+                            elif ((str(cm.magnitude_type) in ['MVS']) and
+                                  ('vsmag2' not in str(cm.creation_info.author))) :
                                   #('NLoT' in str(co.creation_info.author) or
                                   # 'autoloc' in str(co.creation_info.author))):
                                 OK_pipeline=1
@@ -1758,17 +1781,19 @@ def plot_eventsections(self,
                                 tmp=st.slice(starttime=o.time, endtime= ct )
                                 phases = list()
                                 for tr in tmp:
-                                    if tr.stats.distance/1000/3 < ct - o.time:
+                                    if  ct - o.time >= tr.stats.distance/3333 :
                                         phases.append('S-wave')
                                         #print(ct - o.time,str(tr.stats.distance/1000),': S')
                                     else:
                                         phases.append('P-wave')
                                     #print(ct - o.time,str(tr.stats.distance/1000),': P')
                                 
-                                R = [(tr.stats.distance/1000)                     for tr in tmp if tr.stats.distance/1000/3<ct - o.time]
+                                R = [(tr.stats.distance/1000)                for tr in tmp if tr.stats.distance/1000/3<ct - o.time]
                                 PGV = numpy.asarray([numpy.max(abs(tr.data)) for tr in tmp if tr.stats.distance/1000/3<ct - o.time ])
                                 PGVm = cuaheaton2007(magnitudes=[cm.mag], R = R, phases=phases)
-                                PGVerror = abs(PGV - 10**PGVm)/PGV
+                                PGVerror = PGV - (PGVm/100.)
+                                PGVerror = 100*abs(PGVerror)/(PGV)
+                                emax = 200
                                 PGVerror=PGVerror[numpy.argsort(R)]
                                 R = numpy.sort(R)
                                 
@@ -1784,45 +1809,92 @@ def plot_eventsections(self,
                                 R=R[PGVerror<emax]
                                 PGVerror=PGVerror[PGVerror<emax]
                                 
-                                ax2.scatter(numpy.tile(ct - o.time, PGV[nminpgv:nmaxpgv].shape),
-                                         PGVerror[nminpgv:nmaxpgv],
-                                            R[nminpgv:nmaxpgv],
-                                         marker=markers[cm.magnitude_type],
-                                         alpha=alphas[alpha],
-                                         color=colors[cm.magnitude_type])
-
-                                obl,=ax3.plot(ct - o.time,
-                                             LOCerror,
-                                             markers[cm.magnitude_type],
-                                             color=colors[cm.magnitude_type],
-                                              alpha=alphas[alpha],)
-                                obm,=ax3r.plot(ct - o.time,
-                                               pm.mag - cm.mag,
-                                               markers[cm.magnitude_type],
-                                               markeredgecolor=colors[cm.magnitude_type],
-                                               color='None',
-                                               alpha=alphas[alpha])
-                                    
-                                if (cm.magnitude_type not in plottedm ):
-                                    plottedm.append(cm.magnitude_type)
-                                    plotted.append(obl)
-                                    plottedr.append(obm)
-                                    plottedl.append(r'Loc$_{'+cm.magnitude_type[1:]+'}$')
-                                    plottedrl.append(r'M$_{'+cm.magnitude_type[1:]+'}$')
-
-
-
-            ax2.xaxis.set_ticks_position('top')
-            ax2.xaxis.set_label_position('top')
-            ax3.xaxis.set_ticks_position('top')
-            ax3.xaxis.set_label_position('top')
+                                LOCerrors[cm.magnitude_type].append(LOCerror)
+                                MAGerrors[cm.magnitude_type].append(pm.mag - cm.mag)
+                                errorDELAYS[cm.magnitude_type].append(ct - o.time)
+                                
+                                for error in  PGVerror[nminpgv:nmaxpgv]:
+                                    PGerrors[cm.magnitude_type].append(error)
+                                    PGerrorsDELAYS[cm.magnitude_type].append(ct - o.time)
+                                for r in R:
+                                    PGerrorsR[cm.magnitude_type].append(r)
+                                
             minorLocator = matplotlib.ticker.MultipleLocator(1)
-            majorLocator = matplotlib.ticker.MultipleLocator(5)
+            majorLocator = matplotlib.ticker.MultipleLocator(10)
+            
+            if False:
+                ax2 = fig[-1].add_subplot(311)
+                ax2.xaxis.set_ticks_position('top')
+                ax2.xaxis.set_label_position('top')
+                ax2.xaxis.set_minor_locator(minorLocator)
+                ax2.xaxis.set_major_locator(majorLocator)
+                ax2.set_xlim([0,timemax])
+                ax2.set_xlabel('Time after origin [s]')
+                ax2.set_ylabel(r'PGV error [%]')#cm.s^{-1}$] ')
+                ax2.set_yscale('linear')#log')
+                #ax2.set_ylim([0,200])
+                ax2.legend([],[], loc='upper left', prop={'size':6}, title='c) Size: distance')
+                #ax2.set_ylim([-.021,-.008])
+                ax2.yaxis.grid(True,linestyle='--')
+            
+            ax3 = fig[-1].add_subplot(313) #2)
+            #ax3.xaxis.set_ticks_position('top')
+            #ax3.xaxis.set_label_position('top')
             ax3.xaxis.set_minor_locator(minorLocator)
-            ax2.xaxis.set_minor_locator(minorLocator)
             ax3.xaxis.set_major_locator(majorLocator)
-            ax2.xaxis.set_major_locator(majorLocator)
-            ax2.set_xlim([0,timemax])
+            ax3.set_xlim([0,timemax])
+            ax3.yaxis.grid(True,linestyle='--')
+            ax.axes.xaxis.set_ticklabels([])
+            ax3.set_yscale('linear')#log')
+            ax3.set_xlabel('Time after origin [s]')
+            ax3.set_ylabel(r'Magnitude error')
+            ax3.set_ylim([-2.,2.])
+            if False:
+                ax3r = ax3.twinx()
+                ax3r.set_ylabel(r'Location error [km]')
+                ax3r.set_ylim([.1,100])
+            
+            pos1 = ax.get_position() # get the original position
+            pos2 = [pos1.x0 , pos1.y0+pos1.height*1/3,  pos1.width, pos1.height *2/3.]
+            ax.set_position(pos2) # set a new position
+            ax.set_xlabel('Time after origin [s]')
+            ax.xaxis.grid(False)
+            ax.xaxis.set_minor_locator(minorLocator)
+            ax.xaxis.set_major_locator(majorLocator)
+            
+            for k in list(PGerrorsDELAYS.keys()):
+                if False:
+                    ax2.scatter(PGerrorsDELAYS[k],
+                             PGerrors[k],
+                                PGerrorsR[k],
+                             marker=markers[k],
+                             alpha=0.5,
+                             color=colors[k])
+                    plottedm.append(k)
+
+                    obl,=ax3r.plot(errorDELAYS[k],
+                                 LOCerrors[k],
+                                 markers[k],
+                                 color=colors[k],
+                                  alpha=0.5,)
+                    plottedr.append(obl)
+                    plottedrl.append(r'Loc$_{'+k[1:]+'}$')
+
+                obm,=ax3.plot(errorDELAYS[k],
+                               MAGerrors[k],
+                               markers[k],
+                               markeredgecolor=colors[k],
+                               color='None',
+                               alpha=0.5)
+                plotted.append(obm)
+                plottedl.append(r'M$_{'+k[1:]+'}$')
+
+            ax3.legend(plotted, plottedl,
+                       loc=0,
+                       title=letters[ie*2+1]+') M$_{type}$',
+                       prop={'size':'small'})#2
+            if False:
+                ax3r.legend(plottedr, plottedrl, loc=1)
 
             try:
                 l = ax.get_legend()
@@ -1833,29 +1905,18 @@ def plot_eventsections(self,
             except:
                 li=[]
                 la=[]
-
-            l = ax.legend(li,la, loc='lower right', ncol=7,prop={'size':6},title=e.short_str()+' \n '+str(e.resource_id))
-            l.get_title().set_fontsize('6')
-            ax.set_xlabel('Time after origin [s]')
-            ax2.set_xlabel('Time after origin [s]')
-            ax2.set_ylabel(r'PGV error [$/PGV$]')#cm.s^{-1}$] ')
-            ax2.set_yscale('log')
-            ax2.legend([],[], loc='upper left', prop={'size':6}, title='Size: distance')
-            ax3.set_ylabel(r'Location error [km]')
-            ax3r.set_ylabel(r'Magnitude error')
-            #ax2.set_ylim([-.021,-.008])
-            ax3.set_yscale('log')
-            ax3.set_ylim([.1,100])
-            ax3.set_xlim([0,timemax])
-            ax3r.set_ylim([-1.1,1.1])
-
-            ax3.legend(plotted, plottedl, loc=2)
-            ax3r.legend(plottedr, plottedrl, loc=1)
-
-            ax2.yaxis.grid(True,linestyle='--')
-            ax3.yaxis.grid(True,linestyle='--')
-            ax3.axes.xaxis.set_ticklabels([])
-            ax.xaxis.grid(False)
+            l = ax.legend(li,la,
+                          bbox_to_anchor=(0,1.02,1,0.2), loc="lower left", borderaxespad=0,
+                          ncol=7,
+                          prop={'size':'small'},
+                          title='%s) %s | %.3f°E %.3f°N %.2fkm | %s%.1f' % (letters[ie*2+0],
+                                                                            str(e.preferred_origin().time)[:19],
+                                                             e.preferred_origin().longitude,
+                                                             e.preferred_origin().latitude,
+                                                             e.preferred_origin().depth/1000.,
+                                                             e.preferred_magnitude().magnitude_type,
+                                                             e.preferred_magnitude().mag) ) #+' \n '+str(e.resource_id))
+            l.get_title().set_fontsize('small')
     
 
     return fig
@@ -1863,7 +1924,7 @@ def plot_eventsections(self,
 
 def cuaheaton2007(R=[100],
                   magnitudes=[5.],
-                  types=['rock'],
+                  types=['soil'],
                   outputs=['velocity'],
                   phases=['S-wave'],
                   components=['Root mean square horizontal amplitudes'],
@@ -1879,7 +1940,7 @@ def cuaheaton2007(R=[100],
                     'values':
                     {'Root mean square horizontal amplitudes':
                         {'P-wave':
-                            {'Acceleration':
+                            {'acceleration':
                                 {'rock': [ 0.72, 3.3*10**-3, 1.6,  1.05, 1.2, -1.06, 0.31 ],
                                 'soil': [ 0.74, 3.3*10**-3, 2.41, 0.95, 1.26,-1.05, 0.29 ]},
                             'velocity':

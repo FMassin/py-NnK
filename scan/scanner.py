@@ -2201,12 +2201,20 @@ class BodyWavelets(object):
                                     ax.plot(Trace.data,'b',alpha=0.5)
                                     ax.plot(range(-len(wavelet),Trace.stats.npts-1),
                                             max(abs(Trace.data))*correlation/max(abs(correlation)),'g')
-
-                                Trace.interpolate(starttime=starttime,
-                                                  sampling_rate=Trace.stats.sampling_rate,
-                                                  npts=wavelength*Trace.stats.sampling_rate)
-                                #Trace.trim(starttime=starttime,
-                                #   endtime=starttime+1.*wavelength)
+                                try :
+                                    Trace.interpolate(starttime=starttime,
+                                                      sampling_rate=Trace.stats.sampling_rate,
+                                                      npts=wavelength*Trace.stats.sampling_rate)
+                                    #Trace.trim(starttime=starttime,
+                                    #   endtime=starttime+1.*wavelength)
+                                except:
+                                    print('No windowing possible for',
+                                          arrival.phase,
+                                          Trace.id,
+                                          'correction:', correction,
+                                          'pts ; corrcoef', corrcoef,
+                                          '; wavelength:', wavelength)
+                                    continue
                                    
                                 Trace.detrend('linear')
                                 if False: #True:#
@@ -2274,7 +2282,7 @@ class SourceScan(object):
                  n_obs=2000,
                  n_dims=3,
                  waves = ['P', 'S'],
-                 components = [['L'], ['T', 'Q'] ],
+                 components = [['L'], ['L', 'T', 'Q'] ],
                  grids_rootdir='~/.config/seismic_source_grids',
                  grid='',
                  goldenspiral=False):
@@ -2443,6 +2451,7 @@ class SourceScan(object):
             taper = 2.*(1+(np.sort(range(l))[::-1]))            #
             taper[taper>l] = l                                  #
             taper /= l                                          #
+            #taper = taper**2                                   #
             # stores taper ######################################
             self.data_taperwindows.append(taper)                #
             # stores max len ####################################
@@ -2536,9 +2545,15 @@ class SourceScan(object):
 
             # gets pdf value #################################
             for j,wavelet in enumerate(self.data_wavelets):  #
-                self.data_amplitudes[j][:] = self.modeled_amplitudes[ tuple(Mo),
-                                                                      data.observations['types'][j,0],
-                                                                      (data.Stream[j].stats.channel[-1]).replace("Z", "L") ][ tuple(self.data_indexes[j]) ]
+                try :
+                    self.data_amplitudes[j][:] = self.modeled_amplitudes[ tuple(Mo),
+                                                                          data.observations['types'][j,0],
+                                                                          (data.Stream[j].stats.channel[-1]).replace("Z", "L") ][ tuple(self.data_indexes[j]) ]
+                except:
+                    print('No modeled amplitudes for [',tuple(Mo),
+                          data.observations['types'][j,0],
+                          (data.Stream[j].stats.channel[-1]).replace("Z", "L"),
+                          ']')
 
             corrected_wavelets = np.sign(self.data_amplitudes) * self.data_wavelets * self.data_taperwindows
             stack_wavelets = np.nansum(corrected_wavelets, axis=0)

@@ -140,7 +140,6 @@ def get_best_instrument(self,
         if (instrument_type in instruments_markers.keys() and
             instrument_type in [str(cs.split('.')[-1][:2]) for cs in channels]):
             return instrument_type
-    print(channels)
     return 'none'
 
 def get_best_orientation(self,orientations_markers,
@@ -151,7 +150,6 @@ def get_best_orientation(self,orientations_markers,
         if (orientations_type in orientations_markers.keys() and
             orientations_type in [cs.split('.')[-1][-1] for cs in channels]):
             return orientations_type
-    print(channels)
     return 'none'
 
 def get_best_samplerate(self,
@@ -270,6 +268,7 @@ def map_stations(self=obspy.core.inventory.inventory.Inventory([],''),
                 stations_sizedata=None,
                 filled_markers = ('^', 'v', '<', '>', '8', 's', 'p', '*', 'h', 'H', 'D', 'd', 'P', 'X','o'),
                  dateintitle=False,
+                 stationintitle=False
                 ):
    
 
@@ -369,9 +368,8 @@ def map_stations(self=obspy.core.inventory.inventory.Inventory([],''),
               edgecolor='none',
               lw=0,
               )
-
     times, = obspy_addons.search(self, fields=['start_date'], levels=['networks','stations'])
-    if len(times)>0:
+    if len(times)>0 and stationintitle:
         titletext+= '\n%s stations' % (len(times))
         if dateintitle:
             titletext+= '(%s to %s)' % (str(min(times))[:10], str(max(times))[:10])
@@ -514,7 +512,6 @@ def traveltimesgrid(longitudes,     # (lat,lon)
         print('sort S travel times grids ')
         sort_indices = numpy.argsort(tSarrivals, axis=1)[:,:max(N),:,:]  # this is the slow step
         static_indices = numpy.indices(tSarrivals.shape*numpy.asarray([1,0,1,1])+numpy.asarray([0,max(N),0,0]))
-        print(dSarrivals.shape)
         dSarrivals = dSarrivals[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
         tSarrivals_ttonly = tSarrivals_ttonly[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
         tSarrivals = tSarrivals[static_indices[0], sort_indices, static_indices[2], static_indices[3]]
@@ -601,7 +598,7 @@ def plot_traveltimes(self,
                      percentile=84,
                      grid=[0],
                      scautolocgrid=False,
-                     scautolocgridformat='%.2f %.2f %.1f %.1f %.1f %.0f',
+                     scautolocgridformat='%.2f %.2f %.1f %.2f %.2f %.0f',
                      scautolocgridminn=None,
                      scautolocgridfile=None,
                      **kwargs):
@@ -615,7 +612,6 @@ def plot_traveltimes(self,
         # turn every element off the big axe so we don't see it
         biga.tick_params(labelcolor='none', top='off', bottom='off', left='off', right='off')
         letters='ABCDEFGH'
-
         for i,d in enumerate(dmin):
             if sticker_addons:
                 if isinstance(sticker_addons, list):
@@ -697,7 +693,7 @@ def plot_traveltimes(self,
     if style[0] in ['b']:
         tmax*=1.7
     dmax=tmax*8./110.
-    
+    print('dmax:',dmax)
     if len(grid)==1:
         dlat = ((numpy.nanmax(statlats)+dmax)-(numpy.nanmin(statlats)-dmax))/numpy.sqrt(bits)
         dlon = ((numpy.nanmax(statlons)+dmax)-(numpy.nanmin(statlons)-dmax))/numpy.sqrt(bits)
@@ -766,14 +762,23 @@ def plot_traveltimes(self,
                                                         size=(1) ),
                                          
 
-    dmingrid = numpy.sort(dsgrid,axis=0)[dmin[0]]
+    dmingrid = numpy.sort(dsgrid,axis=0)[dmin[0]-1]
+    # teleseism case
+    dmingridtele = numpy.sort(dsgrid,axis=0)[20]
 
     if scautolocgrid:
         if not scautolocgridminn:
-            scautolocgridminn = (dmin[0]-6)/2+6
+            scautolocgridminn = int((dmin[0]+1)/2.)
+            print('scautolocgridminn:',scautolocgridminn)
         
         tmp=numpy.zeros(longitudes.flatten().shape)
         if len(grid)==1:
+            tmptele = numpy.asarray([latitudes.flatten(),
+                                     longitudes.flatten(),
+                                     tmp+depth,
+                                     tmp+((dlat**2+dlon**2)**.5)/2.,
+                                     dmingridtele.flatten(),
+                                     tmp+20 ])
             tmp = numpy.asarray([latitudes.flatten(),
                                  longitudes.flatten(),
                                  tmp+depth,
@@ -781,6 +786,12 @@ def plot_traveltimes(self,
                                  dmingrid.flatten(),
                                  tmp+scautolocgridminn ])
         else:
+            tmptele = numpy.asarray([latitudes.flatten(),
+                                     longitudes.flatten(),
+                                     depths.flatten(),
+                                     radius.flatten(),
+                                     dmingridtele.flatten(),
+                                     tmp+20 ])
             tmp = numpy.asarray([latitudes.flatten(),
                                  longitudes.flatten(),
                                  depths.flatten(),
@@ -792,24 +803,42 @@ def plot_traveltimes(self,
             f = open(scautolocgridfile, 'w')
             scautolocgridformat+='\n'
             for l in range(len(latitudes.flatten())):
-                if tmp[1][l] < 0:
+                
+                if tmp[1][l] < -180:
                     tmp[1][l] = 360+tmp[1][l]
-                f.write(scautolocgridformat %(tmp[0][l],
-                                            tmp[1][l],
-                                            tmp[2][l],
-                                            tmp[3][l],
-                                            tmp[4][l],
-                                            tmp[5][l]))
+                if tmptele[1][l] < -180:
+                    tmptele[1][l] = 360+tmptele[1][l]
+                
+                if tmp[1][l] > 180:
+                    tmp[1][l] = tmp[1][l]-360
+                if tmptele[1][l] > 180:
+                    tmptele[1][l] = tmptele[1][l]-360
+                
+                if tmp[4][l] > dmax:# teleseism case
+                    f.write(scautolocgridformat %(tmptele[0][l],
+                                                  tmptele[1][l],
+                                                  tmptele[2][l],
+                                                  tmptele[3][l],
+                                                  tmptele[4][l],
+                                                  tmptele[5][l]))
+                else:
+                    f.write(scautolocgridformat %(tmp[0][l],
+                                                tmp[1][l],
+                                                tmp[2][l],
+                                                tmp[3][l],
+                                                tmp[4][l],
+                                                tmp[5][l]))
             f.close()
-            print(scautolocgridfile)
+            print("scautolocgridfile")
         else:
-            for l in range(len(latitudes.flatten())):
-                print(scautolocgridformat %(tmp[0][l],
-                       tmp[1][l],
-                       tmp[2][l],
-                       tmp[3][l],
-                       tmp[4][l],
-                       tmp[5][l]))
+            if False:
+                for l in range(len(latitudes.flatten())):
+                    print(scautolocgridformat %(tmp[0][l],
+                                                tmp[1][l],
+                                                tmp[2][l],
+                                                tmp[3][l],
+                                                tmp[4][l],
+                                                tmp[5][l]))
                     
 
         data=dmingrid
@@ -834,7 +863,10 @@ def plot_traveltimes(self,
 
         unit='s'
         data=tP
-        label=str(N[-1])+'$^{th}$ P travel time ('+unit
+        if  latencies is not None :
+            label=sstr(N[-1])+'$^{th}$ P trigger ('+unit
+        else:
+            label=str(N[-1])+'$^{th}$ P travel time ('+unit
         ax2xlabel='Modeled travel time (s'
         if latencies and plot in ['c','chron',]:
             data_nodt=tPonly
@@ -878,14 +910,15 @@ def plot_traveltimes(self,
         ax2xlabel+= ')'
         label+= ')'
 
-    if ax :
-        fig = ax.get_figure()
-        fig.ax = ax
-    elif fig:
-        fig.ax = fig.add_subplot(111)
-    else:
-        fig = matplotlib.pyplot.figure()
-        fig.ax = fig.add_subplot(111)
+    if plot not in 'Nonenone':
+        if ax :
+            fig = ax.get_figure()
+            fig.ax = ax
+        elif fig:
+            fig.ax = fig.add_subplot(111)
+        else:
+            fig = matplotlib.pyplot.figure()
+            fig.ax = fig.add_subplot(111)
 
     if plot in ['m','map']:
         if scautolocgrid:
@@ -894,13 +927,12 @@ def plot_traveltimes(self,
         else:
             toplot = numpy.nanmedian(data[:,N[-1]-1,:,:],
                                      axis=0)
-        
         fig, fig.ax, fig.bmap = obspy_addons.map_all(others=[selffiltered],
                                                     xpixels=xpixels,
                                                      resolution=resolution,
                                                     fontsize=fontsize,
-                                                    alpha=.5,
-                                                    showlegend=False,
+                                                    alpha=1.,
+                                                     #showlegend=False,
                                                     ax=fig.ax,#ax,
                                                     mapbounds=mapbounds,
                                                     **kwargs)
@@ -923,7 +955,7 @@ def plot_traveltimes(self,
                               data=toplot,
                               latlon=True,
                               corner_mask=True,
-                              alpha=2/3.,
+                              alpha=.5,
                               linewidths=0.,
                               levels=levels,
                               norm = matplotlib.colors.Normalize(vmax=tmax, vmin=0.),
@@ -932,7 +964,7 @@ def plot_traveltimes(self,
                               y=latitudes,
                               data = toplot,
                               latlon=True,
-                              levels=[numpy.around(reflevel), numpy.around(reflevel*3.)],
+                              levels=[numpy.around(reflevel), numpy.around(reflevel*2.)],#3.)],
                               norm = matplotlib.colors.Normalize(vmax=tmax, vmin=0.),
                               extend='min')
         clbls = matplotlib.pyplot.clabel(CS,
@@ -972,8 +1004,8 @@ def plot_traveltimes(self,
             fig, fig.axins, fig.axinsbmap = obspy_addons.map_all(xpixels=xpixels/3,
                                                                  resolution=resolution,
                                             fontsize=fontsize,
-                                            alpha=.5,
-                                            showlegend=False,
+                                            alpha=1.,
+                                                                 #showlegend=False,
                                             ax=axins,
                                             mapbounds=mapbounds,
                                              labels=[0, 0, 0, 0],
@@ -1145,7 +1177,16 @@ def distfilter(self=obspy.core.inventory.inventory.Inventory([],''),
                z1=None,
                save=True,
                out=False):
-    
+    print(x2, y1)
+    if not x1 or not y1 or not x2  or not y2:
+        
+        y1 = numpy.median([s.latitude for n in self.networks for s in n.stations])
+        y2 = y1+0.01
+        
+        x1 = numpy.median([s.longitude for n in self.networks for s in n.stations])
+        x2 = x1+0.01
+    print(x2, y1)
+
     distances=list()
     for n in self.networks:
         d=numpy.nan
@@ -1178,7 +1219,7 @@ def distfilter(self=obspy.core.inventory.inventory.Inventory([],''),
     for n in outside.networks:
         for s in n.stations:
             s.code = s.code.replace('_outside', '')
-
+    print(distances)
     if out in ['d','dist','distance']:
         return distances
     else:
