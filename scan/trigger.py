@@ -22,7 +22,7 @@ import fnmatch
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import detrend
-from pandas import rolling_kurt
+#from pandas import rolling_kurt
 from obspy import read, Trace, Stream
 from obspy.core.trace import Stats
 from obspy.signal.filter import highpass
@@ -219,7 +219,7 @@ def stream_indexes(data, delta=None, id=None, network=None, station=None, locati
 	return trace_indexes.astype(int), data_indexes.astype(int)
 
 
-def recursive(a, scales=None, operation=None, maxscale=None):
+def recursive(a, scales=None, operation=None, maxscale=None, isspykes=False):
 	"""
 	_
 	Performs multi-scale calculation by
@@ -269,7 +269,7 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 	(tmax,nmax) = streamdatadim(a)
 
 	if maxscale is None:
-		maxscale = nmax
+		maxscale = int(nmax/4.)
 
 	if scales is None:
 		scales = [2**i for i in range(5,10) if ((2**i <= (maxscale)) and (2**i <= (nmax - 2**i)))]
@@ -304,7 +304,8 @@ def recursive(a, scales=None, operation=None, maxscale=None):
 					tr_filt.filter('highpass', freq=1/(scales[n+1]*tr_filt.stats.delta), corners=4, zerophase=True)
 					data = tr_filt.data.copy()
 
-				data *= dt < (np.median(dt)+2.*np.std(dt))
+				if isspykes:
+					data *= dt < (np.median(dt)+2.*np.std(dt))
 				data = detrend(data)
 
 				if operation[0:1] in ('d-'):
@@ -382,7 +383,7 @@ def correlationcoef(a, b, scales=None, maxscale=None):
 
 	na = len(a)
 	if maxscale is None:
-		maxscale = na
+		maxscale = int(na/4.)
 
 	if scales is None:
 		scales = [2**i for i in range(4,999) if ((2**i <= (maxscale)) and (2**i <= (na - 2**i)))]
